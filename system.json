@@ -1,0 +1,26 @@
+{
+  "id": "cortex-prime",
+  "title": "Cortex Prime",
+  "description": "An implementation of the Cortex Prime roleplaying game rules for Foundry Virtual Tabletop.",
+  "version": "0.0.0",
+  "compatibility": {
+    "minimum": "14.369",
+    "verified": "14.369",
+    "maximum": "14"
+  },
+  "authors": [
+    { "name": "big-egg-o", "url": "https://github.com/big-egg-o" }
+  ],
+  "url": "https://github.com/big-egg-o/cortex-prime",
+  "esmodules": ["module/cortex-prime.mjs"],
+  "styles": [{ "src": "styles/cortex-prime.css" }],
+  "languages": [
+    { "lang": "en", "name": "English", "path": "lang/en.json" }
+  ],
+  "flags": {
+    "hotReload": {
+      "extensions": ["css", "hbs", "json"],
+      "paths": ["styles", "templates", "lang"]
+    }
+  }
+}

@@ -1,0 +1,20 @@
+# Local-only reference material (handbook, Foundry client source, reference repos).
+# Never committed: copyrighted and/or third-party.
+/reference/
+
+# Node tooling
+node_modules/
+coverage/
+
+# Release build output
+/dist/
+*.zip
+
+# Editor / OS
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+Thumbs.db
+desktop.ini
+*.log
+.env

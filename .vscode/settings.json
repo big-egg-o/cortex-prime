@@ -1,0 +1,8 @@
+{
+  "files.eol": "\n",
+  "js/ts.implicitProjectConfig.checkJs": true,
+  "search.exclude": {
+    "reference/**": false,
+    "node_modules/**": true
+  }
+}

@@ -1,0 +1,19 @@
+# Normalise all text files to LF in the repo and the working tree (Foundry, ESLint
+# and the release Action all run fine on LF; avoids CRLF noise in diffs).
+* text=auto eol=lf
+
+# Binary assets
+*.pdf   binary
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.webp  binary
+*.svg   text
+*.woff  binary
+*.woff2 binary
+*.ttf   binary
+*.ogg   binary
+*.mp3   binary
+*.webm  binary
+# Foundry compendium packs (LevelDB)
+*.ldb   binary

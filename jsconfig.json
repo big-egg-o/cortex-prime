@@ -1,0 +1,22 @@
+{
+  "compilerOptions": {
+    "checkJs": true,
+    "strict": false,
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "target": "ES2023",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "skipLibCheck": true,
+    "noEmit": true,
+    "paths": {
+      "@client/*": ["./reference/foundry-14.369/client/*"],
+      "@common/*": ["./reference/foundry-14.369/common/*"]
+    }
+  },
+  "include": [
+    "module/**/*.mjs",
+    "tests/**/*.mjs",
+    "reference/foundry-14.369/client/global.d.mts",
+    "reference/foundry-14.369/common/global.d.mts"
+  ]
+}
