@@ -1,4 +1,4 @@
-# Cortex Prime for Foundry VTT
+# CURRENTLY UNFUNCTIONAL Cortex Prime for Foundry VTT
 
 A game system implementing the Cortex Prime rules for Foundry Virtual Tabletop **V14**.
 
