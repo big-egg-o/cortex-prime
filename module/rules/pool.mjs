@@ -5,12 +5,22 @@
 
 import { stepDie } from "./dice.mjs";
 
-let nextId = 0;
+const ID_PATTERN = /^d(\d+)$/;
 
-/** @returns {string} a fresh id, unique within this process */
-function makeId() {
-  nextId += 1;
-  return `d${nextId}`;
+/**
+ * The highest numeric id already in use, or 0. IDs are worked out from the pool a function is
+ * given, not from hidden module state (ADR-003): a pool saved and reloaded by Foundry must not
+ * hand out an id already used before the reload.
+ * @param {{id: string}[]} pool
+ * @returns {number}
+ */
+function highestIdNumber(pool) {
+  let highest = 0;
+  for ( const die of pool ) {
+    const match = ID_PATTERN.exec(die.id);
+    if ( match ) highest = Math.max(highest, Number(match[1]));
+  }
+  return highest;
 }
 
 /**
@@ -28,7 +38,7 @@ export function buildPool(entries) {
     const count = entry.count ?? 1;
     for ( let i = 0; i < count; i++ ) {
       pool.push({
-        id: makeId(),
+        id: `d${highestIdNumber(pool) + 1}`,
         size: entry.size,
         source: entry.source,
         origin: entry.origin ?? "rating"
@@ -52,7 +62,7 @@ export function doubleDie(pool, id) {
 
   const next = pool.slice();
   next.splice(index + 1, 0, {
-    id: makeId(),
+    id: `d${highestIdNumber(pool) + 1}`,
     size: original.size,
     source: original.source,
     origin: "doubled"
@@ -87,8 +97,9 @@ export function stepPoolDie(pool, id, steps) {
   next[index] = { ...die, size: result.size };
 
   if ( result.beyond ) {
-    const overflow = Array.from({ length: result.beyond }, () => ({
-      id: makeId(),
+    const base = highestIdNumber(pool);
+    const overflow = Array.from({ length: result.beyond }, (_, i) => ({
+      id: `d${base + i + 1}`,
       size: /** @type {import("./types.mjs").DieSize} */ (6),
       source: die.source,
       origin: "overflow"

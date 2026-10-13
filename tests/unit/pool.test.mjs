@@ -126,4 +126,29 @@ describe("die identity", () => {
 
     expect(pool[0].id).not.toBe(pool[1].id);
   });
+
+  it("DP-E03 numbers ids d1, d2, ... and a fresh buildPool always restarts at d1", () => {
+    const entries = [
+      { size: 8, source: source("Skill") },
+      { size: 6, source: source("Asset", "asset") }
+    ];
+
+    expect(buildPool(entries).map(d => d.id)).toEqual(["d1", "d2"]);
+    expect(buildPool(entries).map(d => d.id)).toEqual(["d1", "d2"]);
+  });
+
+  it("DP-E03 keeps ids unique after a saved pool is reloaded and changed further", () => {
+    const skill = source("Skill");
+    const built = buildPool([
+      { size: 12, source: skill },
+      { size: 8, source: source("Distinction") }
+    ]);
+    const reloaded = structuredClone(built);
+
+    const doubled = doubleDie(reloaded, reloaded[1].id);
+    const steppedPastD12 = stepPoolDie(doubled, doubled[0].id, 2);
+
+    const ids = steppedPastD12.map(d => d.id);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
 });
