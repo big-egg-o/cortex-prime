@@ -200,6 +200,15 @@ describe("total and effect dice", () => {
     expect(reusedResult.valid).toBe(false);
     expect(reusedResult.errors.map(e => e.code)).toContain("DIE_REUSED");
     expect(() => resolve(rolled, reused)).toThrow();
+
+    const sameDieTwice = selection({
+      totalIds: [rolled[0].id, rolled[0].id],
+      effectDieIds: [rolled[1].id]
+    });
+    const sameDieTwiceResult = validateSelection(rolled, sameDieTwice);
+    expect(sameDieTwiceResult.valid).toBe(false);
+    expect(sameDieTwiceResult.errors.map(e => e.code)).toContain("DIE_REUSED");
+    expect(() => resolve(rolled, sameDieTwice)).toThrow();
   });
 
   it("DP-21 buys a second effect die with the dice left over from the total", () => {

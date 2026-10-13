@@ -45,6 +45,17 @@ export function evaluate(rolled) {
  * @property {string[]} dieIds
  */
 
+/** @param {string[]} ids @returns {string[]} ids that appear more than once in `ids` */
+function duplicateIds(ids) {
+  const seen = new Set();
+  const dupes = new Set();
+  for ( const id of ids ) {
+    if ( seen.has(id) ) dupes.add(id);
+    seen.add(id);
+  }
+  return [...dupes];
+}
+
 /**
  * Checks a proposed selection against rules 12-23: a hitch or an unavailable die in either id
  * list (rules 10, 19, DP-E04), the same die claimed for both total and effect (DP-20), keeping
@@ -72,8 +83,12 @@ export function validateSelection(rolled, selection) {
   const unavailableIds = selectedIds.filter(id => byId.get(id)?.state !== "available");
   if ( unavailableIds.length > 0 ) errors.push({ code: "UNAVAILABLE_DIE", dieIds: unavailableIds });
 
-  const reusedIds = totalIds.filter(id => effectDieIds.includes(id));
-  if ( reusedIds.length > 0 ) errors.push({ code: "DIE_REUSED", dieIds: reusedIds });
+  const reusedIds = new Set([
+    ...totalIds.filter(id => effectDieIds.includes(id)),
+    ...duplicateIds(totalIds),
+    ...duplicateIds(effectDieIds)
+  ]);
+  if ( reusedIds.size > 0 ) errors.push({ code: "DIE_REUSED", dieIds: [...reusedIds] });
 
   const totalSlots = keepLimit + extraResultsPaid;
   if ( extraResultsPaid > 0 && totalSlots > rolled.length ) {
