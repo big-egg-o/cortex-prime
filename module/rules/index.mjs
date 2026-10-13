@@ -6,4 +6,11 @@
  * This is enforced by ESLint and by tests/unit/rules-boundary.test.mjs.
  * @module rules
  */
-export {};
+
+export { DIE_SIZES } from "./types.mjs";
+export { stepDie } from "./dice.mjs";
+export { buildPool, doubleDie, stepPoolDie } from "./pool.mjs";
+export {
+  applyOverflowChoice, applyRerolls, applyResults, evaluate, largestEligible, rerollableIds,
+  resolve, stepEffectDie, twoHighest, unrolledEffectDie, validateSelection
+} from "./roll.mjs";

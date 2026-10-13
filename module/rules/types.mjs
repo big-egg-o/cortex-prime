@@ -108,8 +108,8 @@ export const DIE_SIZES = Object.freeze(/** @type {DieSize[]} */ ([4, 6, 8, 10, 1
  * The outcome of a validated Selection against a RolledDie list.
  * @typedef {Object} Resolution
  * @property {number} total - 0 for a botch (rule 11)
- * @property {string[]} totalIds - RolledDie ids that made up the total, so later steps can find
- *   the leftover dice and the chat card can show which dice were used (added 2026-10-13)
+ * @property {string[]} totalIds - which RolledDie ids summed to `total`, kept around for
+ *   working out leftovers and for display (added 2026-10-13)
  * @property {EffectDieEntry[]} effectDice
  * @property {string[]} hitchIds
  * @property {boolean} botch
