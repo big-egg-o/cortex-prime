@@ -3,6 +3,8 @@
  * @module rules/roll
  */
 
+import { stepDie } from "./dice.mjs";
+
 /**
  * Pairs each pool die with its rolled result, in pool order, and flags hitches (a result of 1,
  * rule 10). Refuses an empty pool (no handbook rule covers a zero-die roll; a technical guard,
@@ -144,5 +146,84 @@ export function resolve(rolled, selection) {
   });
 
   const { hitchIds, botch } = evaluate(rolled);
-  return { total, effectDice, hitchIds, botch };
+  return { total, totalIds: [...totalIds], effectDice, hitchIds, botch, takeOut: false, overflow: null };
+}
+
+/**
+ * Every eligible leftover die for a second effect die: not a hitch, available, not in the
+ * total, and not already an effect die, in roll order (rule 18, rule 19, RQ-003, RQ-007).
+ * @param {import("./types.mjs").RolledDie[]} rolled
+ * @param {import("./types.mjs").Resolution} resolution
+ * @returns {{dieId: string, size: import("./types.mjs").DieSize}[]}
+ */
+function leftoverEligible(rolled, resolution) {
+  const usedInTotal = new Set(resolution.totalIds);
+  const usedAsEffect = new Set(resolution.effectDice.map(e => e.dieId).filter(id => id !== null));
+  return rolled
+    .filter(d => !d.hitch && d.state === "available" && !usedInTotal.has(d.id) && !usedAsEffect.has(d.id))
+    .map(d => ({ dieId: d.id, size: d.size }));
+}
+
+/**
+ * Steps one effect die up or down (rule 23). A step that would take it past d12 makes no size
+ * change; instead it records a pending overflow with the options for the roller to pick from
+ * (rule 22): every eligible leftover die, a new d6, or a take-out, resolved by
+ * applyOverflowChoice. `cause` only affects labelling (RQ-005) — the options are identical for
+ * a heroic success and for an SFX or other trigger.
+ * @param {import("./types.mjs").RolledDie[]} rolled
+ * @param {import("./types.mjs").Resolution} resolution
+ * @param {number} effectIndex - index into resolution.effectDice
+ * @param {number} steps
+ * @param {'heroic'|'other'} cause
+ * @returns {import("./types.mjs").Resolution} a new Resolution
+ */
+export function stepEffectDie(rolled, resolution, effectIndex, steps, cause) {
+  const entry = resolution.effectDice[effectIndex];
+  const result = stepDie(entry.size, steps);
+
+  if ( result.beyond ) {
+    const options = {
+      cause,
+      leftovers: leftoverEligible(rolled, resolution),
+      newDie: 6,
+      takeOutAvailable: true
+    };
+    return { ...resolution, overflow: { effectIndex, cause, options } };
+  }
+
+  const effectDice = resolution.effectDice.slice();
+  effectDice[effectIndex] = { ...entry, size: result.size };
+  return { ...resolution, effectDice, overflow: null };
+}
+
+/**
+ * Applies one of the options from a pending overflow (rule 22): adds the chosen leftover die
+ * or a new d6 as a second effect die, or marks the take-out/victory outcome. Clears the
+ * overflow once resolved.
+ * @param {import("./types.mjs").RolledDie[]} rolled
+ * @param {import("./types.mjs").Resolution} resolution
+ * @param {import("./types.mjs").OverflowChoice} choice
+ * @returns {import("./types.mjs").Resolution} a new Resolution
+ * @throws {Error} if there is no pending overflow, the choice is unknown, or `dieId` isn't one
+ *   of the offered leftovers
+ */
+export function applyOverflowChoice(rolled, resolution, choice) {
+  const overflow = resolution.overflow;
+  if ( !overflow ) throw new Error("applyOverflowChoice: no pending overflow to resolve");
+
+  if ( choice.kind === "take-out" ) return { ...resolution, overflow: null, takeOut: true };
+
+  if ( choice.kind === "new-d6" ) {
+    const effectDice = [...resolution.effectDice, { size: 6, dieId: null, isDefault: true }];
+    return { ...resolution, effectDice, overflow: null };
+  }
+
+  if ( choice.kind === "leftover" ) {
+    const picked = overflow.options.leftovers.find(l => l.dieId === choice.dieId);
+    if ( !picked ) throw new Error(`applyOverflowChoice: "${choice.dieId}" is not an eligible leftover`);
+    const effectDice = [...resolution.effectDice, { size: picked.size, dieId: picked.dieId, isDefault: false }];
+    return { ...resolution, effectDice, overflow: null };
+  }
+
+  throw new Error(`applyOverflowChoice: unknown choice kind "${choice.kind}"`);
 }

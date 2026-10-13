@@ -75,22 +75,15 @@ export const DIE_SIZES = Object.freeze(/** @type {DieSize[]} */ ([4, 6, 8, 10, 1
  */
 
 /**
- * The outcome of a validated Selection against a RolledDie list.
- * @typedef {Object} Resolution
- * @property {number} total - 0 for a botch (rule 11)
- * @property {EffectDieEntry[]} effectDice
- * @property {string[]} hitchIds
- * @property {boolean} botch
- */
-
-/**
- * What the roller may do when an effect die is stepped past d12 (rule 22): take an eligible
+ * What the roller may do when an effect die is stepped past d12 (rule 22): take any eligible
  * leftover die as a second effect die at its own size, take a new d6 as a second effect die, or
  * take the opponent out at once. `cause` only affects display and RQ tagging (RQ-005): the
  * options themselves are identical whether a heroic success or an SFX caused the overflow.
  * @typedef {Object} OverflowOptions
  * @property {'heroic'|'other'} cause
- * @property {{dieId: string, size: DieSize}|null} leftover - an eligible unused die, if any
+ * @property {{dieId: string, size: DieSize}[]} leftovers - every eligible unused die (not a
+ *   hitch, available, not in the total, not already an effect die), in roll order; empty when
+ *   none (RQ-003, RQ-007)
  * @property {6} newDie
  * @property {true} takeOutAvailable
  */
@@ -99,7 +92,30 @@ export const DIE_SIZES = Object.freeze(/** @type {DieSize[]} */ ([4, 6, 8, 10, 1
  * The roller's pick among the OverflowOptions.
  * @typedef {Object} OverflowChoice
  * @property {'leftover'|'new-d6'|'take-out'} kind
- * @property {string} [dieId] - required when kind is "leftover"
+ * @property {string} [dieId] - required when kind is "leftover"; must be one of options.leftovers
+ */
+
+/**
+ * A pending overflow choice for one effect die (rule 22): which slot overflowed, why, and the
+ * options offered. Cleared by applyOverflowChoice once the roller picks.
+ * @typedef {Object} OverflowSignal
+ * @property {number} effectIndex - index into Resolution.effectDice
+ * @property {'heroic'|'other'} cause
+ * @property {OverflowOptions} options
+ */
+
+/**
+ * The outcome of a validated Selection against a RolledDie list.
+ * @typedef {Object} Resolution
+ * @property {number} total - 0 for a botch (rule 11)
+ * @property {string[]} totalIds - RolledDie ids that made up the total, so later steps can find
+ *   the leftover dice and the chat card can show which dice were used (added 2026-10-13)
+ * @property {EffectDieEntry[]} effectDice
+ * @property {string[]} hitchIds
+ * @property {boolean} botch
+ * @property {boolean} takeOut - true once the take-out/victory option is chosen (rule 22;
+ *   added 2026-10-13)
+ * @property {OverflowSignal|null} overflow
  */
 
 export {};
