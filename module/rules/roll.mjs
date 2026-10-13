@@ -227,3 +227,79 @@ export function applyOverflowChoice(rolled, resolution, choice) {
 
   throw new Error(`applyOverflowChoice: unknown choice kind "${choice.kind}"`);
 }
+
+/**
+ * The GM's shortcut: the `keep` highest non-hitch results, for the total (rule 12).
+ * @param {import("./types.mjs").RolledDie[]} rolled
+ * @param {number} [keep=2]
+ * @returns {string[]} die ids, highest result first
+ */
+export function twoHighest(rolled, keep = 2) {
+  return rolled
+    .filter(d => !d.hitch && d.state === "available")
+    .slice()
+    .sort((a, b) => b.result - a.result)
+    .slice(0, keep)
+    .map(d => d.id);
+}
+
+/**
+ * Suggests the largest available, non-hitch, unused rolled die as an effect die (rule 18).
+ * @param {import("./types.mjs").RolledDie[]} rolled
+ * @param {string[]} usedIds
+ * @returns {string|null} a die id, or null if none is eligible (rule 20 default applies)
+ */
+export function largestEligible(rolled, usedIds) {
+  const used = new Set(usedIds);
+  const eligible = rolled.filter(d => !d.hitch && d.state === "available" && !used.has(d.id));
+  if ( eligible.length === 0 ) return null;
+  return eligible.reduce((biggest, d) => (d.size > biggest.size ? d : biggest)).id;
+}
+
+/**
+ * The largest die in an unrolled pool, for an unopposed effect die (rule 24).
+ * @param {import("./types.mjs").PoolDie[]} pool
+ * @returns {import("./types.mjs").DieSize}
+ */
+export function unrolledEffectDie(pool) {
+  return pool.reduce((biggest, d) => Math.max(biggest, d.size), 0);
+}
+
+/**
+ * Which rolled dice may be rerolled: any die not already hitch-activated (rule 26).
+ * @param {import("./types.mjs").RolledDie[]} rolled
+ * @returns {string[]}
+ */
+export function rerollableIds(rolled) {
+  return rolled.filter(d => d.state !== "hitch-activated").map(d => d.id);
+}
+
+/**
+ * Replaces results for the given dice and recomputes their hitch flags (rule 25). Refuses a
+ * die that isn't rerollable (rule 26, DP-28), an id not in the roll, or a result outside 1 to
+ * the die's size (rule 1).
+ * @param {import("./types.mjs").RolledDie[]} rolled
+ * @param {Record<string, number>} results - die id -> new result
+ * @returns {import("./types.mjs").RolledDie[]}
+ * @throws {Error} on an unknown id, a non-rerollable die, or an out-of-range result
+ */
+export function applyRerolls(rolled, results) {
+  const byId = new Map(rolled.map(d => [d.id, d]));
+  const rerollable = new Set(rerollableIds(rolled));
+
+  for ( const id of Object.keys(results) ) {
+    const die = byId.get(id);
+    if ( !die ) throw new Error(`applyRerolls: no die with id ${id}`);
+    if ( !rerollable.has(id) ) throw new Error(`applyRerolls: ${id} can't be rerolled`);
+    const result = results[id];
+    if ( !Number.isInteger(result) || result < 1 || result > die.size ) {
+      throw new Error(`applyRerolls: ${result} is not a valid result for a d${die.size}`);
+    }
+  }
+
+  return rolled.map(d => {
+    if ( !(d.id in results) ) return d;
+    const result = results[d.id];
+    return { ...d, result, hitch: result === 1 };
+  });
+}
