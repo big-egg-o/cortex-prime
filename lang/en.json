@@ -1,6 +1,12 @@
 {
   "CORTEX": {
-    "SystemTitle": "Cortex Prime"
+    "SystemTitle": "Cortex Prime",
+    "Chat": {
+      "Hitches": "Hitches",
+      "Total": "Total",
+      "EffectDice": "Effect Dice",
+      "DefaultD4": "default d4"
+    }
   },
   "TYPES": {
     "ChatMessage": {

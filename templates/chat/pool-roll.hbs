@@ -1,0 +1,43 @@
+<div class="cortex-prime poolroll-card">
+  {{#each groups}}
+  <div class="dice-group">
+    <span class="source-label">{{ this.label }}</span>
+    <ul class="dice">
+      {{#each this.dice}}
+      <li class="die">{{ this.sizeLabel }}: {{ this.result }}</li>
+      {{/each}}
+    </ul>
+  </div>
+  {{/each}}
+
+  {{#if hitches.length}}
+  <div class="dice-group hitches">
+    <span class="source-label">{{ localize "CORTEX.Chat.Hitches" }}</span>
+    <ul class="dice">
+      {{#each hitches}}
+      <li class="die hitch">{{ this.label }} {{ this.sizeLabel }}: {{ this.result }}</li>
+      {{/each}}
+    </ul>
+  </div>
+  {{/if}}
+
+  {{#if resolved}}
+  <div class="resolution">
+    <div class="total">{{ localize "CORTEX.Chat.Total" }}: {{ resolved.total }}</div>
+    <ul class="total-dice">
+      {{#each resolved.totalDice}}
+      <li>{{ this.label }} {{ this.sizeLabel }}: {{ this.result }}</li>
+      {{/each}}
+    </ul>
+    <div class="effect-label">{{ localize "CORTEX.Chat.EffectDice" }}</div>
+    <ul class="effect-dice">
+      {{#each resolved.effectDice}}
+      <li>
+        {{ this.sizeLabel }}{{#if this.result}}: {{ this.result }}{{/if}}
+        {{#if this.isDefaultD4}} ({{ localize "CORTEX.Chat.DefaultD4" }}){{/if}}
+      </li>
+      {{/each}}
+    </ul>
+  </div>
+  {{/if}}
+</div>

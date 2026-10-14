@@ -7,6 +7,7 @@
  * @module tests/quench
  */
 
+import { registerCardBatch } from "./card.mjs";
 import { registerChatBatch } from "./chat.mjs";
 import { registerDiceBatch } from "./dice.mjs";
 
@@ -17,6 +18,7 @@ import { registerDiceBatch } from "./dice.mjs";
 export function registerQuenchBatches(quench) {
   registerChatBatch(quench);
   registerDiceBatch(quench);
+  registerCardBatch(quench);
 
   quench.registerBatch(
     "cortex-prime.smoke",
