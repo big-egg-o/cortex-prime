@@ -7,11 +7,15 @@
  * @module tests/quench
  */
 
+import { registerChatBatch } from "./chat.mjs";
+
 /**
  * Register all Cortex Prime batches with Quench.
  * @param {object} quench  The Quench API object passed to the `quenchReady` hook.
  */
 export function registerQuenchBatches(quench) {
+  registerChatBatch(quench);
+
   quench.registerBatch(
     "cortex-prime.smoke",
     ({ describe, it, assert }) => {

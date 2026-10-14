@@ -2,15 +2,18 @@
  * Cortex Prime system entry point.
  *
  * Registers documents, data models, sheets and settings during `init`.
- * Nothing game-relevant is registered yet: this is the empty skeleton.
  * @module cortex-prime
  */
+
+import PoolRollData from "./data/chat/pool-roll.mjs";
 
 /** The package id, as declared in system.json. */
 export const SYSTEM_ID = "cortex-prime";
 
 Hooks.once("init", () => {
   console.log(`${SYSTEM_ID} | Initializing`);
+
+  CONFIG.ChatMessage.dataModels.poolRoll = PoolRollData;
 });
 
 Hooks.once("ready", () => {

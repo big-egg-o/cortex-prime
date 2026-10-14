@@ -1,5 +1,10 @@
 {
   "CORTEX": {
     "SystemTitle": "Cortex Prime"
+  },
+  "TYPES": {
+    "ChatMessage": {
+      "poolRoll": "Dice Pool Roll"
+    }
   }
 }
