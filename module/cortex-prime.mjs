@@ -6,7 +6,7 @@
  */
 
 import PoolRollData from "./data/chat/pool-roll.mjs";
-import { onRenderPoolRollMessage } from "./dice/pool-roll-card.mjs";
+import { onRenderPoolRollMessage, preloadPoolRollCardTemplate } from "./dice/pool-roll-card.mjs";
 
 /** The package id, as declared in system.json. */
 export const SYSTEM_ID = "cortex-prime";
@@ -16,6 +16,7 @@ Hooks.once("init", () => {
 
   CONFIG.ChatMessage.dataModels.poolRoll = PoolRollData;
   Hooks.on("renderChatMessageHTML", onRenderPoolRollMessage);
+  preloadPoolRollCardTemplate(); // fire-and-forget: ready well before the first roll in practice
 });
 
 Hooks.once("ready", () => {

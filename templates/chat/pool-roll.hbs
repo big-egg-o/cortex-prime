@@ -21,7 +21,9 @@
   </div>
   {{/if}}
 
-  {{#if resolved}}
+  {{#if botch}}
+  <div class="botch">{{ localize "CORTEX.Chat.Botch" }}</div>
+  {{else if resolved}}
   <div class="resolution">
     <div class="total">{{ localize "CORTEX.Chat.Total" }}: {{ resolved.total }}</div>
     <ul class="total-dice">

@@ -5,7 +5,7 @@
 
 import { applyResults, buildPool } from "../../module/rules/index.mjs";
 import { postPoolRoll } from "../../module/dice/post-pool-roll.mjs";
-import { renderPoolRollCard } from "../../module/dice/pool-roll-card.mjs";
+import { onRenderPoolRollMessage, renderPoolRollCard } from "../../module/dice/pool-roll-card.mjs";
 
 /**
  * @param {number[]} sizes
@@ -60,6 +60,27 @@ export function registerCardBatch(quench) {
           assert.lengthOf(html.querySelectorAll(".die"), 4);
           assert.lengthOf(html.querySelectorAll(".hitches .die.hitch"), 1);
           assert.lengthOf(html.querySelectorAll(".dice-group:not(.hitches) .die.hitch"), 0);
+        });
+
+        it("shows the botch line for an all-hitches roll (DP-09)", async () => {
+          const dice = pool([8, 6, 4]);
+          const results = [1, 1, 1]; // every die is a hitch: a botch
+
+          const message = await postPoolRoll({ pool: dice, results });
+          messages.push(message);
+
+          const html = foundry.utils.parseHTML(await renderPoolRollCard(message.system));
+          assert.isNotNull(html.querySelector(".botch"), "the card should show a botch line");
+        });
+
+        it("leaves the content untouched for a message the current user can't see", () => {
+          const html = document.createElement("div");
+          html.innerHTML = '<div class="message-content">unchanged</div>';
+          const stub = { type: "poolRoll", isContentVisible: false };
+
+          onRenderPoolRollMessage(stub, html);
+
+          assert.equal(html.querySelector(".message-content").innerHTML, "unchanged");
         });
       });
     },

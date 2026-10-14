@@ -5,7 +5,8 @@
       "Hitches": "Hitches",
       "Total": "Total",
       "EffectDice": "Effect Dice",
-      "DefaultD4": "default d4"
+      "DefaultD4": "default d4",
+      "Botch": "Botch — total 0"
     }
   },
   "TYPES": {

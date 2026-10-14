@@ -32,3 +32,9 @@
 .cortex-prime.poolroll-card .total {
   font-weight: bold;
 }
+
+.cortex-prime.poolroll-card .botch {
+  margin-top: 0.5em;
+  font-weight: bold;
+  color: var(--color-text-dark-red, #6e1414);
+}
