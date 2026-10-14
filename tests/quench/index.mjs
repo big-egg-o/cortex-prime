@@ -8,6 +8,7 @@
  */
 
 import { registerChatBatch } from "./chat.mjs";
+import { registerDiceBatch } from "./dice.mjs";
 
 /**
  * Register all Cortex Prime batches with Quench.
@@ -15,6 +16,7 @@ import { registerChatBatch } from "./chat.mjs";
  */
 export function registerQuenchBatches(quench) {
   registerChatBatch(quench);
+  registerDiceBatch(quench);
 
   quench.registerBatch(
     "cortex-prime.smoke",
