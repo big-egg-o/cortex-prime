@@ -33,6 +33,29 @@ export function registerChatBatch(quench) {
         message = null;
       });
 
+      /**
+       * Asserts that invalid poolRoll `system` data is rejected two ways: constructing the
+       * Document directly throws, and going through the database resolves to undefined and
+       * stores nothing (client-backend.mjs #preCreateDocumentArray drops it before any
+       * server contact; the create Promise never rejects, so both checks are needed).
+       * @param {object} system
+       * @param {string} because
+       */
+      async function assertRejected(system, because) {
+        let threw = false;
+        try {
+          new ChatMessage({ type: "poolRoll", system });
+        } catch {
+          threw = true;
+        }
+        assert.isTrue(threw, `${because}: constructing the Document should throw`);
+
+        const before = game.messages.size;
+        const result = await ChatMessage.create({ type: "poolRoll", system });
+        assert.isUndefined(result, `${because}: create() should resolve to undefined`);
+        assert.equal(game.messages.size, before, `${because}: nothing should be stored`);
+      }
+
       describe("poolRoll chat message type", () => {
         it("creates a resolved roll and reads it back unchanged", async () => {
           const { pool, rolled } = sampleRoll();
@@ -100,16 +123,10 @@ export function registerChatBatch(quench) {
           const rolled = [{ ...pool[0], result: 3, hitch: false, state: "available" }];
           const selection = { totalIds: [], effectDieIds: [], extraResultsPaid: 0, extraEffectDicePaid: 0, keepLimit: 2 };
 
-          let threw = false;
-          try {
-            message = await ChatMessage.create({
-              type: "poolRoll",
-              system: { schemaVersion: 1, pool, rolled, selection, resolution: null, state: "rolled" }
-            });
-          } catch {
-            threw = true;
-          }
-          assert.isTrue(threw, "a d7 pool die should be rejected");
+          await assertRejected(
+            { schemaVersion: 1, pool, rolled, selection, resolution: null, state: "rolled" },
+            "a d7 pool die"
+          );
         });
 
         it("rejects a d6 rolled to 9", async () => {
@@ -117,32 +134,42 @@ export function registerChatBatch(quench) {
           rolled[2].result = 9; // rolled[2] is the d6
           const selection = { totalIds: [], effectDieIds: [], extraResultsPaid: 0, extraEffectDicePaid: 0, keepLimit: 2 };
 
-          let threw = false;
-          try {
-            message = await ChatMessage.create({
-              type: "poolRoll",
-              system: { schemaVersion: 1, pool, rolled, selection, resolution: null, state: "rolled" }
-            });
-          } catch {
-            threw = true;
-          }
-          assert.isTrue(threw, "a result past the die's size should be rejected");
+          await assertRejected(
+            { schemaVersion: 1, pool, rolled, selection, resolution: null, state: "rolled" },
+            "a result past the die's size"
+          );
         });
 
         it('rejects state "resolved" without a resolution', async () => {
           const { pool, rolled } = sampleRoll();
           const selection = { totalIds: [], effectDieIds: [], extraResultsPaid: 0, extraEffectDicePaid: 0, keepLimit: 2 };
 
-          let threw = false;
-          try {
-            message = await ChatMessage.create({
-              type: "poolRoll",
-              system: { schemaVersion: 1, pool, rolled, selection, resolution: null, state: "resolved" }
-            });
-          } catch {
-            threw = true;
-          }
-          assert.isTrue(threw, 'state "resolved" with no resolution should be rejected');
+          await assertRejected(
+            { schemaVersion: 1, pool, rolled, selection, resolution: null, state: "resolved" },
+            'state "resolved" with no resolution'
+          );
+        });
+
+        it("rejects invalid updates to an existing poolRoll, leaving it unchanged (ADR-013)", async () => {
+          const { pool, rolled } = sampleRoll();
+          const selection = { totalIds: [], effectDieIds: [], extraResultsPaid: 0, extraEffectDicePaid: 0, keepLimit: 2 };
+          message = await ChatMessage.create({
+            type: "poolRoll",
+            system: { schemaVersion: 1, pool, rolled, selection, resolution: null, state: "rolled" }
+          });
+          const before = message.system.toObject();
+
+          // (a) a rolled die result 9 on a d6
+          const badRolled = foundry.utils.deepClone(rolled);
+          badRolled[2].result = 9;
+          let result = await message.update({ "system.rolled": badRolled });
+          assert.isUndefined(result, "update() should resolve to undefined");
+          assert.deepEqual(game.messages.get(message.id).system.toObject(), before);
+
+          // (b) state "resolved" with resolution left null
+          result = await message.update({ "system.state": "resolved" });
+          assert.isUndefined(result, "update() should resolve to undefined");
+          assert.deepEqual(game.messages.get(message.id).system.toObject(), before);
         });
       });
     },
