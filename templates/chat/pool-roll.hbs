@@ -4,7 +4,10 @@
     <span class="source-label">{{ this.label }}</span>
     <ul class="dice">
       {{#each this.dice}}
-      <li class="die">{{ this.sizeLabel }}: {{ this.result }}</li>
+      <li class="die role-{{ this.role }}{{#if this.clickable}} clickable{{/if}}" data-die-id="{{ this.id }}"
+        {{#if this.clickable}}data-action="cycle-die"{{/if}}>
+        {{ this.sizeLabel }}: {{ this.result }}
+      </li>
       {{/each}}
     </ul>
   </div>
@@ -15,7 +18,7 @@
     <span class="source-label">{{ localize "CORTEX.Chat.Hitches" }}</span>
     <ul class="dice">
       {{#each hitches}}
-      <li class="die hitch">{{ this.label }} {{ this.sizeLabel }}: {{ this.result }}</li>
+      <li class="die hitch" data-die-id="{{ this.id }}">{{ this.label }} {{ this.sizeLabel }}: {{ this.result }}</li>
       {{/each}}
     </ul>
   </div>
@@ -40,6 +43,44 @@
       </li>
       {{/each}}
     </ul>
+  </div>
+  {{/if}}
+
+  {{#if selection}}
+  <div class="pool-selection">
+    {{#if selection.errors.length}}
+    <ul class="errors">
+      {{#each selection.errors}}
+      <li class="error">{{ this.message }}</li>
+      {{/each}}
+    </ul>
+    {{/if}}
+
+    {{#if interactive}}
+    <div class="shortcuts">
+      <button type="button" data-action="two-highest">{{ localize "CORTEX.Chat.TwoHighest" }}</button>
+      <button type="button" data-action="biggest-effect">{{ localize "CORTEX.Chat.BiggestEffect" }}</button>
+    </div>
+
+    <div class="counters">
+      <div class="counter" data-counter="extra-results">
+        <span class="counter-label">{{ localize "CORTEX.Chat.ExtraResultsPaid" }}</span>
+        <button type="button" data-action="decrement-extra-results">-</button>
+        <span class="counter-value">{{ selection.extraResultsPaid }}</span>
+        <button type="button" data-action="increment-extra-results">+</button>
+      </div>
+      <div class="counter" data-counter="extra-effect-dice">
+        <span class="counter-label">{{ localize "CORTEX.Chat.ExtraEffectDicePaid" }}</span>
+        <button type="button" data-action="decrement-extra-effect-dice">-</button>
+        <span class="counter-value">{{ selection.extraEffectDicePaid }}</span>
+        <button type="button" data-action="increment-extra-effect-dice">+</button>
+      </div>
+    </div>
+
+    <button type="button" class="confirm" data-action="confirm" {{#unless selection.valid}}disabled{{/unless}}>
+      {{ localize "CORTEX.Chat.Confirm" }}
+    </button>
+    {{/if}}
   </div>
   {{/if}}
 </div>

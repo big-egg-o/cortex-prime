@@ -56,7 +56,7 @@ export function registerCardBatch(quench) {
           const message = await postPoolRoll({ pool: dice, results });
           messages.push(message);
 
-          const html = foundry.utils.parseHTML(await renderPoolRollCard(message.system));
+          const html = foundry.utils.parseHTML(await renderPoolRollCard(message));
           assert.lengthOf(html.querySelectorAll(".die"), 4);
           assert.lengthOf(html.querySelectorAll(".hitches .die.hitch"), 1);
           assert.lengthOf(html.querySelectorAll(".dice-group:not(.hitches) .die.hitch"), 0);
@@ -69,7 +69,7 @@ export function registerCardBatch(quench) {
           const message = await postPoolRoll({ pool: dice, results });
           messages.push(message);
 
-          const html = foundry.utils.parseHTML(await renderPoolRollCard(message.system));
+          const html = foundry.utils.parseHTML(await renderPoolRollCard(message));
           assert.isNotNull(html.querySelector(".botch"), "the card should show a botch line");
         });
 

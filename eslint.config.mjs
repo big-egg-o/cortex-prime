@@ -4,7 +4,7 @@ import globals from "globals";
 /** Foundry globals available to client code (not to module/rules/). */
 const foundryGlobals = Object.fromEntries([
   "foundry", "game", "CONFIG", "CONST", "Hooks", "ui", "canvas", "Handlebars", "PIXI",
-  "Actor", "Item", "ChatMessage", "Combat", "Roll", "TextEditor",
+  "Actor", "Item", "ChatMessage", "Combat", "Roll", "TextEditor", "User",
   "fromUuid", "fromUuidSync", "getDocumentClass", "_loc"
 ].map(name => [name, "readonly"]));
 

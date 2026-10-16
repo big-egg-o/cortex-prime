@@ -6,7 +6,22 @@
       "Total": "Total",
       "EffectDice": "Effect Dice",
       "DefaultD4": "default d4",
-      "Botch": "Botch — total 0"
+      "Botch": "Botch — total 0",
+      "TwoHighest": "Two Highest",
+      "BiggestEffect": "Biggest Effect",
+      "ExtraResultsPaid": "Extra Results Paid",
+      "ExtraEffectDicePaid": "Extra Effect Dice Paid",
+      "Confirm": "Confirm",
+      "Errors": {
+        "HITCH_SELECTED": "A hitch can't be picked.",
+        "UNAVAILABLE_DIE": "That die isn't available.",
+        "DIE_REUSED": "A die can't be both total and effect.",
+        "TOO_MANY_EXTRA_RESULTS": "More extra results than dice were rolled.",
+        "KEEP_TOO_FEW": "Pick more dice for the total.",
+        "KEEP_TOO_MANY": "Pick fewer dice for the total.",
+        "TOO_MANY_EFFECT_DICE": "More effect dice than are available.",
+        "EFFECT_DIE_MISSING": "An eligible die is still unused as an effect die."
+      }
     }
   },
   "TYPES": {
