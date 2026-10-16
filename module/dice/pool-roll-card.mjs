@@ -7,7 +7,7 @@
  * @module dice/pool-roll-card
  */
 
-import { evaluate, validateSelection } from "../rules/index.mjs";
+import { evaluate, resolve, validateSelection } from "../rules/index.mjs";
 import { applyCardChange, canEditPoolRollCard } from "./card-actions.mjs";
 
 const TEMPLATE = "systems/cortex-prime/templates/chat/pool-roll.hbs";
@@ -16,16 +16,23 @@ const TEMPLATE = "systems/cortex-prime/templates/chat/pool-roll.hbs";
 // methods/properties is safe here since it only happens client-side.
 const HANDLEBARS_OPTIONS = { allowProtoMethodsByDefault: true, allowProtoPropertiesByDefault: true };
 
+/** Localization keys for each die role, shown as a title/aria-label on the die. */
+const ROLE_LABEL_KEYS = {
+  total: "CORTEX.Chat.Role.Total",
+  effect: "CORTEX.Chat.Role.Effect",
+  hitch: "CORTEX.Chat.Role.Hitch",
+  unused: "CORTEX.Chat.Role.Unused"
+};
+
 /**
  * @typedef {Object} CardDie
  * @property {string} id
- * @property {string|null} label - the die's source label, or null when it has none (a
- *   default effect die)
+ * @property {string} label - the die's source label (escaped by the template)
  * @property {number} size
- * @property {string} sizeLabel - e.g. "d8", built here so the template only interpolates
- * @property {number|null} result - null for a default effect die with no die behind it
- * @property {'total'|'effect'|'unused'} role - where the die currently sits in the selection
- * @property {boolean} clickable - whether a click on this die would do anything
+ * @property {number} result
+ * @property {'total'|'effect'|'unused'|'hitch'} role
+ * @property {string} roleLabel - localized, for the die's title/aria-label
+ * @property {boolean} clickable
  */
 
 /**
@@ -38,16 +45,29 @@ export function preloadPoolRollCardTemplate() {
 }
 
 /**
- * Builds the Handlebars context for a poolRoll card: whether the roll botched (rule 11,
- * DP-09), dice grouped by source with hitches kept apart and each die's current role, whether
- * the current user may act on the card, and (once resolved) the total and effect dice.
- * While unresolved, also carries the live validateSelection check — its errors translated
- * from lang/en.json — so the template can disable Confirm without any game logic of its own.
- * `botch` comes from module/rules/'s own evaluate(), not re-derived here, since a botch is
- * already known as soon as the dice are rolled, before anything is resolved.
+ * The "{total} · effect {dice}" line for a Resolution (confirmed or previewed): a default
+ * effect die (rule 20, rule 21, DP-22) shows as "default d4" rather than its size, since every
+ * default is a d4 and showing both would be redundant.
+ * @param {number} total
+ * @param {import("../rules/types.mjs").EffectDieEntry[]} effectDice
+ * @returns {string}
+ */
+function formatResolutionHeadline(total, effectDice) {
+  const effect = effectDice
+    .map(e => (e.isDefault ? game.i18n.localize("CORTEX.Chat.DefaultD4") : `d${e.size}`))
+    .join(", ");
+  return game.i18n.format("CORTEX.Chat.ResolvedHeadline", { total, effect });
+}
+
+/**
+ * Builds the Handlebars context for a poolRoll card: a one-line headline, every rolled die
+ * once with its current role, whether the current user may act on the card, and (while
+ * interactive) the live validateSelection check for the controls panel. No game logic here
+ * beyond calling module/rules/'s own evaluate(), validateSelection() and resolve() — the last
+ * only to preview a valid-but-unconfirmed selection's total and effect dice, never to store
+ * anything.
  * @param {ChatMessage} message
- * @returns {{botch: boolean, groups: {label: string, dice: CardDie[]}[], hitches: CardDie[],
- *   resolved: object|null, interactive: boolean,
+ * @returns {{botch: boolean, dice: CardDie[], headline: string, interactive: boolean,
  *   selection: {valid: boolean, errors: {code: string, message: string}[],
  *     extraResultsPaid: number, extraEffectDicePaid: number}|null}}
  */
@@ -57,62 +77,51 @@ export function preparePoolRollCardContext(message) {
   const resolvedState = system.state === "resolved";
   const interactive = !resolvedState && canEditPoolRollCard(message);
 
-  const roleOf = die => {
-    if ( system.selection.totalIds.includes(die.id) ) return "total";
-    if ( system.selection.effectDieIds.includes(die.id) ) return "effect";
-    return "unused";
-  };
+  // Roles come from the confirmed Resolution once resolved, otherwise the live selection.
+  const totalIds = resolvedState ? system.resolution.totalIds : system.selection.totalIds;
+  const effectDieIds = resolvedState
+    ? system.resolution.effectDice.map(e => e.dieId).filter(id => id !== null)
+    : system.selection.effectDieIds;
 
-  const byId = new Map(system.rolled.map(die => [die.id, die]));
-  const bySourceLabel = new Map();
-  const hitches = [];
-
-  for ( const die of system.rolled ) {
-    const card = {
-      id: die.id, label: die.source.label, size: die.size, sizeLabel: `d${die.size}`,
-      result: die.result, role: die.hitch ? "unused" : roleOf(die),
+  const dice = system.rolled.map(die => {
+    const role = die.hitch ? "hitch"
+      : totalIds.includes(die.id) ? "total"
+        : effectDieIds.includes(die.id) ? "effect" : "unused";
+    return {
+      id: die.id, label: die.source.label, size: die.size, result: die.result, role,
+      roleLabel: game.i18n.localize(ROLE_LABEL_KEYS[role]),
       clickable: interactive && !die.hitch && (die.state === "available")
     };
-    if ( die.hitch ) {
-      hitches.push(card);
-      continue;
+  });
+
+  const validation = interactive ? validateSelection(system.rolled, system.selection) : null;
+
+  let headline;
+  if ( botch ) {
+    headline = game.i18n.localize("CORTEX.Chat.Botch");
+  } else if ( resolvedState ) {
+    headline = formatResolutionHeadline(system.resolution.total, system.resolution.effectDice);
+  } else if ( !interactive ) {
+    headline = game.i18n.localize("CORTEX.Chat.Choosing");
+  } else {
+    const empty = (system.selection.totalIds.length === 0) && (system.selection.effectDieIds.length === 0);
+    if ( empty ) headline = game.i18n.localize("CORTEX.Chat.ChooseDice");
+    else if ( !validation.valid ) headline = game.i18n.localize(`CORTEX.Chat.Errors.${validation.errors[0].code}`);
+    else {
+      const preview = resolve(system.rolled, system.selection);
+      headline = `${formatResolutionHeadline(preview.total, preview.effectDice)} `
+        + game.i18n.localize("CORTEX.Chat.NotConfirmedSuffix");
     }
-    if ( !bySourceLabel.has(die.source.label) ) bySourceLabel.set(die.source.label, []);
-    bySourceLabel.get(die.source.label).push(card);
-  }
-  const groups = Array.from(bySourceLabel, ([label, dice]) => ({ label, dice }));
-
-  let resolved = null;
-  if ( !botch && resolvedState ) {
-    const totalDice = system.resolution.totalIds.map(id => {
-      const die = byId.get(id);
-      return { label: die.source.label, size: die.size, sizeLabel: `d${die.size}`, result: die.result };
-    });
-    const effectDice = system.resolution.effectDice.map(entry => {
-      const die = entry.dieId ? byId.get(entry.dieId) : null;
-      return {
-        label: die?.source.label ?? null,
-        size: entry.size,
-        sizeLabel: `d${entry.size}`,
-        result: die?.result ?? null,
-        isDefaultD4: entry.isDefault && (entry.size === 4)
-      };
-    });
-    resolved = { total: system.resolution.total, totalDice, effectDice };
   }
 
-  let selection = null;
-  if ( !resolvedState ) {
-    const { valid, errors } = validateSelection(system.rolled, system.selection);
-    selection = {
-      valid,
-      errors: errors.map(e => ({ code: e.code, message: game.i18n.localize(`CORTEX.Chat.Errors.${e.code}`) })),
-      extraResultsPaid: system.selection.extraResultsPaid,
-      extraEffectDicePaid: system.selection.extraEffectDicePaid
-    };
-  }
+  const selection = interactive ? {
+    valid: validation.valid,
+    errors: validation.errors.map(e => ({ code: e.code, message: game.i18n.localize(`CORTEX.Chat.Errors.${e.code}`) })),
+    extraResultsPaid: system.selection.extraResultsPaid,
+    extraEffectDicePaid: system.selection.extraEffectDicePaid
+  } : null;
 
-  return { botch, groups, hitches, resolved, interactive, selection };
+  return { botch, dice, headline, interactive, selection };
 }
 
 /**
@@ -144,10 +153,10 @@ function activatePoolRollCardListeners(message, content) {
 /**
  * Replaces the message body of poolRoll messages with the rendered card, and (for an
  * interactive, unresolved card) wires up its click handling. No game logic here: every value
- * shown already lives in message.system or comes from module/rules/'s evaluate() and
- * validateSelection(). Does nothing for a message whose content isn't visible to the current
- * user (a blind or whispered-away roll): Foundry's own hidden-content placeholder is left as
- * it is.
+ * shown already lives in message.system or comes from module/rules/'s evaluate(),
+ * validateSelection() and resolve(). Does nothing for a message whose content isn't visible to
+ * the current user (a blind or whispered-away roll): Foundry's own hidden-content placeholder
+ * is left as it is.
  * @param {ChatMessage} message
  * @param {HTMLElement} html
  */

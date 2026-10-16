@@ -1,40 +1,163 @@
-/* Cortex Prime system styles. Hot-reloaded in dev Foundry. */
+/*
+ * Cortex Prime system styles. Hot-reloaded in dev Foundry.
+ *
+ * poolroll-card die shapes reuse Foundry's own dN-grey.svg icons (as a CSS mask, so they can
+ * be tinted per role) rather than the default chat tooltip's grey-icon-plus-filter() hack,
+ * which only has two states and isn't theme-aware. Role fills and the headline use CSS
+ * variables confirmed defined in Foundry 14.369's foundry2.css: --color-text-primary (adapts
+ * light/dark, for free text), --color-cool-4 / --color-light-1 (unused and effect dice),
+ * --color-border-highlight / --color-text-dark-primary (the total die, and the effect ring),
+ * --color-dark-3 / --color-light-5 (hitches), --color-shadow-primary (the botch headline) and
+ * --font-awesome (the hitch mark). The fixed-palette pairs (everything but --color-text-primary)
+ * keep the same contrast in both themes because Foundry doesn't redefine them under
+ * body.theme-dark; only the semantic text variable does.
+ */
 
-.cortex-prime.poolroll-card .dice-group {
-  margin-bottom: 0.25em;
+.cortex-prime.poolroll-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4em;
 }
 
-.cortex-prime.poolroll-card .source-label {
+.cortex-prime.poolroll-card .headline {
   font-weight: bold;
+  color: var(--color-text-primary);
 }
 
-.cortex-prime.poolroll-card ul.dice,
-.cortex-prime.poolroll-card ul.total-dice,
-.cortex-prime.poolroll-card ul.effect-dice {
-  margin: 0.1em 0 0.25em;
-  padding-left: 1.25em;
+.cortex-prime.poolroll-card .headline.botch {
+  color: var(--color-shadow-primary);
 }
 
-.cortex-prime.poolroll-card .dice-group.hitches .source-label {
-  color: var(--color-text-dark-red, #6e1414);
+.cortex-prime.poolroll-card .dice-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6em;
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
 
-.cortex-prime.poolroll-card .die.hitch {
-  color: var(--color-text-dark-red, #6e1414);
+.cortex-prime.poolroll-card .die {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.15em;
+  width: 3em;
 }
 
-.cortex-prime.poolroll-card .resolution {
-  margin-top: 0.5em;
-  border-top: 1px solid var(--color-border-light-tertiary, #c9c7b8);
-  padding-top: 0.25em;
+.cortex-prime.poolroll-card .die.clickable {
+  cursor: var(--cursor-pointer);
 }
 
-.cortex-prime.poolroll-card .total {
+.cortex-prime.poolroll-card .die-shape {
+  position: relative;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   font-weight: bold;
+  font-size: var(--font-size-14);
+  mask-repeat: no-repeat;
+  mask-size: contain;
+  mask-position: center;
+  -webkit-mask-repeat: no-repeat;
+  -webkit-mask-size: contain;
+  -webkit-mask-position: center;
 }
 
-.cortex-prime.poolroll-card .botch {
-  margin-top: 0.5em;
-  font-weight: bold;
-  color: var(--color-text-dark-red, #6e1414);
+.cortex-prime.poolroll-card .die-shape.d4 {
+  mask-image: url("../../../icons/svg/d4-grey.svg");
+  -webkit-mask-image: url("../../../icons/svg/d4-grey.svg");
+}
+
+.cortex-prime.poolroll-card .die-shape.d6 {
+  mask-image: url("../../../icons/svg/d6-grey.svg");
+  -webkit-mask-image: url("../../../icons/svg/d6-grey.svg");
+}
+
+.cortex-prime.poolroll-card .die-shape.d8 {
+  mask-image: url("../../../icons/svg/d8-grey.svg");
+  -webkit-mask-image: url("../../../icons/svg/d8-grey.svg");
+}
+
+.cortex-prime.poolroll-card .die-shape.d10 {
+  mask-image: url("../../../icons/svg/d10-grey.svg");
+  -webkit-mask-image: url("../../../icons/svg/d10-grey.svg");
+}
+
+.cortex-prime.poolroll-card .die-shape.d12 {
+  mask-image: url("../../../icons/svg/d12-grey.svg");
+  -webkit-mask-image: url("../../../icons/svg/d12-grey.svg");
+}
+
+.cortex-prime.poolroll-card .die-label {
+  font-size: var(--font-size-10);
+  color: var(--color-text-primary);
+}
+
+/* Unused and effect dice share the same fill; the effect ring (below) is what sets effect
+   apart, drawn on the <li> rather than the masked .die-shape, since a mask also clips any
+   box-shadow/outline painted on the masked element itself. */
+.cortex-prime.poolroll-card .die.role-unused .die-shape,
+.cortex-prime.poolroll-card .die.role-effect .die-shape {
+  background-color: var(--color-cool-4);
+  color: var(--color-light-1);
+}
+
+.cortex-prime.poolroll-card .die.role-effect {
+  outline: 2px solid var(--color-border-highlight);
+  border-radius: 4px;
+}
+
+.cortex-prime.poolroll-card .die.role-total .die-shape {
+  background-color: var(--color-border-highlight);
+  color: var(--color-text-dark-primary);
+}
+
+.cortex-prime.poolroll-card .die.role-hitch .die-shape {
+  background-color: var(--color-dark-3);
+  color: var(--color-light-5);
+  opacity: 0.75;
+}
+
+.cortex-prime.poolroll-card .die.role-hitch .die-shape::after {
+  content: "\f06a";
+  font-family: var(--font-awesome);
+  font-size: var(--font-size-10);
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  color: var(--color-light-5);
+}
+
+.cortex-prime.poolroll-card .pool-selection {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35em;
+  margin-top: 0.25em;
+  border-top: 1px solid var(--color-cool-4);
+  padding-top: 0.35em;
+}
+
+.cortex-prime.poolroll-card .errors {
+  margin: 0;
+  padding-left: 1.1em;
+  color: var(--color-text-primary);
+  font-size: var(--font-size-12);
+}
+
+.cortex-prime.poolroll-card .shortcuts,
+.cortex-prime.poolroll-card .counters {
+  display: flex;
+  gap: 0.4em;
+  flex-wrap: wrap;
+}
+
+.cortex-prime.poolroll-card .counter {
+  display: flex;
+  align-items: center;
+  gap: 0.25em;
+  font-size: var(--font-size-12);
+  color: var(--color-text-primary);
 }

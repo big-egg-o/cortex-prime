@@ -2,16 +2,23 @@
   "CORTEX": {
     "SystemTitle": "Cortex Prime",
     "Chat": {
-      "Hitches": "Hitches",
-      "Total": "Total",
-      "EffectDice": "Effect Dice",
       "DefaultD4": "default d4",
       "Botch": "Botch — total 0",
+      "ChooseDice": "Choose dice",
+      "Choosing": "Choosing…",
+      "ResolvedHeadline": "{total} · effect {effect}",
+      "NotConfirmedSuffix": "(not confirmed)",
       "TwoHighest": "Two Highest",
       "BiggestEffect": "Biggest Effect",
-      "ExtraResultsPaid": "Extra Results Paid",
-      "ExtraEffectDicePaid": "Extra Effect Dice Paid",
+      "ExtraResultsPaid": "Extra Results Paid (temp)",
+      "ExtraEffectDicePaid": "Extra Effect Dice Paid (temp)",
       "Confirm": "Confirm",
+      "Role": {
+        "Total": "Total",
+        "Effect": "Effect",
+        "Hitch": "Hitch",
+        "Unused": "Unused"
+      },
       "Errors": {
         "HITCH_SELECTED": "A hitch can't be picked.",
         "UNAVAILABLE_DIE": "That die isn't available.",

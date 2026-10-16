@@ -3,7 +3,7 @@
  * @module tests/quench/card
  */
 
-import { applyResults, buildPool } from "../../module/rules/index.mjs";
+import { applyResults, buildPool, resolve, twoHighest } from "../../module/rules/index.mjs";
 import { postPoolRoll } from "../../module/dice/post-pool-roll.mjs";
 import { onRenderPoolRollMessage, renderPoolRollCard } from "../../module/dice/pool-roll-card.mjs";
 
@@ -13,6 +13,11 @@ import { onRenderPoolRollMessage, renderPoolRollCard } from "../../module/dice/p
  */
 function pool(sizes) {
   return buildPool(sizes.map(size => ({ size, source: { kind: "trait", label: `Trait d${size}` } })));
+}
+
+/** @returns {import("../../module/rules/types.mjs").Selection} an empty selection */
+function emptySelection() {
+  return { totalIds: [], effectDieIds: [], extraResultsPaid: 0, extraEffectDicePaid: 0, keepLimit: 2 };
 }
 
 /**
@@ -44,12 +49,10 @@ export function registerCardBatch(quench) {
           assert.equal(message.system.resolution, null);
           assert.deepEqual(message.system.toObject().pool, dice);
           assert.deepEqual(message.system.toObject().rolled, applyResults(dice, results));
-          assert.deepEqual(message.system.toObject().selection, {
-            totalIds: [], effectDieIds: [], extraResultsPaid: 0, extraEffectDicePaid: 0, keepLimit: 2
-          });
+          assert.deepEqual(message.system.toObject().selection, emptySelection());
         });
 
-        it("renders one entry per die, with hitches apart", async () => {
+        it("renders one entry per die; a hitch has no data-action and isn't clickable", async () => {
           const dice = pool([10, 8, 6, 4]);
           const results = [1, 6, 5, 3]; // the d10 is a hitch
 
@@ -58,11 +61,14 @@ export function registerCardBatch(quench) {
 
           const html = foundry.utils.parseHTML(await renderPoolRollCard(message));
           assert.lengthOf(html.querySelectorAll(".die"), 4);
-          assert.lengthOf(html.querySelectorAll(".hitches .die.hitch"), 1);
-          assert.lengthOf(html.querySelectorAll(".dice-group:not(.hitches) .die.hitch"), 0);
+
+          const hitches = html.querySelectorAll(".die.role-hitch");
+          assert.lengthOf(hitches, 1);
+          assert.isFalse(hitches[0].classList.contains("clickable"), "a hitch should never be clickable");
+          assert.isNull(hitches[0].getAttribute("data-action"), "a hitch should have no data-action");
         });
 
-        it("shows the botch line for an all-hitches roll (DP-09)", async () => {
+        it("shows the botch headline for an all-hitches roll (DP-09)", async () => {
           const dice = pool([8, 6, 4]);
           const results = [1, 1, 1]; // every die is a hitch: a botch
 
@@ -70,7 +76,43 @@ export function registerCardBatch(quench) {
           messages.push(message);
 
           const html = foundry.utils.parseHTML(await renderPoolRollCard(message));
-          assert.isNotNull(html.querySelector(".botch"), "the card should show a botch line");
+          const headline = html.querySelector(".headline.botch");
+          assert.isNotNull(headline, "the card should show a botch headline");
+          assert.equal(headline.textContent.trim(), game.i18n.localize("CORTEX.Chat.Botch"));
+        });
+
+        it("shows the resolved headline's total and effect die (DP-13)", async () => {
+          const dice = pool([10, 8, 6]);
+          const rolled = applyResults(dice, [7, 5, 3]);
+          const totalIds = twoHighest(rolled, 2);
+          const effectDieIds = rolled.filter(d => !totalIds.includes(d.id)).map(d => d.id);
+          const selection = { ...emptySelection(), totalIds, effectDieIds };
+          const resolution = resolve(rolled, selection);
+
+          const message = await ChatMessage.create({
+            type: "poolRoll",
+            system: { schemaVersion: 1, pool: dice, rolled, selection, resolution, state: "resolved" }
+          });
+          messages.push(message);
+
+          const html = foundry.utils.parseHTML(await renderPoolRollCard(message));
+          const expected = game.i18n.format("CORTEX.Chat.ResolvedHeadline", { total: 12, effect: "d6" });
+          assert.equal(html.querySelector(".headline").textContent.trim(), expected);
+          assert.isNull(html.querySelector(".pool-selection"), "a resolved card has no controls");
+        });
+
+        it('shows "Choosing…" and no controls for a non-interactive viewer', async () => {
+          const dice = pool([10, 8]);
+          const rolled = applyResults(dice, [7, 5]);
+          const stub = {
+            type: "poolRoll",
+            system: { rolled, selection: emptySelection(), resolution: null, state: "rolled" },
+            canUserModify: () => false
+          };
+
+          const html = foundry.utils.parseHTML(await renderPoolRollCard(stub));
+          assert.isNull(html.querySelector(".pool-selection"));
+          assert.equal(html.querySelector(".headline").textContent.trim(), game.i18n.localize("CORTEX.Chat.Choosing"));
         });
 
         it("leaves the content untouched for a message the current user can't see", () => {

@@ -1,52 +1,18 @@
 <div class="cortex-prime poolroll-card">
-  {{#each groups}}
-  <div class="dice-group">
-    <span class="source-label">{{ this.label }}</span>
-    <ul class="dice">
-      {{#each this.dice}}
-      <li class="die role-{{ this.role }}{{#if this.clickable}} clickable{{/if}}" data-die-id="{{ this.id }}"
-        {{#if this.clickable}}data-action="cycle-die"{{/if}}>
-        {{ this.sizeLabel }}: {{ this.result }}
-      </li>
-      {{/each}}
-    </ul>
-  </div>
-  {{/each}}
+  <header class="headline{{#if botch}} botch{{/if}}">{{ headline }}</header>
 
-  {{#if hitches.length}}
-  <div class="dice-group hitches">
-    <span class="source-label">{{ localize "CORTEX.Chat.Hitches" }}</span>
-    <ul class="dice">
-      {{#each hitches}}
-      <li class="die hitch" data-die-id="{{ this.id }}">{{ this.label }} {{ this.sizeLabel }}: {{ this.result }}</li>
-      {{/each}}
-    </ul>
-  </div>
-  {{/if}}
+  <ul class="dice-row">
+    {{#each dice}}
+    <li class="die role-{{ this.role }}{{#if this.clickable}} clickable{{/if}}" data-die-id="{{ this.id }}"
+      {{#if this.clickable}}data-action="cycle-die"{{/if}}
+      title="{{ this.roleLabel }}" aria-label="{{ this.roleLabel }}: {{ this.label }} d{{ this.size }} {{ this.result }}">
+      <span class="die-shape d{{ this.size }}">{{ this.result }}</span>
+      <span class="die-label">{{ this.label }}</span>
+    </li>
+    {{/each}}
+  </ul>
 
-  {{#if botch}}
-  <div class="botch">{{ localize "CORTEX.Chat.Botch" }}</div>
-  {{else if resolved}}
-  <div class="resolution">
-    <div class="total">{{ localize "CORTEX.Chat.Total" }}: {{ resolved.total }}</div>
-    <ul class="total-dice">
-      {{#each resolved.totalDice}}
-      <li>{{ this.label }} {{ this.sizeLabel }}: {{ this.result }}</li>
-      {{/each}}
-    </ul>
-    <div class="effect-label">{{ localize "CORTEX.Chat.EffectDice" }}</div>
-    <ul class="effect-dice">
-      {{#each resolved.effectDice}}
-      <li>
-        {{ this.sizeLabel }}{{#if this.result}}: {{ this.result }}{{/if}}
-        {{#if this.isDefaultD4}} ({{ localize "CORTEX.Chat.DefaultD4" }}){{/if}}
-      </li>
-      {{/each}}
-    </ul>
-  </div>
-  {{/if}}
-
-  {{#if selection}}
+  {{#if interactive}}
   <div class="pool-selection">
     {{#if selection.errors.length}}
     <ul class="errors">
@@ -56,11 +22,12 @@
     </ul>
     {{/if}}
 
-    {{#if interactive}}
+    {{#unless botch}}
     <div class="shortcuts">
       <button type="button" data-action="two-highest">{{ localize "CORTEX.Chat.TwoHighest" }}</button>
       <button type="button" data-action="biggest-effect">{{ localize "CORTEX.Chat.BiggestEffect" }}</button>
     </div>
+    {{/unless}}
 
     <div class="counters">
       <div class="counter" data-counter="extra-results">
@@ -80,7 +47,6 @@
     <button type="button" class="confirm" data-action="confirm" {{#unless selection.valid}}disabled{{/unless}}>
       {{ localize "CORTEX.Chat.Confirm" }}
     </button>
-    {{/if}}
   </div>
   {{/if}}
 </div>
