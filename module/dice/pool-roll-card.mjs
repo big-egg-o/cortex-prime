@@ -184,7 +184,8 @@ function activatePoolRollCardListeners(message, content) {
     const target = event.target.closest("[data-action]");
     if ( !target ) return;
     const { action, ...rest } = target.dataset;
-    applyCardChange(message, { action, ...rest }).catch(err => ui.notifications.error(err.message));
+    applyCardChange(message, { action, ...rest })
+      .catch(err => ui.notifications.error(game.i18n.localize(`CORTEX.Chat.Errors.${err.message}`)));
   });
 }
 
