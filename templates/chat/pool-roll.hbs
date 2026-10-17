@@ -3,8 +3,8 @@
 
   <ul class="dice-row">
     {{#each dice}}
-    <li class="die role-{{ this.role }}{{#if this.clickable}} clickable{{/if}}" data-die-id="{{ this.id }}"
-      {{#if this.clickable}}data-action="cycle-die"{{/if}}
+    <li class="die role-{{ this.role }}{{#if this.clickable}} clickable{{/if}}{{#if this.marked}} marked-for-reroll{{/if}}"
+      data-die-id="{{ this.id }}" {{#if this.clickable}}data-action="{{ this.action }}"{{/if}}
       title="{{ this.roleLabel }}" aria-label="{{ this.roleLabel }}: {{ this.label }} d{{ this.size }} {{ this.result }}">
       <span class="die-shape d{{ this.size }}"><span class="die-result">{{ this.result }}</span></span>
       <span class="die-label">{{ this.label }}</span>
@@ -78,6 +78,19 @@
     <button type="button" data-action="overflow-choice" data-kind="new-d6">{{ overflowChoice.newDieLabel }}</button>
     {{#if overflowChoice.takeOutAvailable}}
     <button type="button" data-action="overflow-choice" data-kind="take-out">{{ overflowChoice.takeOutLabel }}</button>
+    {{/if}}
+  </div>
+  {{/if}}
+
+  {{#if reroll}}
+  <div class="reroll-controls">
+    <button type="button" class="{{#if reroll.active}}active{{/if}}" data-action="toggle-reroll-mode">
+      {{ localize "CORTEX.Chat.Reroll" }}
+    </button>
+    {{#if reroll.active}}
+    <button type="button" data-action="reroll" {{#unless reroll.canReroll}}disabled{{/unless}}>
+      {{ localize "CORTEX.Chat.RerollMarked" }}
+    </button>
     {{/if}}
   </div>
   {{/if}}

@@ -28,3 +28,22 @@ export async function rollPool(pool) {
   const rolled = applyResults(pool, results);
   return { roll, rolled };
 }
+
+/**
+ * Rolls just the given dice again with Foundry's own dice (Decisions ADR-009, ADR-017): one
+ * `1dN` term per die, in the order of `dieIds`, each term's size taken from the matching
+ * RolledDie — not the engine's business, so this stays outside module/rules/.
+ * @param {import("../rules/types.mjs").RolledDie[]} rolled
+ * @param {string[]} dieIds
+ * @returns {Promise<{roll: Roll, results: Record<string, number>}>}
+ */
+export async function rerollDice(rolled, dieIds) {
+  const byId = new Map(rolled.map(d => [d.id, d]));
+  const formula = dieIds.map(id => `1d${byId.get(id).size}`).join(" + ");
+  const roll = new Roll(formula);
+  await roll.evaluate();
+
+  const results = {};
+  dieIds.forEach((id, i) => { results[id] = roll.dice[i].results[0].result; });
+  return { roll, results };
+}

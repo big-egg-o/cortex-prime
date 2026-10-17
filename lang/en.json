@@ -19,6 +19,8 @@
       "OverflowPending": "Choose the overflow…",
       "OverflowLeftover": "Use d{size}",
       "OverflowNewDie": "New d{size}",
+      "Reroll": "Reroll",
+      "RerollMarked": "Reroll Marked",
       "Role": {
         "Total": "Total",
         "Effect": "Effect",

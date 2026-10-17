@@ -11,6 +11,7 @@ import { registerCardBatch } from "./card.mjs";
 import { registerChatBatch } from "./chat.mjs";
 import { registerDiceBatch } from "./dice.mjs";
 import { registerEffectBatch } from "./effect.mjs";
+import { registerRerollBatch } from "./reroll.mjs";
 import { registerSelectionBatch } from "./selection.mjs";
 
 /**
@@ -23,6 +24,7 @@ export function registerQuenchBatches(quench) {
   registerCardBatch(quench);
   registerSelectionBatch(quench);
   registerEffectBatch(quench);
+  registerRerollBatch(quench);
 
   quench.registerBatch(
     "cortex-prime.smoke",

@@ -7,20 +7,25 @@
  */
 
 import {
-  applyOverflowChoice, largestEligible, resolve, stepEffectDie, twoHighest, validateSelection
+  applyOverflowChoice, applyRerolls, largestEligible, rerollableIds, resolve, stepEffectDie,
+  twoHighest, validateSelection
 } from "../rules/index.mjs";
+import { rerollDice } from "./roll-pool.mjs";
 
 /**
  * @typedef {Object} CardChange
  * @property {'cycle-die'|'two-highest'|'biggest-effect'|'increment-extra-results'|
  *   'decrement-extra-results'|'increment-extra-effect-dice'|'decrement-extra-effect-dice'|
- *   'confirm'|'step-effect-die'|'overflow-choice'} action
+ *   'confirm'|'step-effect-die'|'overflow-choice'|'reroll'} action
  * @property {string} [dieId] - required for 'cycle-die', and for 'overflow-choice' with kind
  *   "leftover"
  * @property {string|number} [effectIndex] - required for 'step-effect-die'
  * @property {string|number} [steps] - required for 'step-effect-die'; must be 1 or -1
  * @property {string} [kind] - required for 'overflow-choice'; one of 'leftover'|'new-d6'|
  *   'take-out'
+ * @property {string[]} [dieIds] - required for 'reroll'
+ * @property {Record<string, number>} [results] - 'reroll', dev/test only: skip Foundry's dice
+ *   and use these results directly, the same way postPoolRoll's `results` param does
  */
 
 /**
@@ -246,11 +251,60 @@ async function overflowChoiceChange(message, change) {
 }
 
 /**
+ * Validates a "reroll" change's own shape: there must be at least one id, and every id must
+ * be one rerollableIds offers (rule 26, DP-28) — a hitch not yet activated is fine, an
+ * activated one or an unknown id isn't. Returns null to refuse silently otherwise.
+ * @param {import("../data/chat/pool-roll.mjs").default} system
+ * @param {CardChange} change
+ * @returns {string[]|null}
+ */
+function parseRerollChange(system, change) {
+  const dieIds = Array.isArray(change.dieIds) ? change.dieIds : [];
+  if ( dieIds.length === 0 ) return null;
+  const rerollable = new Set(rerollableIds(system.rolled));
+  return dieIds.every(id => rerollable.has(id)) ? dieIds : null;
+}
+
+/**
+ * Rerolls the given dice before confirming (Decisions ADR-017: rerolls only happen while
+ * state is "rolled", are free in M3, and clear the selection since the results it referred to
+ * changed). Appends the new Roll to message.rolls, the same way postPoolRoll's own Roll is
+ * stored. Refuses silently once resolved, or on a malformed change.
+ * @param {ChatMessage} message
+ * @param {CardChange} change
+ * @returns {Promise<void>}
+ */
+async function rerollChange(message, change) {
+  const system = message.system;
+  if ( system.state !== "rolled" ) return;
+
+  const dieIds = parseRerollChange(system, change);
+  if ( !dieIds ) return;
+
+  let roll = null;
+  let results = change.results;
+  if ( !results ) {
+    const rerolled = await rerollDice(system.rolled, dieIds);
+    roll = rerolled.roll;
+    results = rerolled.results;
+  }
+
+  const rolled = applyRerolls(system.rolled, results);
+  const updateData = {
+    "system.rolled": rolled,
+    "system.selection": { ...system.selection, totalIds: [], effectDieIds: [] }
+  };
+  if ( roll ) updateData.rolls = [...message.rolls, roll];
+  await message.update(updateData);
+}
+
+/**
  * Applies one card interaction to a poolRoll message (ADR-013). Refuses outright — no
  * `message.update()` call — when the current user may not edit the card, when a die click
  * targets a hitch or an unavailable die, when "confirm" is attempted on an invalid selection,
- * or when a step/overflow change doesn't name a real slot, step or offered option. Every
- * selection change is stored even while incomplete, so other viewers see picks live as
+ * when a step/overflow/reroll change doesn't name a real slot, step, offered option or
+ * rerollable id, or when a reroll or step/overflow change is attempted in the wrong state.
+ * Every selection change is stored even while incomplete, so other viewers see picks live as
  * they're made; see stepEffectDieChange for the one change that's refused by throwing instead
  * of silently, because it's an open rules question (RQ-009) rather than an ordinary mistake.
  * @param {ChatMessage} message
@@ -263,6 +317,7 @@ export async function applyCardChange(message, change) {
   if ( change.action === "confirm" ) return confirm(message, message.system);
   if ( change.action === "step-effect-die" ) return stepEffectDieChange(message, change);
   if ( change.action === "overflow-choice" ) return overflowChoiceChange(message, change);
+  if ( change.action === "reroll" ) return rerollChange(message, change);
 
   const selection = nextSelection(message.system, change);
   if ( !selection ) return;

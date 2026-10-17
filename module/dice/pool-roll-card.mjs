@@ -7,7 +7,7 @@
  * @module dice/pool-roll-card
  */
 
-import { evaluate, resolve, validateSelection } from "../rules/index.mjs";
+import { evaluate, rerollableIds, resolve, validateSelection } from "../rules/index.mjs";
 import { applyCardChange, canEditPoolRollCard } from "./card-actions.mjs";
 
 const TEMPLATE = "systems/cortex-prime/templates/chat/pool-roll.hbs";
@@ -15,6 +15,19 @@ const TEMPLATE = "systems/cortex-prime/templates/chat/pool-roll.hbs";
 // Same options renderTemplate uses (client/applications/handlebars.mjs): resolving prototype
 // methods/properties is safe here since it only happens client-side.
 const HANDLEBARS_OPTIONS = { allowProtoMethodsByDefault: true, allowProtoPropertiesByDefault: true };
+
+/**
+ * Whether a card is in reroll-marking mode, and which dice are marked (Decisions ADR-017):
+ * purely local to this browser tab, never written to the message, so it's kept here rather
+ * than in message.system. Keyed by message id; cleared entirely once a reroll is attempted.
+ * @type {Map<string, {active: boolean, marked: Set<string>}>}
+ */
+const rerollUiState = new Map();
+
+/** @param {string} messageId @returns {{active: boolean, marked: Set<string>}} */
+function getRerollState(messageId) {
+  return rerollUiState.get(messageId) ?? { active: false, marked: new Set() };
+}
 
 /** Localization keys for each die role, shown as a title/aria-label on the die. */
 const ROLE_LABEL_KEYS = {
@@ -33,6 +46,8 @@ const ROLE_LABEL_KEYS = {
  * @property {'total'|'effect'|'unused'|'hitch'} role
  * @property {string} roleLabel - localized, for the die's title/aria-label
  * @property {boolean} clickable
+ * @property {'cycle-die'|'toggle-reroll-mark'} action
+ * @property {boolean} marked - marked for reroll (only meaningful in reroll mode)
  */
 
 /**
@@ -70,7 +85,8 @@ function formatEffectPhrase(effectDice) {
  *     extraResultsPaid: number, extraEffectDicePaid: number}|null,
  *   effectControls: {index: number, size: number, canStepDown: boolean}[]|null,
  *   overflowChoice: {leftovers: {dieId: string, label: string}[], newDieLabel: string,
- *     takeOutAvailable: boolean, takeOutLabel: string}|null}}
+ *     takeOutAvailable: boolean, takeOutLabel: string}|null,
+ *   reroll: {active: boolean, canReroll: boolean}|null}}
  */
 export function preparePoolRollCardContext(message) {
   const system = message.system;
@@ -85,14 +101,23 @@ export function preparePoolRollCardContext(message) {
     ? system.resolution.effectDice.map(e => e.dieId).filter(id => id !== null)
     : system.selection.effectDieIds;
 
+  // Reroll-marking mode (ADR-017) changes what a die click means and which dice can be
+  // clicked at all, so it overrides the normal cycle-die clickability below.
+  const rerollState = interactive ? getRerollState(message.id) : null;
+  const rerollableSet = rerollState?.active ? new Set(rerollableIds(system.rolled)) : null;
+
   const dice = system.rolled.map(die => {
     const role = die.hitch ? "hitch"
       : totalIds.includes(die.id) ? "total"
         : effectDieIds.includes(die.id) ? "effect" : "unused";
+    const clickable = rerollableSet
+      ? rerollableSet.has(die.id)
+      : interactive && !die.hitch && (die.state === "available");
     return {
       id: die.id, label: die.source.label, size: die.size, result: die.result, role,
       roleLabel: game.i18n.localize(ROLE_LABEL_KEYS[role]),
-      clickable: interactive && !die.hitch && (die.state === "available")
+      clickable, action: rerollableSet ? "toggle-reroll-mark" : "cycle-die",
+      marked: Boolean(rerollState?.active && rerollState.marked.has(die.id))
     };
   });
 
@@ -156,7 +181,13 @@ export function preparePoolRollCardContext(message) {
     }
   }
 
-  return { botch, dice, headline, interactive, selection, effectControls, overflowChoice };
+  // Reroll controls (rule 25-26, ADR-017): available any time the card is interactive,
+  // unlike effectControls/overflowChoice — a botch can be rerolled too (DP-29).
+  const reroll = interactive
+    ? { active: Boolean(rerollState.active), canReroll: rerollState.marked.size > 0 }
+    : null;
+
+  return { botch, dice, headline, interactive, selection, effectControls, overflowChoice, reroll };
 }
 
 /**
@@ -170,12 +201,31 @@ export async function renderPoolRollCard(message) {
 }
 
 /**
- * Attaches one delegated click listener to a rendered card's content element, dispatching
- * every `[data-action]` click to module/dice/card-actions.mjs. No game logic here: the
- * listener only forwards the clicked element's whole dataset and calls applyCardChange with
- * it. Catches a thrown refusal (currently only EFFECT_DIE_D4_STEP_DOWN, RQ-009) so it reaches
- * the roller as a notification rather than an unhandled rejection; every other refusal is
- * already silent by design (card-actions.mjs).
+ * Re-renders a card's content in place from message.system and the local reroll-ui state,
+ * without touching the message itself. Used for the two reroll-mode interactions that are
+ * purely local (ADR-017: toggling the mode, marking/unmarking a die) — the listener stays
+ * attached to `content` itself, so replacing only its children doesn't lose it.
+ * @param {ChatMessage} message
+ * @param {HTMLElement} content
+ */
+function rerenderCardContent(message, content) {
+  const compiled = Handlebars.partials[TEMPLATE];
+  if ( typeof compiled === "function" ) {
+    content.innerHTML = compiled(preparePoolRollCardContext(message), HANDLEBARS_OPTIONS);
+  } else {
+    renderPoolRollCard(message).then(rendered => { content.innerHTML = rendered; });
+  }
+}
+
+/**
+ * Attaches one delegated click listener to a rendered card's content element. Two actions are
+ * purely local reroll-ui state (ADR-017) and never reach module/dice/card-actions.mjs:
+ * toggling reroll mode and marking/unmarking a die, each followed by an in-place re-render.
+ * Everything else — including "reroll" itself, once the marked ids are gathered — is
+ * forwarded verbatim (the clicked element's whole dataset) to applyCardChange(). Catches a
+ * thrown refusal (currently only EFFECT_DIE_D4_STEP_DOWN, RQ-009) so it reaches the roller as
+ * a notification rather than an unhandled rejection; every other refusal is already silent by
+ * design (card-actions.mjs).
  * @param {ChatMessage} message
  * @param {HTMLElement} content
  */
@@ -184,7 +234,31 @@ function activatePoolRollCardListeners(message, content) {
     const target = event.target.closest("[data-action]");
     if ( !target ) return;
     const { action, ...rest } = target.dataset;
-    applyCardChange(message, { action, ...rest })
+
+    if ( action === "toggle-reroll-mode" ) {
+      const state = getRerollState(message.id);
+      state.active = !state.active;
+      state.marked.clear();
+      rerollUiState.set(message.id, state);
+      return rerenderCardContent(message, content);
+    }
+
+    if ( action === "toggle-reroll-mark" ) {
+      const state = getRerollState(message.id);
+      if ( state.marked.has(rest.dieId) ) state.marked.delete(rest.dieId); else state.marked.add(rest.dieId);
+      rerollUiState.set(message.id, state);
+      return rerenderCardContent(message, content);
+    }
+
+    if ( action === "reroll" ) {
+      const dieIds = [...getRerollState(message.id).marked];
+      rerollUiState.delete(message.id); // leaving reroll mode clears the marks (ADR-017)
+      rerenderCardContent(message, content);
+      return applyCardChange(message, { action, dieIds })
+        .catch(err => ui.notifications.error(game.i18n.localize(`CORTEX.Chat.Errors.${err.message}`)));
+    }
+
+    return applyCardChange(message, { action, ...rest })
       .catch(err => ui.notifications.error(game.i18n.localize(`CORTEX.Chat.Errors.${err.message}`)));
   });
 }

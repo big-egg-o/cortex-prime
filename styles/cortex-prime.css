@@ -234,3 +234,23 @@
 .cortex-prime.poolroll-card .overflow-choice button {
   font-size: var(--font-size-12);
 }
+
+/* Marked-for-reroll wins over the role-effect ring when a die happens to be both: in reroll
+   mode the dice that are about to change are the more useful thing to see. */
+.cortex-prime.poolroll-card .die.marked-for-reroll {
+  outline: 2px dashed var(--color-shadow-primary);
+  border-radius: 4px;
+}
+
+.cortex-prime.poolroll-card .reroll-controls {
+  display: flex;
+  gap: 0.4em;
+  margin-top: 0.25em;
+  border-top: 1px solid var(--color-cool-4);
+  padding-top: 0.35em;
+}
+
+.cortex-prime.poolroll-card .reroll-controls button.active {
+  border-color: var(--color-border-highlight);
+  color: var(--color-border-highlight);
+}
