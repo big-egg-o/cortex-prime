@@ -45,18 +45,16 @@ export function preloadPoolRollCardTemplate() {
 }
 
 /**
- * The "{total} · effect {dice}" line for a Resolution (confirmed or previewed): a default
- * effect die (rule 20, rule 21, DP-22) shows as "default d4" rather than its size, since every
- * default is a d4 and showing both would be redundant.
- * @param {number} total
+ * The "effect {dice}" part of a headline: a default effect die (rule 20, rule 21, DP-22) shows
+ * as "default d4" rather than its size, since every default is a d4 and showing both would be
+ * redundant.
  * @param {import("../rules/types.mjs").EffectDieEntry[]} effectDice
  * @returns {string}
  */
-function formatResolutionHeadline(total, effectDice) {
-  const effect = effectDice
+function formatEffectPhrase(effectDice) {
+  return effectDice
     .map(e => (e.isDefault ? game.i18n.localize("CORTEX.Chat.DefaultD4") : `d${e.size}`))
     .join(", ");
-  return game.i18n.format("CORTEX.Chat.ResolvedHeadline", { total, effect });
 }
 
 /**
@@ -97,26 +95,32 @@ export function preparePoolRollCardContext(message) {
   const validation = interactive ? validateSelection(system.rolled, system.selection) : null;
 
   let headline;
+  let listedErrors = validation?.errors ?? [];
   if ( botch ) {
     headline = game.i18n.localize("CORTEX.Chat.Botch");
   } else if ( resolvedState ) {
-    headline = formatResolutionHeadline(system.resolution.total, system.resolution.effectDice);
+    headline = game.i18n.format("CORTEX.Chat.ResolvedHeadline", {
+      total: system.resolution.total, effect: formatEffectPhrase(system.resolution.effectDice)
+    });
   } else if ( !interactive ) {
     headline = game.i18n.localize("CORTEX.Chat.Choosing");
   } else {
     const empty = (system.selection.totalIds.length === 0) && (system.selection.effectDieIds.length === 0);
     if ( empty ) headline = game.i18n.localize("CORTEX.Chat.ChooseDice");
-    else if ( !validation.valid ) headline = game.i18n.localize(`CORTEX.Chat.Errors.${validation.errors[0].code}`);
-    else {
+    else if ( !validation.valid ) {
+      headline = game.i18n.localize(`CORTEX.Chat.Errors.${validation.errors[0].code}`);
+      listedErrors = validation.errors.slice(1); // the headline already shows the first
+    } else {
       const preview = resolve(system.rolled, system.selection);
-      headline = `${formatResolutionHeadline(preview.total, preview.effectDice)} `
-        + game.i18n.localize("CORTEX.Chat.NotConfirmedSuffix");
+      headline = game.i18n.format("CORTEX.Chat.PreviewHeadline", {
+        total: preview.total, effect: formatEffectPhrase(preview.effectDice)
+      });
     }
   }
 
   const selection = interactive ? {
     valid: validation.valid,
-    errors: validation.errors.map(e => ({ code: e.code, message: game.i18n.localize(`CORTEX.Chat.Errors.${e.code}`) })),
+    errors: listedErrors.map(e => ({ code: e.code, message: game.i18n.localize(`CORTEX.Chat.Errors.${e.code}`) })),
     extraResultsPaid: system.selection.extraResultsPaid,
     extraEffectDicePaid: system.selection.extraEffectDicePaid
   } : null;

@@ -7,7 +7,7 @@
       "ChooseDice": "Choose dice",
       "Choosing": "Choosing…",
       "ResolvedHeadline": "{total} · effect {effect}",
-      "NotConfirmedSuffix": "(not confirmed)",
+      "PreviewHeadline": "{total} · effect {effect} (not confirmed)",
       "TwoHighest": "Two Highest",
       "BiggestEffect": "Biggest Effect",
       "ExtraResultsPaid": "Extra Results Paid (temp)",

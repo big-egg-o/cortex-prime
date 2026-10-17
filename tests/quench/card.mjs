@@ -101,6 +101,23 @@ export function registerCardBatch(quench) {
           assert.isNull(html.querySelector(".pool-selection"), "a resolved card has no controls");
         });
 
+        it("shows a preview headline for a valid, unconfirmed selection (DP-13)", async () => {
+          const dice = pool([10, 8, 6]);
+          const results = [7, 5, 3];
+
+          const message = await postPoolRoll({ pool: dice, results });
+          messages.push(message);
+
+          const [tenId, eightId, sixId] = message.system.pool.map(d => d.id);
+          await message.update({
+            "system.selection": { ...emptySelection(), totalIds: [tenId, eightId], effectDieIds: [sixId] }
+          });
+
+          const html = foundry.utils.parseHTML(await renderPoolRollCard(message));
+          const expected = game.i18n.format("CORTEX.Chat.PreviewHeadline", { total: 12, effect: "d6" });
+          assert.equal(html.querySelector(".headline").textContent.trim(), expected);
+        });
+
         it('shows "Choosing…" and no controls for a non-interactive viewer', async () => {
           const dice = pool([10, 8]);
           const rolled = applyResults(dice, [7, 5]);

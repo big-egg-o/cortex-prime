@@ -58,6 +58,15 @@
   justify-content: center;
   font-weight: bold;
   font-size: var(--font-size-14);
+}
+
+/* The role fill and the die silhouette live on this layer alone (z-index: 0) so the mask
+   never clips the result number or the hitch mark, which sit above it, unmasked. */
+.cortex-prime.poolroll-card .die-shape::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
   mask-repeat: no-repeat;
   mask-size: contain;
   mask-position: center;
@@ -66,29 +75,34 @@
   -webkit-mask-position: center;
 }
 
-.cortex-prime.poolroll-card .die-shape.d4 {
+.cortex-prime.poolroll-card .die-shape.d4::before {
   mask-image: url("../../../icons/svg/d4-grey.svg");
   -webkit-mask-image: url("../../../icons/svg/d4-grey.svg");
 }
 
-.cortex-prime.poolroll-card .die-shape.d6 {
+.cortex-prime.poolroll-card .die-shape.d6::before {
   mask-image: url("../../../icons/svg/d6-grey.svg");
   -webkit-mask-image: url("../../../icons/svg/d6-grey.svg");
 }
 
-.cortex-prime.poolroll-card .die-shape.d8 {
+.cortex-prime.poolroll-card .die-shape.d8::before {
   mask-image: url("../../../icons/svg/d8-grey.svg");
   -webkit-mask-image: url("../../../icons/svg/d8-grey.svg");
 }
 
-.cortex-prime.poolroll-card .die-shape.d10 {
+.cortex-prime.poolroll-card .die-shape.d10::before {
   mask-image: url("../../../icons/svg/d10-grey.svg");
   -webkit-mask-image: url("../../../icons/svg/d10-grey.svg");
 }
 
-.cortex-prime.poolroll-card .die-shape.d12 {
+.cortex-prime.poolroll-card .die-shape.d12::before {
   mask-image: url("../../../icons/svg/d12-grey.svg");
   -webkit-mask-image: url("../../../icons/svg/d12-grey.svg");
+}
+
+.cortex-prime.poolroll-card .die-result {
+  position: relative;
+  z-index: 1;
 }
 
 .cortex-prime.poolroll-card .die-label {
@@ -101,8 +115,12 @@
    box-shadow/outline painted on the masked element itself. */
 .cortex-prime.poolroll-card .die.role-unused .die-shape,
 .cortex-prime.poolroll-card .die.role-effect .die-shape {
-  background-color: var(--color-cool-4);
   color: var(--color-light-1);
+}
+
+.cortex-prime.poolroll-card .die.role-unused .die-shape::before,
+.cortex-prime.poolroll-card .die.role-effect .die-shape::before {
+  background-color: var(--color-cool-4);
 }
 
 .cortex-prime.poolroll-card .die.role-effect {
@@ -111,21 +129,29 @@
 }
 
 .cortex-prime.poolroll-card .die.role-total .die-shape {
-  background-color: var(--color-border-highlight);
   color: var(--color-text-dark-primary);
 }
 
+.cortex-prime.poolroll-card .die.role-total .die-shape::before {
+  background-color: var(--color-border-highlight);
+}
+
 .cortex-prime.poolroll-card .die.role-hitch .die-shape {
-  background-color: var(--color-dark-3);
   color: var(--color-light-5);
   opacity: 0.75;
+}
+
+.cortex-prime.poolroll-card .die.role-hitch .die-shape::before {
+  background-color: var(--color-dark-3);
 }
 
 .cortex-prime.poolroll-card .die.role-hitch .die-shape::after {
   content: "\f06a";
   font-family: var(--font-awesome);
+  font-weight: 900;
   font-size: var(--font-size-10);
   position: absolute;
+  z-index: 1;
   top: -4px;
   right: -4px;
   color: var(--color-light-5);

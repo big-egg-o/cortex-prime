@@ -6,7 +6,7 @@
     <li class="die role-{{ this.role }}{{#if this.clickable}} clickable{{/if}}" data-die-id="{{ this.id }}"
       {{#if this.clickable}}data-action="cycle-die"{{/if}}
       title="{{ this.roleLabel }}" aria-label="{{ this.roleLabel }}: {{ this.label }} d{{ this.size }} {{ this.result }}">
-      <span class="die-shape d{{ this.size }}">{{ this.result }}</span>
+      <span class="die-shape d{{ this.size }}"><span class="die-result">{{ this.result }}</span></span>
       <span class="die-label">{{ this.label }}</span>
     </li>
     {{/each}}
