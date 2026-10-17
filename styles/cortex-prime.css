@@ -1,17 +1,196 @@
 /*
  * Cortex Prime system styles. Hot-reloaded in dev Foundry.
  *
- * poolroll-card die shapes reuse Foundry's own dN-grey.svg icons (as a CSS mask, so they can
- * be tinted per role) rather than the default chat tooltip's grey-icon-plus-filter() hack,
- * which only has two states and isn't theme-aware. Role fills and the headline use CSS
- * variables confirmed defined in Foundry 14.369's foundry2.css: --color-text-primary (adapts
- * light/dark, for free text), --color-cool-4 / --color-light-1 (unused and effect dice),
- * --color-border-highlight / --color-text-dark-primary (the total die, and the effect ring),
- * --color-dark-3 / --color-light-5 (hitches), --color-shadow-primary (the botch headline) and
- * --font-awesome (the hitch mark). The fixed-palette pairs (everything but --color-text-primary)
- * keep the same contrast in both themes because Foundry doesn't redefine them under
- * body.theme-dark; only the semantic text variable does.
+ * Die shapes (shared by the poolroll-card chat card and the pool builder, under the plain
+ * .cortex-prime prefix below) reuse Foundry's own dN-grey.svg icons as a CSS mask, so they
+ * can be tinted per role, rather than the default chat tooltip's grey-icon-plus-filter() hack,
+ * which only has two states and isn't theme-aware. Role fills and text use CSS variables
+ * confirmed defined in Foundry 14.369's foundry2.css: --color-text-primary (adapts light/dark,
+ * for free text), --color-cool-4 / --color-light-1 (unused and effect dice), --color-border-
+ * highlight / --color-text-dark-primary (the total die, and the effect ring), --color-dark-3 /
+ * --color-light-5 (hitches), --color-shadow-primary (the botch headline, marked-for-reroll)
+ * and --font-awesome (icon-only buttons, the hitch mark). The fixed-palette pairs (everything
+ * but --color-text-primary) keep the same contrast in both themes because Foundry doesn't
+ * redefine them under body.theme-dark; only the semantic text variable does.
  */
+
+/* ---------------------------------------- */
+/*  Shared die primitives                   */
+/* ---------------------------------------- */
+
+.cortex-prime .dice-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6em;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cortex-prime .die {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.15em;
+  width: 3em;
+}
+
+.cortex-prime .die.clickable {
+  cursor: var(--cursor-pointer);
+}
+
+.cortex-prime .die-shape {
+  position: relative;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: bold;
+  font-size: var(--font-size-14);
+}
+
+/* The role fill and the die silhouette live on this layer alone (z-index: 0) so the mask
+   never clips the result number or the hitch mark, which sit above it, unmasked. */
+.cortex-prime .die-shape::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  mask-repeat: no-repeat;
+  mask-size: contain;
+  mask-position: center;
+  -webkit-mask-repeat: no-repeat;
+  -webkit-mask-size: contain;
+  -webkit-mask-position: center;
+}
+
+.cortex-prime .die-shape.d4::before {
+  mask-image: url("../../../icons/svg/d4-grey.svg");
+  -webkit-mask-image: url("../../../icons/svg/d4-grey.svg");
+}
+
+.cortex-prime .die-shape.d6::before {
+  mask-image: url("../../../icons/svg/d6-grey.svg");
+  -webkit-mask-image: url("../../../icons/svg/d6-grey.svg");
+}
+
+.cortex-prime .die-shape.d8::before {
+  mask-image: url("../../../icons/svg/d8-grey.svg");
+  -webkit-mask-image: url("../../../icons/svg/d8-grey.svg");
+}
+
+.cortex-prime .die-shape.d10::before {
+  mask-image: url("../../../icons/svg/d10-grey.svg");
+  -webkit-mask-image: url("../../../icons/svg/d10-grey.svg");
+}
+
+.cortex-prime .die-shape.d12::before {
+  mask-image: url("../../../icons/svg/d12-grey.svg");
+  -webkit-mask-image: url("../../../icons/svg/d12-grey.svg");
+}
+
+.cortex-prime .die-result {
+  position: relative;
+  z-index: 1;
+}
+
+/* Unused and effect dice share the same fill; the effect ring (below) is what sets effect
+   apart, drawn on the <li> rather than the masked .die-shape, since a mask also clips any
+   box-shadow/outline painted on the masked element itself. */
+.cortex-prime .die.role-unused .die-shape,
+.cortex-prime .die.role-effect .die-shape {
+  color: var(--color-light-1);
+}
+
+.cortex-prime .die.role-unused .die-shape::before,
+.cortex-prime .die.role-effect .die-shape::before {
+  background-color: var(--color-cool-4);
+}
+
+.cortex-prime .die.role-effect {
+  outline: 2px solid var(--color-border-highlight);
+  border-radius: 4px;
+}
+
+.cortex-prime .die.role-total .die-shape {
+  color: var(--color-text-dark-primary);
+}
+
+.cortex-prime .die.role-total .die-shape::before {
+  background-color: var(--color-border-highlight);
+}
+
+.cortex-prime .die.role-hitch .die-shape {
+  color: var(--color-light-5);
+  opacity: 0.75;
+}
+
+.cortex-prime .die.role-hitch .die-shape::before {
+  background-color: var(--color-dark-3);
+}
+
+.cortex-prime .die.role-hitch .die-shape::after {
+  content: "\f06a";
+  font-family: var(--font-awesome);
+  font-weight: 900;
+  font-size: var(--font-size-10);
+  position: absolute;
+  z-index: 1;
+  top: -4px;
+  right: -4px;
+  color: var(--color-light-5);
+}
+
+/* Marked-for-reroll wins over the role-effect ring when a die happens to be both: in reroll
+   mode the dice that are about to change are the more useful thing to see. */
+.cortex-prime .die.marked-for-reroll {
+  outline: 2px dashed var(--color-shadow-primary);
+  border-radius: 4px;
+}
+
+/* Step/double/remove buttons are icon-only: the glyph is drawn the same way as the hitch mark
+   (content + font-awesome), not a class-based <i>, so no extra icon font needs loading. */
+.cortex-prime .icon-button {
+  width: 1.4em;
+  height: 1.4em;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.cortex-prime .icon-button::before {
+  font-family: var(--font-awesome);
+  font-weight: 900;
+  font-size: var(--font-size-10);
+}
+
+.cortex-prime .icon-button.step-up::before {
+  content: "\f0d8";
+}
+
+.cortex-prime .icon-button.step-down::before {
+  content: "\f0d7";
+}
+
+.cortex-prime .icon-button.double-die::before {
+  content: "\f24d";
+}
+
+.cortex-prime .icon-button.remove-die,
+.cortex-prime .icon-button.clear-source {
+  color: var(--color-shadow-primary);
+}
+
+.cortex-prime .icon-button.remove-die::before,
+.cortex-prime .icon-button.clear-source::before {
+  content: "\f2ed";
+}
+
+/* ---------------------------------------- */
+/*  poolroll-card (chat card)               */
+/* ---------------------------------------- */
 
 .cortex-prime.poolroll-card {
   display: flex;
@@ -28,133 +207,9 @@
   color: var(--color-shadow-primary);
 }
 
-.cortex-prime.poolroll-card .dice-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.6em;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.cortex-prime.poolroll-card .die {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.15em;
-  width: 3em;
-}
-
-.cortex-prime.poolroll-card .die.clickable {
-  cursor: var(--cursor-pointer);
-}
-
-.cortex-prime.poolroll-card .die-shape {
-  position: relative;
-  width: 32px;
-  height: 32px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-weight: bold;
-  font-size: var(--font-size-14);
-}
-
-/* The role fill and the die silhouette live on this layer alone (z-index: 0) so the mask
-   never clips the result number or the hitch mark, which sit above it, unmasked. */
-.cortex-prime.poolroll-card .die-shape::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: 0;
-  mask-repeat: no-repeat;
-  mask-size: contain;
-  mask-position: center;
-  -webkit-mask-repeat: no-repeat;
-  -webkit-mask-size: contain;
-  -webkit-mask-position: center;
-}
-
-.cortex-prime.poolroll-card .die-shape.d4::before {
-  mask-image: url("../../../icons/svg/d4-grey.svg");
-  -webkit-mask-image: url("../../../icons/svg/d4-grey.svg");
-}
-
-.cortex-prime.poolroll-card .die-shape.d6::before {
-  mask-image: url("../../../icons/svg/d6-grey.svg");
-  -webkit-mask-image: url("../../../icons/svg/d6-grey.svg");
-}
-
-.cortex-prime.poolroll-card .die-shape.d8::before {
-  mask-image: url("../../../icons/svg/d8-grey.svg");
-  -webkit-mask-image: url("../../../icons/svg/d8-grey.svg");
-}
-
-.cortex-prime.poolroll-card .die-shape.d10::before {
-  mask-image: url("../../../icons/svg/d10-grey.svg");
-  -webkit-mask-image: url("../../../icons/svg/d10-grey.svg");
-}
-
-.cortex-prime.poolroll-card .die-shape.d12::before {
-  mask-image: url("../../../icons/svg/d12-grey.svg");
-  -webkit-mask-image: url("../../../icons/svg/d12-grey.svg");
-}
-
-.cortex-prime.poolroll-card .die-result {
-  position: relative;
-  z-index: 1;
-}
-
 .cortex-prime.poolroll-card .die-label {
   font-size: var(--font-size-10);
   color: var(--color-text-primary);
-}
-
-/* Unused and effect dice share the same fill; the effect ring (below) is what sets effect
-   apart, drawn on the <li> rather than the masked .die-shape, since a mask also clips any
-   box-shadow/outline painted on the masked element itself. */
-.cortex-prime.poolroll-card .die.role-unused .die-shape,
-.cortex-prime.poolroll-card .die.role-effect .die-shape {
-  color: var(--color-light-1);
-}
-
-.cortex-prime.poolroll-card .die.role-unused .die-shape::before,
-.cortex-prime.poolroll-card .die.role-effect .die-shape::before {
-  background-color: var(--color-cool-4);
-}
-
-.cortex-prime.poolroll-card .die.role-effect {
-  outline: 2px solid var(--color-border-highlight);
-  border-radius: 4px;
-}
-
-.cortex-prime.poolroll-card .die.role-total .die-shape {
-  color: var(--color-text-dark-primary);
-}
-
-.cortex-prime.poolroll-card .die.role-total .die-shape::before {
-  background-color: var(--color-border-highlight);
-}
-
-.cortex-prime.poolroll-card .die.role-hitch .die-shape {
-  color: var(--color-light-5);
-  opacity: 0.75;
-}
-
-.cortex-prime.poolroll-card .die.role-hitch .die-shape::before {
-  background-color: var(--color-dark-3);
-}
-
-.cortex-prime.poolroll-card .die.role-hitch .die-shape::after {
-  content: "\f06a";
-  font-family: var(--font-awesome);
-  font-weight: 900;
-  font-size: var(--font-size-10);
-  position: absolute;
-  z-index: 1;
-  top: -4px;
-  right: -4px;
-  color: var(--color-light-5);
 }
 
 .cortex-prime.poolroll-card .pool-selection {
@@ -206,40 +261,8 @@
   color: var(--color-text-primary);
 }
 
-/* Step buttons are icon-only: the caret glyph is drawn the same way as the hitch mark
-   (content + font-awesome), not a class-based <i>, so no extra icon font needs loading. */
-.cortex-prime.poolroll-card .icon-button {
-  width: 1.4em;
-  height: 1.4em;
-  padding: 0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.cortex-prime.poolroll-card .icon-button::before {
-  font-family: var(--font-awesome);
-  font-weight: 900;
-  font-size: var(--font-size-10);
-}
-
-.cortex-prime.poolroll-card .icon-button.step-up::before {
-  content: "\f0d8";
-}
-
-.cortex-prime.poolroll-card .icon-button.step-down::before {
-  content: "\f0d7";
-}
-
 .cortex-prime.poolroll-card .overflow-choice button {
   font-size: var(--font-size-12);
-}
-
-/* Marked-for-reroll wins over the role-effect ring when a die happens to be both: in reroll
-   mode the dice that are about to change are the more useful thing to see. */
-.cortex-prime.poolroll-card .die.marked-for-reroll {
-  outline: 2px dashed var(--color-shadow-primary);
-  border-radius: 4px;
 }
 
 .cortex-prime.poolroll-card .reroll-controls {
@@ -253,4 +276,51 @@
 .cortex-prime.poolroll-card .reroll-controls button.active {
   border-color: var(--color-border-highlight);
   color: var(--color-border-highlight);
+}
+
+/* ---------------------------------------- */
+/*  pool-builder (ApplicationV2 window)     */
+/* ---------------------------------------- */
+
+.cortex-prime.pool-builder {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5em;
+  padding: 0.5em;
+  color: var(--color-text-primary);
+}
+
+.cortex-prime.pool-builder .dice-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3em;
+}
+
+.cortex-prime.pool-builder .group-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.4em;
+  font-weight: bold;
+}
+
+.cortex-prime.pool-builder .die-controls {
+  display: flex;
+  gap: 0.15em;
+}
+
+.cortex-prime.pool-builder .add-die {
+  display: flex;
+  gap: 0.4em;
+  align-items: center;
+  border-top: 1px solid var(--color-cool-4);
+  padding-top: 0.4em;
+}
+
+.cortex-prime.pool-builder .add-die input[name="label"] {
+  flex: 1;
+}
+
+.cortex-prime.pool-builder .roll {
+  font-weight: bold;
 }

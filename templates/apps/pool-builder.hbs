@@ -1,0 +1,42 @@
+<div class="cortex-prime pool-builder">
+  {{#each groups}}
+  <div class="dice-group">
+    <div class="group-header">
+      <span class="source-label">{{ this.label }}</span>
+      <button type="button" class="icon-button clear-source" data-action="clearSource" data-source-label="{{ this.label }}"
+        title="{{ localize "CORTEX.Builder.ClearSource" }}" aria-label="{{ localize "CORTEX.Builder.ClearSource" }}"></button>
+    </div>
+    <ul class="dice-row">
+      {{#each this.dice}}
+      <li class="die role-unused" data-die-id="{{ this.id }}">
+        <span class="die-shape d{{ this.size }}"><span class="die-result">d{{ this.size }}</span></span>
+        <div class="die-controls">
+          <button type="button" class="icon-button step-down" data-action="stepDie" data-die-id="{{ this.id }}" data-steps="-1"
+            title="{{ localize "CORTEX.Chat.StepDown" }}" aria-label="{{ localize "CORTEX.Chat.StepDown" }}"></button>
+          <button type="button" class="icon-button step-up" data-action="stepDie" data-die-id="{{ this.id }}" data-steps="1"
+            title="{{ localize "CORTEX.Chat.StepUp" }}" aria-label="{{ localize "CORTEX.Chat.StepUp" }}"></button>
+          <button type="button" class="icon-button double-die" data-action="doubleDie" data-die-id="{{ this.id }}"
+            title="{{ localize "CORTEX.Builder.DoubleDie" }}" aria-label="{{ localize "CORTEX.Builder.DoubleDie" }}"></button>
+          <button type="button" class="icon-button remove-die" data-action="removeDie" data-die-id="{{ this.id }}"
+            title="{{ localize "CORTEX.Builder.RemoveDie" }}" aria-label="{{ localize "CORTEX.Builder.RemoveDie" }}"></button>
+        </div>
+      </li>
+      {{/each}}
+    </ul>
+  </div>
+  {{/each}}
+
+  <div class="add-die">
+    <select name="size">
+      {{#each sizes}}
+      <option value="{{ this }}">d{{ this }}</option>
+      {{/each}}
+    </select>
+    <input type="text" name="label" placeholder="{{ localize "CORTEX.Builder.LabelPlaceholder" }}">
+    <button type="button" data-action="addDie">{{ localize "CORTEX.Builder.AddDie" }}</button>
+  </div>
+
+  <button type="button" class="roll" data-action="rollPool" {{#unless canRoll}}disabled{{/unless}}>
+    {{ localize "CORTEX.Builder.Roll" }}
+  </button>
+</div>

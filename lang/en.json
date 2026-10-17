@@ -38,6 +38,19 @@
         "EFFECT_DIE_MISSING": "An eligible die is still unused as an effect die.",
         "EFFECT_DIE_D4_STEP_DOWN": "Stepping a d4 effect die down isn't supported yet."
       }
+    },
+    "Builder": {
+      "Title": "Pool Builder",
+      "ClearSource": "Clear source",
+      "DoubleDie": "Double",
+      "RemoveDie": "Remove",
+      "LabelPlaceholder": "Source label",
+      "AddDie": "Add",
+      "CustomDieDefaultLabel": "Custom",
+      "Roll": "Roll"
+    },
+    "Keybindings": {
+      "OpenPoolBuilder": "Open the Pool Builder"
     }
   },
   "TYPES": {
