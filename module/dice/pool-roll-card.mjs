@@ -67,13 +67,17 @@ function formatEffectPhrase(effectDice) {
  * @param {ChatMessage} message
  * @returns {{botch: boolean, dice: CardDie[], headline: string, interactive: boolean,
  *   selection: {valid: boolean, errors: {code: string, message: string}[],
- *     extraResultsPaid: number, extraEffectDicePaid: number}|null}}
+ *     extraResultsPaid: number, extraEffectDicePaid: number}|null,
+ *   effectControls: {index: number, size: number, canStepDown: boolean}[]|null,
+ *   overflowChoice: {leftovers: {dieId: string, label: string}[], newDieLabel: string,
+ *     takeOutAvailable: boolean, takeOutLabel: string}|null}}
  */
 export function preparePoolRollCardContext(message) {
   const system = message.system;
   const { botch } = evaluate(system.rolled);
   const resolvedState = system.state === "resolved";
-  const interactive = !resolvedState && canEditPoolRollCard(message);
+  const canEdit = canEditPoolRollCard(message);
+  const interactive = !resolvedState && canEdit;
 
   // Roles come from the confirmed Resolution once resolved, otherwise the live selection.
   const totalIds = resolvedState ? system.resolution.totalIds : system.selection.totalIds;
@@ -99,9 +103,13 @@ export function preparePoolRollCardContext(message) {
   if ( botch ) {
     headline = game.i18n.localize("CORTEX.Chat.Botch");
   } else if ( resolvedState ) {
-    headline = game.i18n.format("CORTEX.Chat.ResolvedHeadline", {
-      total: system.resolution.total, effect: formatEffectPhrase(system.resolution.effectDice)
-    });
+    if ( system.resolution.takeOut ) headline = game.i18n.localize("CORTEX.Chat.TakeOutVictory");
+    else if ( system.resolution.overflow ) headline = game.i18n.localize("CORTEX.Chat.OverflowPending");
+    else {
+      headline = game.i18n.format("CORTEX.Chat.ResolvedHeadline", {
+        total: system.resolution.total, effect: formatEffectPhrase(system.resolution.effectDice)
+      });
+    }
   } else if ( !interactive ) {
     headline = game.i18n.localize("CORTEX.Chat.Choosing");
   } else {
@@ -125,7 +133,30 @@ export function preparePoolRollCardContext(message) {
     extraEffectDicePaid: system.selection.extraEffectDicePaid
   } : null;
 
-  return { botch, dice, headline, interactive, selection };
+  // Controls for stepping an effect die or resolving a pending overflow (rule 22, rule 23):
+  // resolved cards only, and only one of the two panels at a time, since the data model has
+  // a single overflow slot for the whole Resolution, not one per die.
+  let effectControls = null;
+  let overflowChoice = null;
+  if ( resolvedState && canEdit && !botch && !system.resolution.takeOut ) {
+    const overflow = system.resolution.overflow;
+    if ( overflow ) {
+      overflowChoice = {
+        leftovers: overflow.options.leftovers.map(l => ({
+          dieId: l.dieId, label: game.i18n.format("CORTEX.Chat.OverflowLeftover", { size: l.size })
+        })),
+        newDieLabel: game.i18n.format("CORTEX.Chat.OverflowNewDie", { size: overflow.options.newDie }),
+        takeOutAvailable: overflow.options.takeOutAvailable,
+        takeOutLabel: game.i18n.localize("CORTEX.Chat.TakeOutVictory")
+      };
+    } else {
+      effectControls = system.resolution.effectDice.map((entry, index) => (
+        { index, size: entry.size, canStepDown: entry.size > 4 }
+      ));
+    }
+  }
+
+  return { botch, dice, headline, interactive, selection, effectControls, overflowChoice };
 }
 
 /**
@@ -141,7 +172,10 @@ export async function renderPoolRollCard(message) {
 /**
  * Attaches one delegated click listener to a rendered card's content element, dispatching
  * every `[data-action]` click to module/dice/card-actions.mjs. No game logic here: the
- * listener only reads the clicked element's dataset and calls applyCardChange with it.
+ * listener only forwards the clicked element's whole dataset and calls applyCardChange with
+ * it. Catches a thrown refusal (currently only EFFECT_DIE_D4_STEP_DOWN, RQ-009) so it reaches
+ * the roller as a notification rather than an unhandled rejection; every other refusal is
+ * already silent by design (card-actions.mjs).
  * @param {ChatMessage} message
  * @param {HTMLElement} content
  */
@@ -149,8 +183,8 @@ function activatePoolRollCardListeners(message, content) {
   content.addEventListener("click", event => {
     const target = event.target.closest("[data-action]");
     if ( !target ) return;
-    const { action, dieId } = target.dataset;
-    applyCardChange(message, dieId ? { action, dieId } : { action });
+    const { action, ...rest } = target.dataset;
+    applyCardChange(message, { action, ...rest }).catch(err => ui.notifications.error(err.message));
   });
 }
 
@@ -172,10 +206,15 @@ export function onRenderPoolRollMessage(message, html) {
 
   const context = preparePoolRollCardContext(message);
 
+  // interactive covers the pre-confirm controls; a resolved card's step/overflow controls are
+  // gated the same way (canEditPoolRollCard) but live in effectControls/overflowChoice instead,
+  // since interactive itself is specifically "not yet resolved" (used for die clickability too).
+  const hasControls = context.interactive || context.effectControls || context.overflowChoice;
+
   const compiled = Handlebars.partials[TEMPLATE];
   if ( typeof compiled === "function" ) {
     content.innerHTML = compiled(context, HANDLEBARS_OPTIONS);
-    if ( context.interactive ) activatePoolRollCardListeners(message, content);
+    if ( hasControls ) activatePoolRollCardListeners(message, content);
     return;
   }
 
@@ -183,6 +222,6 @@ export function onRenderPoolRollMessage(message, html) {
   // path alone can still show a brief flash of the default Roll content.
   renderPoolRollCard(message).then(rendered => {
     content.innerHTML = rendered;
-    if ( context.interactive ) activatePoolRollCardListeners(message, content);
+    if ( hasControls ) activatePoolRollCardListeners(message, content);
   });
 }

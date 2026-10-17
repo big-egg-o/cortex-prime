@@ -49,4 +49,36 @@
     </button>
   </div>
   {{/if}}
+
+  {{#if effectControls}}
+  <div class="effect-controls">
+    {{#each effectControls}}
+    <div class="effect-control" data-effect-index="{{ this.index }}">
+      <span class="effect-size">d{{ this.size }}</span>
+      {{#if this.canStepDown}}
+      <button type="button" class="icon-button step-down" data-action="step-effect-die"
+        data-effect-index="{{ this.index }}" data-steps="-1"
+        title="{{ localize "CORTEX.Chat.StepDown" }}" aria-label="{{ localize "CORTEX.Chat.StepDown" }}"></button>
+      {{/if}}
+      <button type="button" class="icon-button step-up" data-action="step-effect-die"
+        data-effect-index="{{ this.index }}" data-steps="1"
+        title="{{ localize "CORTEX.Chat.StepUp" }}" aria-label="{{ localize "CORTEX.Chat.StepUp" }}"></button>
+    </div>
+    {{/each}}
+  </div>
+  {{/if}}
+
+  {{#if overflowChoice}}
+  <div class="overflow-choice">
+    {{#each overflowChoice.leftovers}}
+    <button type="button" data-action="overflow-choice" data-kind="leftover" data-die-id="{{ this.dieId }}">
+      {{ this.label }}
+    </button>
+    {{/each}}
+    <button type="button" data-action="overflow-choice" data-kind="new-d6">{{ overflowChoice.newDieLabel }}</button>
+    {{#if overflowChoice.takeOutAvailable}}
+    <button type="button" data-action="overflow-choice" data-kind="take-out">{{ overflowChoice.takeOutLabel }}</button>
+    {{/if}}
+  </div>
+  {{/if}}
 </div>

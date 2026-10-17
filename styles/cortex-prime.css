@@ -187,3 +187,50 @@
   font-size: var(--font-size-12);
   color: var(--color-text-primary);
 }
+
+.cortex-prime.poolroll-card .effect-controls,
+.cortex-prime.poolroll-card .overflow-choice {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5em;
+  margin-top: 0.25em;
+  border-top: 1px solid var(--color-cool-4);
+  padding-top: 0.35em;
+}
+
+.cortex-prime.poolroll-card .effect-control {
+  display: flex;
+  align-items: center;
+  gap: 0.2em;
+  font-size: var(--font-size-12);
+  color: var(--color-text-primary);
+}
+
+/* Step buttons are icon-only: the caret glyph is drawn the same way as the hitch mark
+   (content + font-awesome), not a class-based <i>, so no extra icon font needs loading. */
+.cortex-prime.poolroll-card .icon-button {
+  width: 1.4em;
+  height: 1.4em;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.cortex-prime.poolroll-card .icon-button::before {
+  font-family: var(--font-awesome);
+  font-weight: 900;
+  font-size: var(--font-size-10);
+}
+
+.cortex-prime.poolroll-card .icon-button.step-up::before {
+  content: "\f0d8";
+}
+
+.cortex-prime.poolroll-card .icon-button.step-down::before {
+  content: "\f0d7";
+}
+
+.cortex-prime.poolroll-card .overflow-choice button {
+  font-size: var(--font-size-12);
+}

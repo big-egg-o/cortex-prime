@@ -6,15 +6,30 @@
  * @module dice/card-actions
  */
 
-import { largestEligible, resolve, twoHighest, validateSelection } from "../rules/index.mjs";
+import {
+  applyOverflowChoice, largestEligible, resolve, stepEffectDie, twoHighest, validateSelection
+} from "../rules/index.mjs";
 
 /**
  * @typedef {Object} CardChange
  * @property {'cycle-die'|'two-highest'|'biggest-effect'|'increment-extra-results'|
  *   'decrement-extra-results'|'increment-extra-effect-dice'|'decrement-extra-effect-dice'|
- *   'confirm'} action
- * @property {string} [dieId] - required for 'cycle-die'
+ *   'confirm'|'step-effect-die'|'overflow-choice'} action
+ * @property {string} [dieId] - required for 'cycle-die', and for 'overflow-choice' with kind
+ *   "leftover"
+ * @property {string|number} [effectIndex] - required for 'step-effect-die'
+ * @property {string|number} [steps] - required for 'step-effect-die'; must be 1 or -1
+ * @property {string} [kind] - required for 'overflow-choice'; one of 'leftover'|'new-d6'|
+ *   'take-out'
  */
+
+/**
+ * Rule 23 says an effect die can be stepped up or down, but — unlike a pool die (rule 3) —
+ * never says what happens to one stepped below d4. Flagged as RQ-009 (open) rather than
+ * guessed: the step-down control is hidden at d4, and this is the code a direct call (e.g.
+ * Quench) sees if it tries anyway.
+ */
+export const EFFECT_DIE_D4_STEP_DOWN = "EFFECT_DIE_D4_STEP_DOWN";
 
 /**
  * Whether `user` may change a poolRoll card: the same rule the server enforces on
@@ -153,11 +168,91 @@ async function confirm(message, system) {
 }
 
 /**
+ * Validates a "step-effect-die" change's own shape: steps must be exactly 1 or -1, and
+ * effectIndex a whole number naming a slot that actually exists in the current Resolution.
+ * Returns null to refuse silently on anything else — a card-actions-level guard independent
+ * of whatever the UI does or doesn't render.
+ * @param {import("../data/chat/pool-roll.mjs").default} system
+ * @param {CardChange} change
+ * @returns {{effectIndex: number, steps: number}|null}
+ */
+function parseStepEffectDieChange(system, change) {
+  const steps = Number(change.steps);
+  if ( (steps !== 1) && (steps !== -1) ) return null;
+  const effectIndex = Number(change.effectIndex);
+  if ( !Number.isInteger(effectIndex) || !system.resolution.effectDice[effectIndex] ) return null;
+  return { effectIndex, steps };
+}
+
+/**
+ * Steps one effect die on a resolved card (rule 23). Cause is always "other" for now — the
+ * same options rule 22 offers either way, but the heroic-success label comes with Tests &
+ * Contests. Refuses silently while a previous overflow is still pending or on a malformed
+ * change; refuses a step down from d4 by throwing EFFECT_DIE_D4_STEP_DOWN (RQ-009) instead,
+ * since that's an open rules question rather than an ordinary invalid click.
+ * @param {ChatMessage} message
+ * @param {CardChange} change
+ * @returns {Promise<void>}
+ * @throws {Error} EFFECT_DIE_D4_STEP_DOWN, on a step down from a d4 effect die
+ */
+async function stepEffectDieChange(message, change) {
+  const system = message.system;
+  if ( (system.state !== "resolved") || system.resolution.overflow ) return;
+
+  const parsed = parseStepEffectDieChange(system, change);
+  if ( !parsed ) return;
+  const { effectIndex, steps } = parsed;
+
+  if ( (steps === -1) && (system.resolution.effectDice[effectIndex].size === 4) ) {
+    throw new Error(EFFECT_DIE_D4_STEP_DOWN);
+  }
+
+  const resolution = stepEffectDie(system.rolled, system.resolution, effectIndex, steps, "other");
+  await message.update({ "system.resolution": resolution });
+}
+
+/**
+ * Validates an "overflow-choice" change's own shape: kind must be one of the three options
+ * rule 22 allows, and a "leftover" dieId must be one of the pending overflow's own offered
+ * leftovers — never a die the engine didn't offer. Returns null to refuse silently on
+ * anything else.
+ * @param {import("../data/chat/pool-roll.mjs").default} system
+ * @param {CardChange} change
+ * @returns {import("../rules/types.mjs").OverflowChoice|null}
+ */
+function parseOverflowChoice(system, change) {
+  if ( !["leftover", "new-d6", "take-out"].includes(change.kind) ) return null;
+  if ( change.kind !== "leftover" ) return { kind: change.kind };
+  const offered = system.resolution.overflow.options.leftovers.some(l => l.dieId === change.dieId);
+  return offered ? { kind: "leftover", dieId: change.dieId } : null;
+}
+
+/**
+ * Applies one of the options from a pending overflow (rule 22). Refuses silently when there's
+ * no overflow pending or the change is malformed.
+ * @param {ChatMessage} message
+ * @param {CardChange} change
+ * @returns {Promise<void>}
+ */
+async function overflowChoiceChange(message, change) {
+  const system = message.system;
+  if ( (system.state !== "resolved") || !system.resolution.overflow ) return;
+
+  const choice = parseOverflowChoice(system, change);
+  if ( !choice ) return;
+
+  const resolution = applyOverflowChoice(system.rolled, system.resolution, choice);
+  await message.update({ "system.resolution": resolution });
+}
+
+/**
  * Applies one card interaction to a poolRoll message (ADR-013). Refuses outright — no
  * `message.update()` call — when the current user may not edit the card, when a die click
- * targets a hitch or an unavailable die, or when "confirm" is attempted on an invalid
- * selection. Every other change is stored even while incomplete, so other viewers see picks
- * live as they're made.
+ * targets a hitch or an unavailable die, when "confirm" is attempted on an invalid selection,
+ * or when a step/overflow change doesn't name a real slot, step or offered option. Every
+ * selection change is stored even while incomplete, so other viewers see picks live as
+ * they're made; see stepEffectDieChange for the one change that's refused by throwing instead
+ * of silently, because it's an open rules question (RQ-009) rather than an ordinary mistake.
  * @param {ChatMessage} message
  * @param {CardChange} change
  * @returns {Promise<void>}
@@ -166,6 +261,8 @@ export async function applyCardChange(message, change) {
   if ( !canEditPoolRollCard(message) ) return;
 
   if ( change.action === "confirm" ) return confirm(message, message.system);
+  if ( change.action === "step-effect-die" ) return stepEffectDieChange(message, change);
+  if ( change.action === "overflow-choice" ) return overflowChoiceChange(message, change);
 
   const selection = nextSelection(message.system, change);
   if ( !selection ) return;

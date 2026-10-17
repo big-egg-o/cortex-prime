@@ -13,6 +13,12 @@
       "ExtraResultsPaid": "Extra Results Paid (temp)",
       "ExtraEffectDicePaid": "Extra Effect Dice Paid (temp)",
       "Confirm": "Confirm",
+      "StepUp": "Step up",
+      "StepDown": "Step down",
+      "TakeOutVictory": "Take-out / victory",
+      "OverflowPending": "Choose the overflow…",
+      "OverflowLeftover": "Use d{size}",
+      "OverflowNewDie": "New d{size}",
       "Role": {
         "Total": "Total",
         "Effect": "Effect",
