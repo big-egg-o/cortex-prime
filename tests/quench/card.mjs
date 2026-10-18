@@ -37,22 +37,34 @@ export function registerCardBatch(quench) {
       });
 
       describe("posting a poolRoll card", () => {
-        it("creates a poolRoll message with the right system data", async () => {
+        it("creates a poolRoll message with the suggestion pre-selected (DP-13, ADR-019)", async () => {
           const dice = pool([10, 8, 6]);
           const results = [7, 5, 3];
 
           const message = await postPoolRoll({ pool: dice, results });
           messages.push(message);
 
+          const [tenId, eightId, sixId] = dice.map(d => d.id);
           assert.equal(message.type, "poolRoll");
           assert.equal(message.system.state, "rolled");
           assert.equal(message.system.resolution, null);
           assert.deepEqual(message.system.toObject().pool, dice);
           assert.deepEqual(message.system.toObject().rolled, applyResults(dice, results));
-          assert.deepEqual(message.system.toObject().selection, emptySelection());
+          assert.deepEqual(message.system.toObject().selection,
+            { ...emptySelection(), totalIds: [tenId, eightId], effectDieIds: [sixId] });
         });
 
-        it("renders one entry per die; a hitch has no data-action and isn't clickable", async () => {
+        it("pre-selects nothing for a botch and offers no reset (DP-09, ADR-019)", async () => {
+          const message = await postPoolRoll({ pool: pool([8, 6]), results: [1, 1] });
+          messages.push(message);
+
+          assert.deepEqual(message.system.toObject().selection, emptySelection());
+          const html = foundry.utils.parseHTML(await renderPoolRollCard(message));
+          assert.isNull(html.querySelector('[data-action="two-highest"]'));
+          assert.isNotNull(html.querySelector('[data-action="confirm"]:not([disabled])'), "a botch can be confirmed");
+        });
+
+        it("renders core roll markup: one li.roll.dN per die, roles as classes, labels as tooltips", async () => {
           const dice = pool([10, 8, 6, 4]);
           const results = [1, 6, 5, 3]; // the d10 is a hitch
 
@@ -60,11 +72,17 @@ export function registerCardBatch(quench) {
           messages.push(message);
 
           const html = foundry.utils.parseHTML(await renderPoolRollCard(message));
-          assert.lengthOf(html.querySelectorAll(".die"), 4);
+          const rolls = html.querySelectorAll(".dice-roll .dice-tooltip ol.dice-rolls li.roll.die");
+          assert.deepEqual([...rolls].map(li => [...li.classList].find(c => /^d\d+$/.test(c))), ["d10", "d8", "d6", "d4"]);
+          assert.deepEqual([...rolls].map(li => li.textContent.trim()), ["1", "6", "5", "3"]);
+          assert.lengthOf(html.querySelectorAll("li.roll.cp-total"), 2, "d8 and d6 are suggested for the total");
+          assert.lengthOf(html.querySelectorAll("li.roll.cp-effect"), 1, "the d4 is the suggested effect die");
+          assert.include(rolls[1].dataset.tooltipText, "Trait d8");
+          assert.isNotNull(html.querySelector(".dice-formula"));
 
-          const hitches = html.querySelectorAll(".die.role-hitch");
+          const hitches = html.querySelectorAll("li.roll.min");
           assert.lengthOf(hitches, 1);
-          assert.isFalse(hitches[0].classList.contains("clickable"), "a hitch should never be clickable");
+          assert.isFalse(hitches[0].classList.contains("cp-clickable"), "a hitch should never be clickable");
           assert.isNull(hitches[0].getAttribute("data-action"), "a hitch should have no data-action");
         });
 
@@ -76,7 +94,7 @@ export function registerCardBatch(quench) {
           messages.push(message);
 
           const html = foundry.utils.parseHTML(await renderPoolRollCard(message));
-          const headline = html.querySelector(".headline.botch");
+          const headline = html.querySelector(".dice-total.failure");
           assert.isNotNull(headline, "the card should show a botch headline");
           assert.equal(headline.textContent.trim(), game.i18n.localize("CORTEX.Chat.Botch"));
         });
@@ -97,8 +115,9 @@ export function registerCardBatch(quench) {
 
           const html = foundry.utils.parseHTML(await renderPoolRollCard(message));
           const expected = game.i18n.format("CORTEX.Chat.ResolvedHeadline", { total: 12, effect: "d6" });
-          assert.equal(html.querySelector(".headline").textContent.trim(), expected);
-          assert.isNull(html.querySelector(".pool-selection"), "a resolved card has no controls");
+          assert.equal(html.querySelector(".dice-total").textContent.trim(), expected);
+          assert.isFalse(html.querySelector(".dice-total").classList.contains("cp-preview"));
+          assert.isNull(html.querySelector(".cp-selection"), "a resolved card has no selection controls");
         });
 
         it("shows a preview headline for a valid, unconfirmed selection (DP-13)", async () => {
@@ -114,8 +133,10 @@ export function registerCardBatch(quench) {
           });
 
           const html = foundry.utils.parseHTML(await renderPoolRollCard(message));
-          const expected = game.i18n.format("CORTEX.Chat.PreviewHeadline", { total: 12, effect: "d6" });
-          assert.equal(html.querySelector(".headline").textContent.trim(), expected);
+          const expected = game.i18n.format("CORTEX.Chat.ResolvedHeadline", { total: 12, effect: "d6" });
+          const total = html.querySelector(".dice-total");
+          assert.equal(total.textContent.trim(), expected);
+          assert.isTrue(total.classList.contains("cp-preview"), "an unconfirmed selection is marked as a preview");
         });
 
         it('shows "Choosing…" and no controls for a non-interactive viewer', async () => {
@@ -128,8 +149,8 @@ export function registerCardBatch(quench) {
           };
 
           const html = foundry.utils.parseHTML(await renderPoolRollCard(stub));
-          assert.isNull(html.querySelector(".pool-selection"));
-          assert.equal(html.querySelector(".headline").textContent.trim(), game.i18n.localize("CORTEX.Chat.Choosing"));
+          assert.isNull(html.querySelector(".cp-selection"));
+          assert.equal(html.querySelector(".dice-total").textContent.trim(), game.i18n.localize("CORTEX.Chat.Choosing"));
         });
 
         it("hides the shortcuts, counters and Confirm during reroll mode, showing them again on cancel", async () => {
@@ -145,18 +166,18 @@ export function registerCardBatch(quench) {
           const content = html.querySelector(".message-content");
           const toggle = () => content.querySelector('[data-action="toggle-reroll-mode"]');
 
-          assert.isNotNull(content.querySelector(".pool-selection"), "controls show before reroll mode");
+          assert.isNotNull(content.querySelector(".cp-selection"), "controls show before reroll mode");
           assert.equal(toggle().textContent.trim(), game.i18n.localize("CORTEX.Chat.Reroll"));
 
           toggle().click();
 
-          assert.isNull(content.querySelector(".pool-selection"), "shortcuts/counters/Confirm hide in reroll mode");
+          assert.isNull(content.querySelector(".cp-selection"), "shortcuts/counters/Confirm hide in reroll mode");
           assert.isNotNull(content.querySelector('[data-action="reroll"]'), "Reroll Marked shows in reroll mode");
           assert.equal(toggle().textContent.trim(), game.i18n.localize("CORTEX.Chat.CancelReroll"));
 
           toggle().click();
 
-          assert.isNotNull(content.querySelector(".pool-selection"), "controls show again after cancelling");
+          assert.isNotNull(content.querySelector(".cp-selection"), "controls show again after cancelling");
           assert.equal(toggle().textContent.trim(), game.i18n.localize("CORTEX.Chat.Reroll"));
         });
 

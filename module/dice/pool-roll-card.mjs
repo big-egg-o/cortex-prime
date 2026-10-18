@@ -38,13 +38,21 @@ const ROLE_LABEL_KEYS = {
 };
 
 /**
+ * Each role drawn with core's result classes where one fits (ADR-019): a hitch is a 1, so it
+ * gets core's `min` look; an unused die gets the `discarded` look. Total and effect have no
+ * core equivalent.
+ */
+const ROLE_CSS = { hitch: "min", unused: "discarded", total: "cp-total", effect: "cp-effect" };
+
+/**
  * @typedef {Object} CardDie
  * @property {string} id
  * @property {string} label - the die's source label (escaped by the template)
  * @property {number} size
  * @property {number} result
  * @property {'total'|'effect'|'unused'|'hitch'} role
- * @property {string} roleLabel - localized, for the die's title/aria-label
+ * @property {string} roleLabel - localized, for the die's tooltip/aria-label
+ * @property {string} cssClass - role, clickable and marked classes for the core `li.roll`
  * @property {boolean} clickable
  * @property {'cycle-die'|'toggle-reroll-mark'} action
  * @property {boolean} marked - marked for reroll (only meaningful in reroll mode)
@@ -80,7 +88,8 @@ function formatEffectPhrase(effectDice) {
  * only to preview a valid-but-unconfirmed selection's total and effect dice, never to store
  * anything.
  * @param {ChatMessage} message
- * @returns {{botch: boolean, dice: CardDie[], headline: string, interactive: boolean,
+ * @returns {{botch: boolean, dice: CardDie[], formula: string, headline: string,
+ *   preview: boolean, interactive: boolean,
  *   selection: {valid: boolean, errors: {code: string, message: string}[],
  *     extraResultsPaid: number, extraEffectDicePaid: number}|null,
  *   effectControls: {index: number, size: number, canStepDown: boolean}[]|null,
@@ -113,17 +122,20 @@ export function preparePoolRollCardContext(message) {
     const clickable = rerollableSet
       ? rerollableSet.has(die.id)
       : interactive && !die.hitch && (die.state === "available");
+    const marked = Boolean(rerollState?.active && rerollState.marked.has(die.id));
     return {
       id: die.id, label: die.source.label, size: die.size, result: die.result, role,
       roleLabel: game.i18n.localize(ROLE_LABEL_KEYS[role]),
-      clickable, action: rerollableSet ? "toggle-reroll-mark" : "cycle-die",
-      marked: Boolean(rerollState?.active && rerollState.marked.has(die.id))
+      cssClass: [ROLE_CSS[role], clickable ? "cp-clickable" : null, marked ? "cp-marked" : null].filterJoin(" "),
+      clickable, action: rerollableSet ? "toggle-reroll-mark" : "cycle-die", marked
     };
   });
+  const formula = system.rolled.map(d => `d${d.size}`).join(" ");
 
   const validation = interactive ? validateSelection(system.rolled, system.selection) : null;
 
   let headline;
+  let preview = false;
   let listedErrors = validation?.errors ?? [];
   if ( botch ) {
     headline = game.i18n.localize("CORTEX.Chat.Botch");
@@ -144,10 +156,11 @@ export function preparePoolRollCardContext(message) {
       headline = game.i18n.localize(`CORTEX.Chat.Errors.${validation.errors[0].code}`);
       listedErrors = validation.errors.slice(1); // the headline already shows the first
     } else {
-      const preview = resolve(system.rolled, system.selection);
-      headline = game.i18n.format("CORTEX.Chat.PreviewHeadline", {
-        total: preview.total, effect: formatEffectPhrase(preview.effectDice)
+      const previewResolution = resolve(system.rolled, system.selection);
+      headline = game.i18n.format("CORTEX.Chat.ResolvedHeadline", {
+        total: previewResolution.total, effect: formatEffectPhrase(previewResolution.effectDice)
       });
+      preview = true;
     }
   }
 
@@ -187,7 +200,9 @@ export function preparePoolRollCardContext(message) {
     ? { active: Boolean(rerollState.active), canReroll: rerollState.marked.size > 0 }
     : null;
 
-  return { botch, dice, headline, interactive, selection, effectControls, overflowChoice, reroll };
+  return {
+    botch, dice, formula, headline, preview, interactive, selection, effectControls, overflowChoice, reroll
+  };
 }
 
 /**

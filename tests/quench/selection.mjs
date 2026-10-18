@@ -33,13 +33,15 @@ export function registerSelectionBatch(quench) {
       });
 
       describe("choosing total and effect dice", () => {
-        it("cycles dice into a valid selection and confirms it (DP-13)", async () => {
+        it("cycles dice away from the suggestion, refuses an invalid Confirm, and confirms (DP-13)", async () => {
           const dice = pool([10, 8, 6]);
           message = await postPoolRoll({ pool: dice, results: [7, 5, 3] });
           const [tenId, eightId, sixId] = message.system.pool.map(d => d.id);
 
-          await applyCardChange(message, { action: "cycle-die", dieId: tenId }); // -> total
-          await applyCardChange(message, { action: "cycle-die", dieId: eightId }); // -> total
+          await applyCardChange(message, { action: "cycle-die", dieId: sixId }); // effect -> unused
+          await applyCardChange(message, { action: "confirm" }); // an effect slot is empty: refused
+          assert.equal(game.messages.get(message.id).system.state, "rolled", "an invalid selection isn't confirmed");
+
           await applyCardChange(message, { action: "cycle-die", dieId: sixId }); // -> total
           await applyCardChange(message, { action: "cycle-die", dieId: sixId }); // -> effect
 

@@ -18,7 +18,7 @@
 /*  Shared die primitives                   */
 /* ---------------------------------------- */
 
-.cortex-prime .dice-row {
+.cortex-prime.pool-builder .dice-row {
   display: flex;
   flex-wrap: wrap;
   gap: 0.6em;
@@ -27,7 +27,7 @@
   list-style: none;
 }
 
-.cortex-prime .die {
+.cortex-prime.pool-builder .die {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -35,11 +35,11 @@
   width: 3em;
 }
 
-.cortex-prime .die.clickable {
+.cortex-prime.pool-builder .die.clickable {
   cursor: var(--cursor-pointer);
 }
 
-.cortex-prime .die-shape {
+.cortex-prime.pool-builder .die-shape {
   position: relative;
   width: 32px;
   height: 32px;
@@ -52,7 +52,7 @@
 
 /* The role fill and the die silhouette live on this layer alone (z-index: 0) so the mask
    never clips the result number or the hitch mark, which sit above it, unmasked. */
-.cortex-prime .die-shape::before {
+.cortex-prime.pool-builder .die-shape::before {
   content: "";
   position: absolute;
   inset: 0;
@@ -65,32 +65,32 @@
   -webkit-mask-position: center;
 }
 
-.cortex-prime .die-shape.d4::before {
+.cortex-prime.pool-builder .die-shape.d4::before {
   mask-image: url("../../../icons/svg/d4-grey.svg");
   -webkit-mask-image: url("../../../icons/svg/d4-grey.svg");
 }
 
-.cortex-prime .die-shape.d6::before {
+.cortex-prime.pool-builder .die-shape.d6::before {
   mask-image: url("../../../icons/svg/d6-grey.svg");
   -webkit-mask-image: url("../../../icons/svg/d6-grey.svg");
 }
 
-.cortex-prime .die-shape.d8::before {
+.cortex-prime.pool-builder .die-shape.d8::before {
   mask-image: url("../../../icons/svg/d8-grey.svg");
   -webkit-mask-image: url("../../../icons/svg/d8-grey.svg");
 }
 
-.cortex-prime .die-shape.d10::before {
+.cortex-prime.pool-builder .die-shape.d10::before {
   mask-image: url("../../../icons/svg/d10-grey.svg");
   -webkit-mask-image: url("../../../icons/svg/d10-grey.svg");
 }
 
-.cortex-prime .die-shape.d12::before {
+.cortex-prime.pool-builder .die-shape.d12::before {
   mask-image: url("../../../icons/svg/d12-grey.svg");
   -webkit-mask-image: url("../../../icons/svg/d12-grey.svg");
 }
 
-.cortex-prime .die-result {
+.cortex-prime.pool-builder .die-result {
   position: relative;
   z-index: 1;
 }
@@ -98,60 +98,19 @@
 /* Unused and effect dice share the same fill; the effect ring (below) is what sets effect
    apart, drawn on the <li> rather than the masked .die-shape, since a mask also clips any
    box-shadow/outline painted on the masked element itself. */
-.cortex-prime .die.role-unused .die-shape,
-.cortex-prime .die.role-effect .die-shape {
+.cortex-prime.pool-builder .die.role-unused .die-shape,
+.cortex-prime.pool-builder .die.role-effect .die-shape {
   color: var(--color-light-1);
 }
 
-.cortex-prime .die.role-unused .die-shape::before,
-.cortex-prime .die.role-effect .die-shape::before {
+.cortex-prime.pool-builder .die.role-unused .die-shape::before,
+.cortex-prime.pool-builder .die.role-effect .die-shape::before {
   background-color: var(--color-cool-4);
-}
-
-.cortex-prime .die.role-effect {
-  outline: 2px solid var(--color-border-highlight);
-  border-radius: 4px;
-}
-
-.cortex-prime .die.role-total .die-shape {
-  color: var(--color-text-dark-primary);
-}
-
-.cortex-prime .die.role-total .die-shape::before {
-  background-color: var(--color-border-highlight);
-}
-
-.cortex-prime .die.role-hitch .die-shape {
-  color: var(--color-light-5);
-  opacity: 0.75;
-}
-
-.cortex-prime .die.role-hitch .die-shape::before {
-  background-color: var(--color-dark-3);
-}
-
-.cortex-prime .die.role-hitch .die-shape::after {
-  content: "\f06a";
-  font-family: var(--font-awesome);
-  font-weight: 900;
-  font-size: var(--font-size-10);
-  position: absolute;
-  z-index: 1;
-  top: -4px;
-  right: -4px;
-  color: var(--color-light-5);
-}
-
-/* Marked-for-reroll wins over the role-effect ring when a die happens to be both: in reroll
-   mode the dice that are about to change are the more useful thing to see. */
-.cortex-prime .die.marked-for-reroll {
-  outline: 2px dashed var(--color-shadow-primary);
-  border-radius: 4px;
 }
 
 /* Step/double/remove buttons are icon-only: the glyph is drawn the same way as the hitch mark
    (content + font-awesome), not a class-based <i>, so no extra icon font needs loading. */
-.cortex-prime .icon-button {
+.cortex-prime.pool-builder .icon-button {
   width: 1.4em;
   height: 1.4em;
   padding: 0;
@@ -160,31 +119,31 @@
   justify-content: center;
 }
 
-.cortex-prime .icon-button::before {
+.cortex-prime.pool-builder .icon-button::before {
   font-family: var(--font-awesome);
   font-weight: 900;
   font-size: var(--font-size-10);
 }
 
-.cortex-prime .icon-button.step-up::before {
+.cortex-prime.pool-builder .icon-button.step-up::before {
   content: "\f0d8";
 }
 
-.cortex-prime .icon-button.step-down::before {
+.cortex-prime.pool-builder .icon-button.step-down::before {
   content: "\f0d7";
 }
 
-.cortex-prime .icon-button.double-die::before {
+.cortex-prime.pool-builder .icon-button.double-die::before {
   content: "\f24d";
 }
 
-.cortex-prime .icon-button.remove-die,
-.cortex-prime .icon-button.clear-source {
+.cortex-prime.pool-builder .icon-button.remove-die,
+.cortex-prime.pool-builder .icon-button.clear-source {
   color: var(--color-shadow-primary);
 }
 
-.cortex-prime .icon-button.remove-die::before,
-.cortex-prime .icon-button.clear-source::before {
+.cortex-prime.pool-builder .icon-button.remove-die::before,
+.cortex-prime.pool-builder .icon-button.clear-source::before {
   content: "\f2ed";
 }
 
@@ -192,90 +151,103 @@
 /*  poolroll-card (chat card)               */
 /* ---------------------------------------- */
 
+/* Core draws the dice, formula and total (.dice-roll, .dice-tooltip .dice-rolls .roll.dN,
+   .dice-total; ADR-019). These rules only mark the total and effect dice, the reroll marks and
+   clickable dice, and lay out the controls. */
 .cortex-prime.poolroll-card {
   display: flex;
   flex-direction: column;
-  gap: 0.4em;
+  gap: 0.5rem;
 }
 
-.cortex-prime.poolroll-card .headline {
-  font-weight: bold;
-  color: var(--color-text-primary);
+/* Room for the role outlines inside core's overflow: hidden wrapper. */
+.cortex-prime.poolroll-card .dice-rolls {
+  padding: 3px 2px;
 }
 
-.cortex-prime.poolroll-card .headline.botch {
-  color: var(--color-shadow-primary);
+.cortex-prime.poolroll-card .dice-rolls .roll {
+  margin: 0 5px 3px 0;
+  border-radius: 3px;
 }
 
-.cortex-prime.poolroll-card .die-label {
-  font-size: var(--font-size-10);
-  color: var(--color-text-primary);
+.cortex-prime.poolroll-card .roll.cp-clickable {
+  cursor: var(--cursor-pointer);
 }
 
-.cortex-prime.poolroll-card .pool-selection {
+.cortex-prime.poolroll-card .roll.cp-total {
+  outline: 2px solid var(--color-warm-1);
+}
+
+.cortex-prime.poolroll-card .roll.cp-effect {
+  outline: 2px dashed var(--color-warm-1);
+}
+
+/* In reroll mode the dice about to change matter more than their role. */
+.cortex-prime.poolroll-card .roll.cp-marked {
+  outline: 2px dashed var(--color-level-error);
+}
+
+/* Core's .dice-total.failure red loses to a later chat rule, so it's restated here. */
+.cortex-prime.poolroll-card .dice-total.failure {
+  color: var(--color-level-error);
+}
+
+/* A valid selection that isn't confirmed yet. */
+.cortex-prime.poolroll-card .dice-total.cp-preview {
+  font-style: italic;
+  color: var(--color-text-secondary);
+}
+
+.cortex-prime.poolroll-card .cp-controls {
   display: flex;
-  flex-direction: column;
-  gap: 0.35em;
-  margin-top: 0.25em;
-  border-top: 1px solid var(--color-cool-4);
-  padding-top: 0.35em;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
 }
 
-.cortex-prime.poolroll-card .errors {
+.cortex-prime.poolroll-card .cp-errors {
+  flex: 0 0 100%;
   margin: 0;
   padding-left: 1.1em;
-  color: var(--color-text-primary);
   font-size: var(--font-size-12);
 }
 
-.cortex-prime.poolroll-card .shortcuts,
-.cortex-prime.poolroll-card .counters {
-  display: flex;
-  gap: 0.4em;
-  flex-wrap: wrap;
-}
-
-.cortex-prime.poolroll-card .counter {
+.cortex-prime.poolroll-card .cp-counter {
+  flex: 0 0 100%;
   display: flex;
   align-items: center;
-  gap: 0.25em;
+  gap: 0.25rem;
   font-size: var(--font-size-12);
-  color: var(--color-text-primary);
 }
 
-.cortex-prime.poolroll-card .effect-controls,
-.cortex-prime.poolroll-card .overflow-choice {
+.cortex-prime.poolroll-card .cp-counter-label {
+  flex: 1;
+}
+
+.cortex-prime.poolroll-card .cp-counter-value {
+  min-width: 1.5em;
+  text-align: center;
+}
+
+.cortex-prime.poolroll-card .cp-buttons {
+  flex: 0 0 100%;
   display: flex;
   flex-wrap: wrap;
-  gap: 0.5em;
-  margin-top: 0.25em;
-  border-top: 1px solid var(--color-cool-4);
-  padding-top: 0.35em;
+  gap: 0.5rem;
 }
 
-.cortex-prime.poolroll-card .effect-control {
+/* Buttons share a row when their labels fit, and wrap rather than break a label. */
+.cortex-prime.poolroll-card .cp-buttons > button,
+.cortex-prime.poolroll-card .cp-overflow-choice > button,
+.cortex-prime.poolroll-card .cp-reroll-controls > button {
+  flex: 1 0 auto;
+  white-space: nowrap;
+}
+
+.cortex-prime.poolroll-card .cp-effect-control {
   display: flex;
   align-items: center;
-  gap: 0.2em;
-  font-size: var(--font-size-12);
-  color: var(--color-text-primary);
-}
-
-.cortex-prime.poolroll-card .overflow-choice button {
-  font-size: var(--font-size-12);
-}
-
-.cortex-prime.poolroll-card .reroll-controls {
-  display: flex;
-  gap: 0.4em;
-  margin-top: 0.25em;
-  border-top: 1px solid var(--color-cool-4);
-  padding-top: 0.35em;
-}
-
-.cortex-prime.poolroll-card .reroll-controls button.active {
-  border-color: var(--color-border-highlight);
-  color: var(--color-border-highlight);
+  gap: 0.25rem;
 }
 
 /* ---------------------------------------- */

@@ -38,12 +38,13 @@ export function registerRerollBatch(quench) {
       });
 
       describe("rerolling before confirming", () => {
-        it("rerolls a hitch and clears the selection, then resolves to total 11, effect d6 (DP-27)",
+        it("rerolls a hitch and re-suggests, then resolves to total 11, effect d6 (DP-27, ADR-019)",
           async () => {
             const dice = pool([8, 6, 6]);
             const message = await postPoolRoll({ pool: dice, results: [1, 5, 4] });
             messages.push(message);
-            const [eightId] = message.system.pool.map(d => d.id);
+            const [eightId, firstSixId, secondSixId] = message.system.pool.map(d => d.id);
+            await applyCardChange(message, { action: "increment-extra-effect-dice" });
 
             await applyCardChange(message, { action: "reroll", dieIds: [eightId], results: { [eightId]: 6 } });
 
@@ -51,11 +52,12 @@ export function registerRerollBatch(quench) {
             assert.equal(afterReroll.system.rolled.find(d => d.id === eightId).result, 6);
             assert.isFalse(afterReroll.system.rolled.find(d => d.id === eightId).hitch);
             assert.isFalse(evaluate(afterReroll.system.rolled).botch);
-            assert.lengthOf(afterReroll.system.selection.totalIds, 0, "a reroll clears totalIds");
-            assert.lengthOf(afterReroll.system.selection.effectDieIds, 0, "a reroll clears effectDieIds");
+            assert.deepEqual(afterReroll.system.selection.totalIds, [eightId, firstSixId], "the new suggestion");
+            assert.deepEqual(afterReroll.system.selection.effectDieIds, [secondSixId]);
+            assert.equal(afterReroll.system.selection.extraEffectDicePaid, 1, "a reroll keeps the paid counters");
             assert.equal(afterReroll.system.state, "rolled");
 
-            await applyCardChange(message, { action: "two-highest" });
+            await applyCardChange(message, { action: "decrement-extra-effect-dice" });
             await applyCardChange(message, { action: "confirm" });
 
             const resolved = game.messages.get(message.id);

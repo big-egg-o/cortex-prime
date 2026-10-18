@@ -219,9 +219,10 @@ function parseRerollChange(system, change) {
 
 /**
  * Rerolls the given dice before confirming (Decisions ADR-017: rerolls only happen while
- * state is "rolled", are free in M3, and clear the selection since the results it referred to
- * changed). Appends the new Roll to message.rolls, the same way postPoolRoll's own Roll is
- * stored. Refuses silently once resolved, or on a malformed change.
+ * state is "rolled" and are free in M3; ADR-019: the selection is replaced by a fresh
+ * suggestion, since the results it referred to changed; the paid counters are kept). Appends
+ * the new Roll to message.rolls, the same way postPoolRoll's own Roll is stored. Refuses
+ * silently once resolved, or on a malformed change.
  * @param {ChatMessage} message
  * @param {CardChange} change
  * @returns {Promise<void>}
@@ -244,7 +245,7 @@ async function rerollChange(message, change) {
   const rolled = applyRerolls(system.rolled, results);
   const updateData = {
     "system.rolled": rolled,
-    "system.selection": { ...system.selection, totalIds: [], effectDieIds: [] }
+    "system.selection": { ...system.selection, ...suggestSelection(rolled, system.selection) }
   };
   if ( roll ) updateData.rolls = [...message.rolls, roll];
   await message.update(updateData);
