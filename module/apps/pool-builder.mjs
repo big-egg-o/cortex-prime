@@ -58,8 +58,8 @@ export default class PoolBuilder extends HandlebarsApplicationMixin(ApplicationV
     id: "cortex-prime-pool-builder",
     tag: "div",
     classes: ["cortex-prime", "pool-builder"],
-    window: { title: "CORTEX.Builder.Title", icon: "fa-solid fa-dice-d12" },
-    position: { width: 420 },
+    window: { title: "CORTEX.Builder.Title", icon: "fa-solid fa-dice-d12", contentClasses: ["standard-form"] },
+    position: { width: 400 },
     actions: {
       addDie: PoolBuilder.#onAddDie,
       removeDie: PoolBuilder.#onRemoveDie,
@@ -72,7 +72,8 @@ export default class PoolBuilder extends HandlebarsApplicationMixin(ApplicationV
 
   /** @override */
   static PARTS = {
-    builder: { template: TEMPLATE, root: true }
+    body: { template: TEMPLATE },
+    footer: { template: "templates/generic/form-footer.hbs" }
   };
 
   /**
@@ -99,7 +100,10 @@ export default class PoolBuilder extends HandlebarsApplicationMixin(ApplicationV
     return {
       groups: groupBySource(pool),
       sizes: DIE_SIZES,
-      canRoll: pool.length > 0
+      buttons: [{
+        type: "button", action: "rollPool", icon: "fa-solid fa-dice", label: "CORTEX.Builder.Roll",
+        disabled: pool.length === 0
+      }]
     };
   }
 

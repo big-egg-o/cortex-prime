@@ -47,6 +47,8 @@
       "DoubleDie": "Double",
       "RemoveDie": "Remove",
       "LabelPlaceholder": "Source label",
+      "DieSize": "Die size",
+      "Empty": "No dice yet. Add one below.",
       "AddDie": "Add",
       "CustomDieDefaultLabel": "Custom",
       "Roll": "Roll"

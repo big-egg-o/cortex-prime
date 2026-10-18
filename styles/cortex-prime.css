@@ -1,151 +1,12 @@
 /*
- * Cortex Prime system styles. Hot-reloaded in dev Foundry.
+ * Cortex Prime system styles. Hot-reloaded in dev Foundry; loaded by Foundry into the
+ * "system" cascade layer.
  *
- * Die shapes (shared by the poolroll-card chat card and the pool builder, under the plain
- * .cortex-prime prefix below) reuse Foundry's own dN-grey.svg icons as a CSS mask, so they
- * can be tinted per role, rather than the default chat tooltip's grey-icon-plus-filter() hack,
- * which only has two states and isn't theme-aware. Role fills and text use CSS variables
- * confirmed defined in Foundry 14.369's foundry2.css: --color-text-primary (adapts light/dark,
- * for free text), --color-cool-4 / --color-light-1 (unused and effect dice), --color-border-
- * highlight / --color-text-dark-primary (the total die, and the effect ring), --color-dark-3 /
- * --color-light-5 (hitches), --color-shadow-primary (the botch headline, marked-for-reroll)
- * and --font-awesome (icon-only buttons, the hitch mark). The fixed-palette pairs (everything
- * but --color-text-primary) keep the same contrast in both themes because Foundry doesn't
- * redefine them under body.theme-dark; only the semantic text variable does.
+ * Both the chat card and the pool builder use core markup (Decisions ADR-019), so core and
+ * theme CSS draw nearly everything. The rules below only add what core has no class for, and
+ * they use variables Foundry defines on body (--color-warm-1, --color-level-error,
+ * --color-text-secondary), since those reach the chat log as well as application windows.
  */
-
-/* ---------------------------------------- */
-/*  Shared die primitives                   */
-/* ---------------------------------------- */
-
-.cortex-prime.pool-builder .dice-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.6em;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.cortex-prime.pool-builder .die {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.15em;
-  width: 3em;
-}
-
-.cortex-prime.pool-builder .die.clickable {
-  cursor: var(--cursor-pointer);
-}
-
-.cortex-prime.pool-builder .die-shape {
-  position: relative;
-  width: 32px;
-  height: 32px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-weight: bold;
-  font-size: var(--font-size-14);
-}
-
-/* The role fill and the die silhouette live on this layer alone (z-index: 0) so the mask
-   never clips the result number or the hitch mark, which sit above it, unmasked. */
-.cortex-prime.pool-builder .die-shape::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: 0;
-  mask-repeat: no-repeat;
-  mask-size: contain;
-  mask-position: center;
-  -webkit-mask-repeat: no-repeat;
-  -webkit-mask-size: contain;
-  -webkit-mask-position: center;
-}
-
-.cortex-prime.pool-builder .die-shape.d4::before {
-  mask-image: url("../../../icons/svg/d4-grey.svg");
-  -webkit-mask-image: url("../../../icons/svg/d4-grey.svg");
-}
-
-.cortex-prime.pool-builder .die-shape.d6::before {
-  mask-image: url("../../../icons/svg/d6-grey.svg");
-  -webkit-mask-image: url("../../../icons/svg/d6-grey.svg");
-}
-
-.cortex-prime.pool-builder .die-shape.d8::before {
-  mask-image: url("../../../icons/svg/d8-grey.svg");
-  -webkit-mask-image: url("../../../icons/svg/d8-grey.svg");
-}
-
-.cortex-prime.pool-builder .die-shape.d10::before {
-  mask-image: url("../../../icons/svg/d10-grey.svg");
-  -webkit-mask-image: url("../../../icons/svg/d10-grey.svg");
-}
-
-.cortex-prime.pool-builder .die-shape.d12::before {
-  mask-image: url("../../../icons/svg/d12-grey.svg");
-  -webkit-mask-image: url("../../../icons/svg/d12-grey.svg");
-}
-
-.cortex-prime.pool-builder .die-result {
-  position: relative;
-  z-index: 1;
-}
-
-/* Unused and effect dice share the same fill; the effect ring (below) is what sets effect
-   apart, drawn on the <li> rather than the masked .die-shape, since a mask also clips any
-   box-shadow/outline painted on the masked element itself. */
-.cortex-prime.pool-builder .die.role-unused .die-shape,
-.cortex-prime.pool-builder .die.role-effect .die-shape {
-  color: var(--color-light-1);
-}
-
-.cortex-prime.pool-builder .die.role-unused .die-shape::before,
-.cortex-prime.pool-builder .die.role-effect .die-shape::before {
-  background-color: var(--color-cool-4);
-}
-
-/* Step/double/remove buttons are icon-only: the glyph is drawn the same way as the hitch mark
-   (content + font-awesome), not a class-based <i>, so no extra icon font needs loading. */
-.cortex-prime.pool-builder .icon-button {
-  width: 1.4em;
-  height: 1.4em;
-  padding: 0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.cortex-prime.pool-builder .icon-button::before {
-  font-family: var(--font-awesome);
-  font-weight: 900;
-  font-size: var(--font-size-10);
-}
-
-.cortex-prime.pool-builder .icon-button.step-up::before {
-  content: "\f0d8";
-}
-
-.cortex-prime.pool-builder .icon-button.step-down::before {
-  content: "\f0d7";
-}
-
-.cortex-prime.pool-builder .icon-button.double-die::before {
-  content: "\f24d";
-}
-
-.cortex-prime.pool-builder .icon-button.remove-die,
-.cortex-prime.pool-builder .icon-button.clear-source {
-  color: var(--color-shadow-primary);
-}
-
-.cortex-prime.pool-builder .icon-button.remove-die::before,
-.cortex-prime.pool-builder .icon-button.clear-source::before {
-  content: "\f2ed";
-}
 
 /* ---------------------------------------- */
 /*  poolroll-card (chat card)               */
@@ -254,45 +115,50 @@
 /*  pool-builder (ApplicationV2 window)     */
 /* ---------------------------------------- */
 
-.cortex-prime.pool-builder {
+/* Everything is scoped to .window-content: the cortex-prime and pool-builder classes sit on
+   the application element itself, header included, which these rules must not touch. */
+.cortex-prime.pool-builder .window-content .cp-builder-body {
   display: flex;
   flex-direction: column;
-  gap: 0.5em;
-  padding: 0.5em;
-  color: var(--color-text-primary);
+  gap: 0.75rem;
 }
 
-.cortex-prime.pool-builder .dice-group {
-  display: flex;
-  flex-direction: column;
-  gap: 0.3em;
+.cortex-prime.pool-builder .window-content fieldset.cp-source {
+  gap: 0.25rem;
+  padding: 0.5rem 0.75rem;
 }
 
-.cortex-prime.pool-builder .group-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.4em;
-  font-weight: bold;
+.cortex-prime.pool-builder .window-content fieldset.cp-source > legend {
+  gap: 0.5rem;
 }
 
-.cortex-prime.pool-builder .die-controls {
-  display: flex;
-  gap: 0.15em;
+.cortex-prime.pool-builder .window-content .cp-die-row {
+  flex-wrap: nowrap;
 }
 
-.cortex-prime.pool-builder .add-die {
-  display: flex;
-  gap: 0.4em;
-  align-items: center;
-  border-top: 1px solid var(--color-cool-4);
-  padding-top: 0.4em;
+.cortex-prime.pool-builder .window-content .cp-die-row > .cp-die-icon {
+  flex: none;
+  font-size: var(--font-size-20);
 }
 
-.cortex-prime.pool-builder .add-die input[name="label"] {
+.cortex-prime.pool-builder .window-content .cp-die-row > .form-fields {
+  flex: none;
+  width: auto;
+  gap: 0.25rem;
+}
+
+.cortex-prime.pool-builder .window-content .cp-add-die {
+  flex-wrap: nowrap;
+}
+
+/* Core gives select a full width; here it shares the row with the label and Add. */
+.cortex-prime.pool-builder .window-content .cp-add-die > select,
+.cortex-prime.pool-builder .window-content .cp-add-die > button {
+  flex: none;
+  width: auto;
+}
+
+.cortex-prime.pool-builder .window-content .cp-add-die > input {
   flex: 1;
-}
-
-.cortex-prime.pool-builder .roll {
-  font-weight: bold;
+  min-width: 0;
 }

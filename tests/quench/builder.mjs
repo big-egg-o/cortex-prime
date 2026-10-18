@@ -147,6 +147,29 @@ export function registerBuilderBatch(quench) {
           assert.deepEqual(reopenedIds, ids, "reopening from the flag should not change ids");
         });
 
+        it("renders core form layout inside .window-content: a fieldset per source, a row per die, " +
+          "a form footer with Roll", async () => {
+          const app = await openBuilder();
+          const content = app.element.querySelector(".window-content");
+          assert.isTrue(content.classList.contains("standard-form"), "standard-form goes on window-content");
+          assert.isNotNull(content.querySelector(".hint"), "an empty pool shows a hint");
+          assert.isTrue(content.querySelector('.form-footer [data-action="rollPool"]').disabled);
+
+          await app.addDie(8, "Source A");
+          await app.addDie(6, "Source A");
+          await app.addDie(10, "Source B");
+
+          const fieldsets = content.querySelectorAll("fieldset.cp-source");
+          assert.deepEqual([...fieldsets].map(f => f.querySelector("legend").textContent.trim()), ["Source A", "Source B"]);
+          assert.lengthOf(fieldsets[0].querySelectorAll(".form-group.cp-die-row"), 2);
+          const firstRow = fieldsets[0].querySelector(".cp-die-row");
+          assert.isNotNull(firstRow.querySelector("i.fa-dice-d8"));
+          assert.deepEqual([...firstRow.querySelectorAll("button[data-action]")].map(b => b.dataset.action),
+            ["stepDie", "stepDie", "doubleDie", "removeDie"]);
+          assert.isFalse(content.querySelector('.form-footer [data-action="rollPool"]').disabled);
+          assert.isAtMost(content.scrollWidth, content.clientWidth, "nothing overflows sideways");
+        });
+
         it("can't roll an empty pool", async () => {
           const app = await openBuilder();
           assert.lengthOf(app.pool, 0);
