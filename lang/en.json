@@ -1,5 +1,65 @@
 {
   "CORTEX": {
-    "SystemTitle": "Cortex Prime"
+    "SystemTitle": "Cortex Prime",
+    "Chat": {
+      "DefaultD4": "default d4",
+      "Botch": "Botch — total 0",
+      "ChooseDice": "Choose dice",
+      "Choosing": "Choosing…",
+      "ResolvedHeadline": "{total} · effect {effect}",
+      "NotConfirmed": "Not confirmed yet",
+      "ResetSuggestion": "Reset to suggestion",
+      "Increase": "Increase",
+      "Decrease": "Decrease",
+      "ExtraResultsPaid": "Extra Results Paid (temp)",
+      "ExtraEffectDicePaid": "Extra Effect Dice Paid (temp)",
+      "Confirm": "Confirm",
+      "StepUp": "Step up",
+      "StepDown": "Step down",
+      "TakeOutVictory": "Take-out / victory",
+      "OverflowPending": "Choose the overflow…",
+      "OverflowLeftover": "Use d{size}",
+      "OverflowNewDie": "New d{size}",
+      "Reroll": "Reroll",
+      "RerollMarked": "Reroll Marked",
+      "CancelReroll": "Cancel",
+      "Role": {
+        "Total": "Total",
+        "Effect": "Effect",
+        "Hitch": "Hitch",
+        "Unused": "Unused"
+      },
+      "Errors": {
+        "HITCH_SELECTED": "A hitch can't be picked.",
+        "UNAVAILABLE_DIE": "That die isn't available.",
+        "DIE_REUSED": "A die can't be both total and effect.",
+        "TOO_MANY_EXTRA_RESULTS": "More extra results than dice were rolled.",
+        "KEEP_TOO_FEW": "Pick more dice for the total.",
+        "KEEP_TOO_MANY": "Pick fewer dice for the total.",
+        "TOO_MANY_EFFECT_DICE": "More effect dice than are available.",
+        "EFFECT_DIE_MISSING": "An eligible die is still unused as an effect die.",
+        "EFFECT_DIE_D4_STEP_DOWN": "Stepping a d4 effect die down isn't supported yet."
+      }
+    },
+    "Builder": {
+      "Title": "Pool Builder",
+      "ClearSource": "Clear source",
+      "DoubleDie": "Double",
+      "RemoveDie": "Remove",
+      "LabelPlaceholder": "Source label",
+      "DieSize": "Die size",
+      "Empty": "No dice yet. Add one below.",
+      "AddDie": "Add",
+      "CustomDieDefaultLabel": "Custom",
+      "Roll": "Roll"
+    },
+    "Keybindings": {
+      "OpenPoolBuilder": "Open the Pool Builder"
+    }
+  },
+  "TYPES": {
+    "ChatMessage": {
+      "poolRoll": "Dice Pool Roll"
+    }
   }
 }

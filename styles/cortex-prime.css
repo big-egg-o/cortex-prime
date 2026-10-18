@@ -1,1 +1,164 @@
-/* Cortex Prime system styles. Hot-reloaded in dev Foundry. */
+/*
+ * Cortex Prime system styles. Hot-reloaded in dev Foundry; loaded by Foundry into the
+ * "system" cascade layer.
+ *
+ * Both the chat card and the pool builder use core markup (Decisions ADR-019), so core and
+ * theme CSS draw nearly everything. The rules below only add what core has no class for, and
+ * they use variables Foundry defines on body (--color-warm-1, --color-level-error,
+ * --color-text-secondary), since those reach the chat log as well as application windows.
+ */
+
+/* ---------------------------------------- */
+/*  poolroll-card (chat card)               */
+/* ---------------------------------------- */
+
+/* Core draws the dice, formula and total (.dice-roll, .dice-tooltip .dice-rolls .roll.dN,
+   .dice-total; ADR-019). These rules only mark the total and effect dice, the reroll marks and
+   clickable dice, and lay out the controls. */
+.cortex-prime.poolroll-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+/* Room for the role outlines inside core's overflow: hidden wrapper. */
+.cortex-prime.poolroll-card .dice-rolls {
+  padding: 3px 2px;
+}
+
+.cortex-prime.poolroll-card .dice-rolls .roll {
+  margin: 0 5px 3px 0;
+  border-radius: 3px;
+}
+
+.cortex-prime.poolroll-card .roll.cp-clickable {
+  cursor: var(--cursor-pointer);
+}
+
+.cortex-prime.poolroll-card .roll.cp-total {
+  outline: 2px solid var(--color-warm-1);
+}
+
+.cortex-prime.poolroll-card .roll.cp-effect {
+  outline: 2px dashed var(--color-warm-1);
+}
+
+/* In reroll mode the dice about to change matter more than their role. */
+.cortex-prime.poolroll-card .roll.cp-marked {
+  outline: 2px dashed var(--color-level-error);
+}
+
+/* Core's .dice-total.failure red loses to a later chat rule, so it's restated here. */
+.cortex-prime.poolroll-card .dice-total.failure {
+  color: var(--color-level-error);
+}
+
+/* A valid selection that isn't confirmed yet. */
+.cortex-prime.poolroll-card .dice-total.cp-preview {
+  font-style: italic;
+  color: var(--color-text-secondary);
+}
+
+.cortex-prime.poolroll-card .cp-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.cortex-prime.poolroll-card .cp-errors {
+  flex: 0 0 100%;
+  margin: 0;
+  padding-left: 1.1em;
+  font-size: var(--font-size-12);
+}
+
+.cortex-prime.poolroll-card .cp-counter {
+  flex: 0 0 100%;
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: var(--font-size-12);
+}
+
+.cortex-prime.poolroll-card .cp-counter-label {
+  flex: 1;
+}
+
+.cortex-prime.poolroll-card .cp-counter-value {
+  min-width: 1.5em;
+  text-align: center;
+}
+
+.cortex-prime.poolroll-card .cp-buttons {
+  flex: 0 0 100%;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+/* Buttons share a row when their labels fit, and wrap rather than break a label. */
+.cortex-prime.poolroll-card .cp-buttons > button,
+.cortex-prime.poolroll-card .cp-overflow-choice > button,
+.cortex-prime.poolroll-card .cp-reroll-controls > button {
+  flex: 1 0 auto;
+  white-space: nowrap;
+}
+
+.cortex-prime.poolroll-card .cp-effect-control {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+/* ---------------------------------------- */
+/*  pool-builder (ApplicationV2 window)     */
+/* ---------------------------------------- */
+
+/* Everything is scoped to .window-content: the cortex-prime and pool-builder classes sit on
+   the application element itself, header included, which these rules must not touch. */
+.cortex-prime.pool-builder .window-content .cp-builder-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.cortex-prime.pool-builder .window-content fieldset.cp-source {
+  gap: 0.25rem;
+  padding: 0.5rem 0.75rem;
+}
+
+.cortex-prime.pool-builder .window-content fieldset.cp-source > legend {
+  gap: 0.5rem;
+}
+
+.cortex-prime.pool-builder .window-content .cp-die-row {
+  flex-wrap: nowrap;
+}
+
+.cortex-prime.pool-builder .window-content .cp-die-row > .cp-die-icon {
+  flex: none;
+  font-size: var(--font-size-20);
+}
+
+.cortex-prime.pool-builder .window-content .cp-die-row > .form-fields {
+  flex: none;
+  width: auto;
+  gap: 0.25rem;
+}
+
+.cortex-prime.pool-builder .window-content .cp-add-die {
+  flex-wrap: nowrap;
+}
+
+/* Core gives select a full width; here it shares the row with the label and Add. */
+.cortex-prime.pool-builder .window-content .cp-add-die > select,
+.cortex-prime.pool-builder .window-content .cp-add-die > button {
+  flex: none;
+  width: auto;
+}
+
+.cortex-prime.pool-builder .window-content .cp-add-die > input {
+  flex: 1;
+  min-width: 0;
+}

@@ -1,0 +1,42 @@
+<div class="cp-builder-body">
+  {{#each groups}}
+  <fieldset class="cp-source">
+    <legend class="control">
+      <span>{{ this.label }}</span>
+      <button type="button" class="ui-control icon" data-action="clearSource" data-source-label="{{ this.label }}"
+        data-tooltip aria-label="{{ localize "CORTEX.Builder.ClearSource" }}"><i class="fa-solid fa-trash" inert></i></button>
+    </legend>
+    {{#each this.dice}}
+    <div class="form-group cp-die-row" data-die-id="{{ this.id }}">
+      <span class="cp-die-icon"><i class="fa-solid fa-dice-d{{ this.size }} fa-fw" inert></i></span>
+      <span class="label">d{{ this.size }}</span>
+      <div class="form-fields">
+        <button type="button" class="ui-control icon" data-action="stepDie" data-die-id="{{ this.id }}" data-steps="-1"
+          data-tooltip aria-label="{{ localize "CORTEX.Chat.StepDown" }}"><i class="fa-solid fa-angle-down" inert></i></button>
+        <button type="button" class="ui-control icon" data-action="stepDie" data-die-id="{{ this.id }}" data-steps="1"
+          data-tooltip aria-label="{{ localize "CORTEX.Chat.StepUp" }}"><i class="fa-solid fa-angle-up" inert></i></button>
+        <button type="button" class="ui-control icon" data-action="doubleDie" data-die-id="{{ this.id }}"
+          data-tooltip aria-label="{{ localize "CORTEX.Builder.DoubleDie" }}"><i class="fa-solid fa-clone" inert></i></button>
+        <button type="button" class="ui-control icon" data-action="removeDie" data-die-id="{{ this.id }}"
+          data-tooltip aria-label="{{ localize "CORTEX.Builder.RemoveDie" }}"><i class="fa-solid fa-xmark" inert></i></button>
+      </div>
+    </div>
+    {{/each}}
+  </fieldset>
+  {{else}}
+  <p class="hint">{{ localize "CORTEX.Builder.Empty" }}</p>
+  {{/each}}
+
+  <div class="form-group cp-add-die">
+    <select name="size" aria-label="{{ localize "CORTEX.Builder.DieSize" }}">
+      {{#each sizes}}
+      <option value="{{ this }}">d{{ this }}</option>
+      {{/each}}
+    </select>
+    <input type="text" name="label" placeholder="{{ localize "CORTEX.Builder.LabelPlaceholder" }}"
+      aria-label="{{ localize "CORTEX.Builder.LabelPlaceholder" }}">
+    <button type="button" data-action="addDie">
+      <i class="fa-solid fa-plus" inert></i><span>{{ localize "CORTEX.Builder.AddDie" }}</span>
+    </button>
+  </div>
+</div>

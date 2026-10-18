@@ -12,5 +12,5 @@ export { stepDie } from "./dice.mjs";
 export { buildPool, doubleDie, stepPoolDie } from "./pool.mjs";
 export {
   applyOverflowChoice, applyRerolls, applyResults, evaluate, largestEligible, rerollableIds,
-  resolve, stepEffectDie, twoHighest, unrolledEffectDie, validateSelection
+  resolve, stepEffectDie, suggestSelection, twoHighest, unrolledEffectDie, validateSelection
 } from "./roll.mjs";

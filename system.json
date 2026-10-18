@@ -12,6 +12,11 @@
     { "name": "big-egg-o", "url": "https://github.com/big-egg-o" }
   ],
   "url": "https://github.com/big-egg-o/cortex-prime",
+  "documentTypes": {
+    "ChatMessage": {
+      "poolRoll": {}
+    }
+  },
   "esmodules": ["module/cortex-prime.mjs"],
   "styles": [{ "src": "styles/cortex-prime.css" }],
   "languages": [

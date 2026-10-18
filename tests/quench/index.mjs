@@ -7,11 +7,27 @@
  * @module tests/quench
  */
 
+import { registerBuilderBatch } from "./builder.mjs";
+import { registerCardBatch } from "./card.mjs";
+import { registerChatBatch } from "./chat.mjs";
+import { registerDiceBatch } from "./dice.mjs";
+import { registerEffectBatch } from "./effect.mjs";
+import { registerRerollBatch } from "./reroll.mjs";
+import { registerSelectionBatch } from "./selection.mjs";
+
 /**
  * Register all Cortex Prime batches with Quench.
  * @param {object} quench  The Quench API object passed to the `quenchReady` hook.
  */
 export function registerQuenchBatches(quench) {
+  registerChatBatch(quench);
+  registerDiceBatch(quench);
+  registerCardBatch(quench);
+  registerSelectionBatch(quench);
+  registerEffectBatch(quench);
+  registerRerollBatch(quench);
+  registerBuilderBatch(quench);
+
   quench.registerBatch(
     "cortex-prime.smoke",
     ({ describe, it, assert }) => {

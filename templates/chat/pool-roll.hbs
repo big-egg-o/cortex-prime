@@ -1,0 +1,117 @@
+<div class="cortex-prime poolroll-card">
+  {{!-- Core roll markup (ADR-019). Always expanded, and no data-action="expandRoll": the dice stay visible. --}}
+  <div class="dice-roll expanded">
+    <div class="dice-result">
+      <div class="dice-formula">{{ formula }}</div>
+      <div class="dice-tooltip">
+        <div class="wrapper">
+          <ol class="dice-rolls">
+            {{#each dice}}
+            <li class="roll die d{{ this.size }} {{ this.cssClass }}" data-die-id="{{ this.id }}"
+              {{#if this.clickable}}data-action="{{ this.action }}"{{/if}}
+              data-tooltip-text="{{ this.label }} · {{ this.roleLabel }}"
+              aria-label="{{ this.roleLabel }}: {{ this.label }} d{{ this.size }} {{ this.result }}">{{ this.result }}</li>
+            {{/each}}
+          </ol>
+        </div>
+      </div>
+      <h4 class="dice-total{{#if botch}} failure{{/if}}{{#if preview}} cp-preview{{/if}}"
+        {{#if preview}}data-tooltip="CORTEX.Chat.NotConfirmed"{{/if}}>{{ headline }}</h4>
+    </div>
+  </div>
+
+  {{#if interactive}}
+  {{#unless reroll.active}}
+  <div class="cp-controls cp-selection">
+    {{#if selection.errors.length}}
+    <ul class="cp-errors">
+      {{#each selection.errors}}
+      <li>{{ this.message }}</li>
+      {{/each}}
+    </ul>
+    {{/if}}
+
+    <div class="cp-counter" data-counter="extra-results">
+      <span class="cp-counter-label">{{ localize "CORTEX.Chat.ExtraResultsPaid" }}</span>
+      <button type="button" class="ui-control icon" data-action="decrement-extra-results"
+        data-tooltip aria-label="{{ localize "CORTEX.Chat.Decrease" }}"><i class="fa-solid fa-minus" inert></i></button>
+      <span class="cp-counter-value">{{ selection.extraResultsPaid }}</span>
+      <button type="button" class="ui-control icon" data-action="increment-extra-results"
+        data-tooltip aria-label="{{ localize "CORTEX.Chat.Increase" }}"><i class="fa-solid fa-plus" inert></i></button>
+    </div>
+    <div class="cp-counter" data-counter="extra-effect-dice">
+      <span class="cp-counter-label">{{ localize "CORTEX.Chat.ExtraEffectDicePaid" }}</span>
+      <button type="button" class="ui-control icon" data-action="decrement-extra-effect-dice"
+        data-tooltip aria-label="{{ localize "CORTEX.Chat.Decrease" }}"><i class="fa-solid fa-minus" inert></i></button>
+      <span class="cp-counter-value">{{ selection.extraEffectDicePaid }}</span>
+      <button type="button" class="ui-control icon" data-action="increment-extra-effect-dice"
+        data-tooltip aria-label="{{ localize "CORTEX.Chat.Increase" }}"><i class="fa-solid fa-plus" inert></i></button>
+    </div>
+
+    <div class="cp-buttons">
+      {{#unless botch}}
+      <button type="button" data-action="two-highest">
+        <i class="fa-solid fa-arrow-rotate-left" inert></i><span>{{ localize "CORTEX.Chat.ResetSuggestion" }}</span>
+      </button>
+      {{/unless}}
+      <button type="button" class="cp-confirm" data-action="confirm" {{#unless selection.valid}}disabled{{/unless}}>
+        <i class="fa-solid fa-check" inert></i><span>{{ localize "CORTEX.Chat.Confirm" }}</span>
+      </button>
+    </div>
+  </div>
+  {{/unless}}
+  {{/if}}
+
+  {{#if effectControls}}
+  <div class="cp-controls cp-effect-controls">
+    {{#each effectControls}}
+    <div class="cp-effect-control" data-effect-index="{{ this.index }}">
+      <span class="cp-effect-size">d{{ this.size }}</span>
+      {{#if this.canStepDown}}
+      <button type="button" class="ui-control icon" data-action="step-effect-die"
+        data-effect-index="{{ this.index }}" data-steps="-1"
+        data-tooltip aria-label="{{ localize "CORTEX.Chat.StepDown" }}"><i class="fa-solid fa-angle-down" inert></i></button>
+      {{/if}}
+      <button type="button" class="ui-control icon" data-action="step-effect-die"
+        data-effect-index="{{ this.index }}" data-steps="1"
+        data-tooltip aria-label="{{ localize "CORTEX.Chat.StepUp" }}"><i class="fa-solid fa-angle-up" inert></i></button>
+    </div>
+    {{/each}}
+  </div>
+  {{/if}}
+
+  {{#if overflowChoice}}
+  <div class="cp-controls cp-overflow-choice">
+    {{#each overflowChoice.leftovers}}
+    <button type="button" data-action="overflow-choice" data-kind="leftover" data-die-id="{{ this.dieId }}">
+      <i class="fa-solid fa-dice" inert></i><span>{{ this.label }}</span>
+    </button>
+    {{/each}}
+    <button type="button" data-action="overflow-choice" data-kind="new-d6">
+      <i class="fa-solid fa-dice-d6" inert></i><span>{{ overflowChoice.newDieLabel }}</span>
+    </button>
+    {{#if overflowChoice.takeOutAvailable}}
+    <button type="button" data-action="overflow-choice" data-kind="take-out">
+      <i class="fa-solid fa-trophy" inert></i><span>{{ overflowChoice.takeOutLabel }}</span>
+    </button>
+    {{/if}}
+  </div>
+  {{/if}}
+
+  {{#if reroll}}
+  <div class="cp-controls cp-reroll-controls">
+    <button type="button" data-action="toggle-reroll-mode" aria-pressed="{{#if reroll.active}}true{{else}}false{{/if}}">
+      {{#if reroll.active}}
+      <i class="fa-solid fa-xmark" inert></i><span>{{ localize "CORTEX.Chat.CancelReroll" }}</span>
+      {{else}}
+      <i class="fa-solid fa-dice" inert></i><span>{{ localize "CORTEX.Chat.Reroll" }}</span>
+      {{/if}}
+    </button>
+    {{#if reroll.active}}
+    <button type="button" data-action="reroll" {{#unless reroll.canReroll}}disabled{{/unless}}>
+      <i class="fa-solid fa-dice" inert></i><span>{{ localize "CORTEX.Chat.RerollMarked" }}</span>
+    </button>
+    {{/if}}
+  </div>
+  {{/if}}
+</div>

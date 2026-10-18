@@ -4,7 +4,7 @@ import globals from "globals";
 /** Foundry globals available to client code (not to module/rules/). */
 const foundryGlobals = Object.fromEntries([
   "foundry", "game", "CONFIG", "CONST", "Hooks", "ui", "canvas", "Handlebars", "PIXI",
-  "Actor", "Item", "ChatMessage", "Combat", "Roll", "TextEditor",
+  "Actor", "Item", "ChatMessage", "Combat", "Roll", "TextEditor", "User",
   "fromUuid", "fromUuidSync", "getDocumentClass", "_loc"
 ].map(name => [name, "readonly"]));
 
@@ -46,5 +46,13 @@ export default [
   {
     files: ["tests/quench/**/*.mjs"],
     languageOptions: { globals: { ...globals.browser, ...foundryGlobals, quench: "readonly" } }
+  },
+  {
+    // scripts/run-quench.mjs: Node code that also hands small functions to
+    // page.evaluate()/waitForFunction(), which run inside the Foundry browser page.
+    files: ["scripts/run-quench.mjs"],
+    languageOptions: {
+      globals: { ...globals.node, ...globals.browser, ...foundryGlobals, quench: "readonly", Mocha: "readonly" }
+    }
   }
 ];
