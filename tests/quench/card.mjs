@@ -132,6 +132,34 @@ export function registerCardBatch(quench) {
           assert.equal(html.querySelector(".headline").textContent.trim(), game.i18n.localize("CORTEX.Chat.Choosing"));
         });
 
+        it("hides the shortcuts, counters and Confirm during reroll mode, showing them again on cancel", async () => {
+          const dice = pool([10, 8, 6]);
+          const results = [7, 5, 3];
+
+          const message = await postPoolRoll({ pool: dice, results });
+          messages.push(message);
+
+          const html = document.createElement("div");
+          html.innerHTML = '<div class="message-content"></div>';
+          onRenderPoolRollMessage(message, html);
+          const content = html.querySelector(".message-content");
+          const toggle = () => content.querySelector('[data-action="toggle-reroll-mode"]');
+
+          assert.isNotNull(content.querySelector(".pool-selection"), "controls show before reroll mode");
+          assert.equal(toggle().textContent.trim(), game.i18n.localize("CORTEX.Chat.Reroll"));
+
+          toggle().click();
+
+          assert.isNull(content.querySelector(".pool-selection"), "shortcuts/counters/Confirm hide in reroll mode");
+          assert.isNotNull(content.querySelector('[data-action="reroll"]'), "Reroll Marked shows in reroll mode");
+          assert.equal(toggle().textContent.trim(), game.i18n.localize("CORTEX.Chat.CancelReroll"));
+
+          toggle().click();
+
+          assert.isNotNull(content.querySelector(".pool-selection"), "controls show again after cancelling");
+          assert.equal(toggle().textContent.trim(), game.i18n.localize("CORTEX.Chat.Reroll"));
+        });
+
         it("leaves the content untouched for a message the current user can't see", () => {
           const html = document.createElement("div");
           html.innerHTML = '<div class="message-content">unchanged</div>';

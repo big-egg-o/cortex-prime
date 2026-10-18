@@ -13,6 +13,7 @@
   </ul>
 
   {{#if interactive}}
+  {{#unless reroll.active}}
   <div class="pool-selection">
     {{#if selection.errors.length}}
     <ul class="errors">
@@ -48,6 +49,7 @@
       {{ localize "CORTEX.Chat.Confirm" }}
     </button>
   </div>
+  {{/unless}}
   {{/if}}
 
   {{#if effectControls}}
@@ -85,7 +87,7 @@
   {{#if reroll}}
   <div class="reroll-controls">
     <button type="button" class="{{#if reroll.active}}active{{/if}}" data-action="toggle-reroll-mode">
-      {{ localize "CORTEX.Chat.Reroll" }}
+      {{#if reroll.active}}{{ localize "CORTEX.Chat.CancelReroll" }}{{else}}{{ localize "CORTEX.Chat.Reroll" }}{{/if}}
     </button>
     {{#if reroll.active}}
     <button type="button" data-action="reroll" {{#unless reroll.canReroll}}disabled{{/unless}}>

@@ -120,6 +120,33 @@ export function registerBuilderBatch(quench) {
           assert.lengthOf(app.pool, 2, "rolling keeps the pool");
         });
 
+        it("keeps every id unique through remove, add, double and a d12 step-up overflow, " +
+          "also after reopening from the stored flag", async () => {
+          const app = await openBuilder();
+
+          await app.addDie(8, "Source A");
+          await app.addDie(6, "Source A");
+          await app.addDie(10, "Source B");
+          let stored = game.user.getFlag(FLAG_SCOPE, FLAG_KEY);
+          const [eightId, sixId, tenId] = stored.map(d => d.id);
+
+          await app.removeDie(eightId);
+          await app.addDie(4, "Source C");
+          await app.doubleDie(sixId);
+          await app.stepDie(tenId, 1); // d10 -> d12, still within the ladder
+          await app.stepDie(tenId, 1); // d12 stepped again: overflow d6
+
+          stored = game.user.getFlag(FLAG_SCOPE, FLAG_KEY);
+          const ids = stored.map(d => d.id);
+          assert.lengthOf(new Set(ids), ids.length, "every die id should be unique");
+
+          app.close();
+          const reopened = await openBuilder();
+          const reopenedIds = reopened.pool.map(d => d.id);
+          assert.lengthOf(new Set(reopenedIds), reopenedIds.length, "ids stay unique after reopening");
+          assert.deepEqual(reopenedIds, ids, "reopening from the flag should not change ids");
+        });
+
         it("can't roll an empty pool", async () => {
           const app = await openBuilder();
           assert.lengthOf(app.pool, 0);

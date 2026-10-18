@@ -109,7 +109,7 @@ export function registerRerollBatch(quench) {
           assert.isTrue(resolved.system.resolution.effectDice[0].isDefault);
         });
 
-        it("appends a real reroll to message.rolls", async () => {
+        it("appends a real reroll to message.rolls, within range and matching the stored result", async () => {
           const dice = pool([8, 6]);
           const message = await postPoolRoll({ pool: dice, results: [5, 3] });
           messages.push(message);
@@ -119,7 +119,15 @@ export function registerRerollBatch(quench) {
           await applyCardChange(message, { action: "reroll", dieIds: [eightId] }); // no fixed results: a real Roll
 
           const after = game.messages.get(message.id);
-          assert.lengthOf(after.rolls, rollCountBefore + 1);
+          assert.lengthOf(after.rolls, rollCountBefore + 1, "message.rolls should grow by exactly one");
+
+          const newRoll = after.rolls[after.rolls.length - 1];
+          const newResult = newRoll.dice[0].results[0].result;
+          assert.isAtLeast(newResult, 1);
+          assert.isAtMost(newResult, 8);
+
+          const rerolledDie = after.system.rolled.find(d => d.id === eightId);
+          assert.equal(rerolledDie.result, newResult, "the stored rolled list should match the new Roll's result");
         });
 
         it("refuses a reroll on a resolved card", async () => {

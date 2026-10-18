@@ -21,6 +21,7 @@
       "OverflowNewDie": "New d{size}",
       "Reroll": "Reroll",
       "RerollMarked": "Reroll Marked",
+      "CancelReroll": "Cancel",
       "Role": {
         "Total": "Total",
         "Effect": "Effect",
