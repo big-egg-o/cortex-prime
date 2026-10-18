@@ -257,6 +257,30 @@ export function largestEligible(rolled, usedIds) {
 }
 
 /**
+ * The suggested selection (Decisions ADR-019): the highest results for the total, as many as
+ * the keep limit plus paid extra results allow (rule 12, rule 14, rule 17), then the largest
+ * eligible leftover for each effect slot, 1 plus paid extra effect dice (rule 18, rule 21).
+ * Filling the total first means it never keeps fewer results than RQ-001 requires; an effect
+ * slot with nothing left stays empty, for resolve() to default to a d4 (rule 20). A botch
+ * gets no suggestion, since nothing is eligible.
+ * @param {import("./types.mjs").RolledDie[]} rolled
+ * @param {import("./types.mjs").Selection} selection - read for keepLimit and the paid counters
+ * @returns {{totalIds: string[], effectDieIds: string[]}}
+ */
+export function suggestSelection(rolled, selection) {
+  const keepLimit = selection.keepLimit ?? 2;
+  const totalIds = twoHighest(rolled, keepLimit + (selection.extraResultsPaid ?? 0));
+  const effectSlots = 1 + (selection.extraEffectDicePaid ?? 0);
+  const effectDieIds = [];
+  for ( let i = 0; i < effectSlots; i++ ) {
+    const next = largestEligible(rolled, [...totalIds, ...effectDieIds]);
+    if ( next === null ) break;
+    effectDieIds.push(next);
+  }
+  return { totalIds, effectDieIds };
+}
+
+/**
  * The largest die in an unrolled pool, for an unopposed effect die (rule 24).
  * @param {import("./types.mjs").PoolDie[]} pool
  * @returns {import("./types.mjs").DieSize}

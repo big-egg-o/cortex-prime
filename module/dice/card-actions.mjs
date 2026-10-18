@@ -7,14 +7,14 @@
  */
 
 import {
-  applyOverflowChoice, applyRerolls, largestEligible, rerollableIds, resolve, stepEffectDie,
-  twoHighest, validateSelection
+  applyOverflowChoice, applyRerolls, rerollableIds, resolve, stepEffectDie, suggestSelection,
+  validateSelection
 } from "../rules/index.mjs";
 import { rerollDice } from "./roll-pool.mjs";
 
 /**
  * @typedef {Object} CardChange
- * @property {'cycle-die'|'two-highest'|'biggest-effect'|'increment-extra-results'|
+ * @property {'cycle-die'|'two-highest'|'increment-extra-results'|
  *   'decrement-extra-results'|'increment-extra-effect-dice'|'decrement-extra-effect-dice'|
  *   'confirm'|'step-effect-die'|'overflow-choice'|'reroll'} action
  * @property {string} [dieId] - required for 'cycle-die', and for 'overflow-choice' with kind
@@ -84,53 +84,6 @@ function cycleDie(rolled, selection, dieId) {
 }
 
 /**
- * Fills every effect-die slot (1 + extraEffectDicePaid), each with the next largest eligible
- * die not already used by an earlier slot or by `excludeIds`; a slot with nothing eligible
- * left stays empty, defaulted to a d4 by resolve() (rule 20, rule 21, DP-22).
- * @param {import("../rules/types.mjs").RolledDie[]} rolled
- * @param {import("../rules/types.mjs").Selection} selection
- * @param {string[]} excludeIds
- * @returns {string[]}
- */
-function fillEffectSlots(rolled, selection, excludeIds) {
-  const effectSlots = 1 + selection.extraEffectDicePaid;
-  const effectDieIds = [];
-  for ( let i = 0; i < effectSlots; i++ ) {
-    const next = largestEligible(rolled, [...excludeIds, ...effectDieIds]);
-    if ( next === null ) break;
-    effectDieIds.push(next);
-  }
-  return effectDieIds;
-}
-
-/**
- * The GM's shortcut (rule 12, DP-13, DP-19, DP-21): the highest results for the total, then
- * the largest eligible die for each effect slot.
- * @param {import("../rules/types.mjs").RolledDie[]} rolled
- * @param {import("../rules/types.mjs").Selection} selection
- * @returns {import("../rules/types.mjs").Selection}
- */
-function applyTwoHighest(rolled, selection) {
-  const totalIds = twoHighest(rolled, selection.keepLimit + selection.extraResultsPaid);
-  const effectDieIds = fillEffectSlots(rolled, selection, totalIds);
-  return { ...selection, totalIds, effectDieIds };
-}
-
-/**
- * The "biggest effect" shortcut (rule 18, DP-22): the largest eligible die(s) go to the
- * effect slots first, then the highest results among what's left form the total.
- * @param {import("../rules/types.mjs").RolledDie[]} rolled
- * @param {import("../rules/types.mjs").Selection} selection
- * @returns {import("../rules/types.mjs").Selection}
- */
-function applyBiggestEffect(rolled, selection) {
-  const effectDieIds = fillEffectSlots(rolled, selection, []);
-  const remaining = rolled.filter(d => !effectDieIds.includes(d.id));
-  const totalIds = twoHighest(remaining, selection.keepLimit + selection.extraResultsPaid);
-  return { ...selection, totalIds, effectDieIds };
-}
-
-/**
  * Computes the next Selection for every action except "confirm", or null to refuse the
  * change (nothing stored).
  * @param {import("../data/chat/pool-roll.mjs").default} system
@@ -141,8 +94,7 @@ function nextSelection(system, change) {
   const { rolled, selection } = system;
   switch ( change.action ) {
     case "cycle-die": return cycleDie(rolled, selection, change.dieId);
-    case "two-highest": return applyTwoHighest(rolled, selection);
-    case "biggest-effect": return applyBiggestEffect(rolled, selection);
+    case "two-highest": return { ...selection, ...suggestSelection(rolled, selection) };
     case "increment-extra-results":
       return { ...selection, extraResultsPaid: selection.extraResultsPaid + 1 };
     case "decrement-extra-results":
