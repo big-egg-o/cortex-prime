@@ -4,6 +4,13 @@
  */
 
 import { stepDie } from "./dice.mjs";
+import { codedError } from "./errors.mjs";
+
+/**
+ * Error code: an effect die can't change while an overflow choice is pending (DP-E07, ADR-026).
+ * A technical guard, not a rule.
+ */
+export const OVERFLOW_PENDING = "OVERFLOW_PENDING";
 
 /**
  * Pairs each pool die with its rolled result, in pool order, and flags hitches (a result of 1,
@@ -186,16 +193,21 @@ function leftoverEligible(rolled, resolution) {
  * instead it records a pending overflow with the options for the roller to pick from (rule
  * 22): every eligible leftover die, a new d6, or a take-out, resolved by applyOverflowChoice.
  * `cause` only affects labelling (RQ-005) — the options are identical for a heroic success and
- * for an SFX or other trigger.
+ * for an SFX or other trigger. While an overflow choice is pending, every step is refused so
+ * the pending choice is never dropped (DP-E07); applyOverflowChoice clears it.
  * @param {import("./types.mjs").RolledDie[]} rolled
  * @param {import("./types.mjs").Resolution} resolution
  * @param {string} effectId - the id of the entry in resolution.effectDice (ADR-026)
  * @param {number} steps
  * @param {'heroic'|'other'} cause
  * @returns {import("./types.mjs").Resolution} a new Resolution
- * @throws {Error} if no effect die has the id `effectId`
+ * @throws {Error} code OVERFLOW_PENDING while an overflow choice is pending; a plain Error if no
+ *   effect die has the id `effectId`
  */
 export function stepEffectDie(rolled, resolution, effectId, steps, cause) {
+  if ( resolution.overflow ) {
+    throw codedError(OVERFLOW_PENDING, "stepEffectDie: an overflow choice is still pending");
+  }
   const entry = resolution.effectDice.find(e => e.id === effectId);
   if ( !entry ) throw new Error(`stepEffectDie: no effect die with id "${effectId}"`);
   const result = stepDie(entry.size, steps);

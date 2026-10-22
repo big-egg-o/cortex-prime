@@ -26,6 +26,16 @@ function selection({
   return sel;
 }
 
+/** @param {Function} fn @returns {Error|null} what `fn` threw, or null */
+function thrownBy(fn) {
+  try {
+    fn();
+  } catch ( err ) {
+    return err;
+  }
+  return null;
+}
+
 describe("effect ids", () => {
   it("resolve numbers the effect dice e1, e2 in order and marks rolled dice as kind rolled", () => {
     const rolled = rollPool([12, 10, 8, 6], [5, 7, 6, 2]);
@@ -190,6 +200,46 @@ describe("stepEffectDie", () => {
     ]);
     expect(withD6.consumedDieIds).toEqual([rolled[3].id]);
     expect(withD6.nextEffectNumber).toBe(4);
+  });
+
+  it("DP-E07 refuses any effect-die change while an overflow choice is pending", () => {
+    const rolled = rollPool([12, 10, 8, 6], [5, 7, 6, 2]);
+    const resolution = resolve(rolled, selection({
+      totalIds: [rolled[1].id, rolled[2].id],
+      effectDieIds: [rolled[0].id, rolled[3].id],
+      extraEffectDicePaid: 1
+    }));
+    const overflowed = stepEffectDie(rolled, resolution, "e1", 1, "heroic");
+    const pending = structuredClone(overflowed.overflow);
+
+    for ( const [effectId, steps] of [["e2", 1], ["e2", -1], ["e1", -1], ["e1", 1]] ) {
+      const err = thrownBy(() => stepEffectDie(rolled, overflowed, effectId, steps, "other"));
+      expect(err, `${effectId} by ${steps}`).not.toBeNull();
+      expect(err.code, `${effectId} by ${steps}`).toBe("OVERFLOW_PENDING");
+    }
+    expect(overflowed.overflow).toEqual(pending);
+    expect(overflowed.effectDice).toEqual(resolution.effectDice);
+  });
+
+  it("steps effect dice again once the overflow choice is made", () => {
+    const rolled = rollPool([12, 10, 8], [3, 9, 8]);
+    const resolution = resolve(rolled, selection({
+      totalIds: [rolled[1].id, rolled[2].id],
+      effectDieIds: [rolled[0].id]
+    }));
+    const overflowed = stepEffectDie(rolled, resolution, "e1", 1, "heroic");
+    const withD6 = applyOverflowChoice(rolled, overflowed, { kind: "new-d6" });
+
+    const steppedNew = stepEffectDie(rolled, withD6, "e2", 1, "other");
+    expect(steppedNew.effectDice).toEqual([
+      { id: "e1", kind: "rolled", size: 12, dieId: rolled[0].id, isDefault: false },
+      { id: "e2", kind: "overflow", size: 8, dieId: null, isDefault: true }
+    ]);
+
+    const steppedFirst = stepEffectDie(rolled, withD6, "e1", -1, "other");
+    expect(steppedFirst.effectDice[0]).toEqual(
+      { id: "e1", kind: "rolled", size: 10, dieId: rolled[0].id, isDefault: false }
+    );
   });
 });
 
