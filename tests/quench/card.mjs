@@ -3,10 +3,12 @@
  * @module tests/quench/card
  */
 
-import { applyResults, buildPool, resolve, twoHighest } from "../../module/rules/index.mjs";
+import {
+  applyOverflowChoice, applyResults, buildPool, resolve, stepEffectDie, twoHighest
+} from "../../module/rules/index.mjs";
 import { POOL_ROLL_SCHEMA_VERSION } from "../../module/data/chat/pool-roll.mjs";
 import { postPoolRoll } from "../../module/dice/post-pool-roll.mjs";
-import { onRenderPoolRollMessage, renderPoolRollCard } from "../../module/dice/pool-roll-card.mjs";
+import { notifyCardError, onRenderPoolRollMessage, renderPoolRollCard } from "../../module/dice/pool-roll-card.mjs";
 
 /**
  * @param {number[]} sizes
@@ -121,6 +123,76 @@ export function registerCardBatch(quench) {
           assert.isNull(html.querySelector(".cp-selection"), "a resolved card has no selection controls");
         });
 
+        it("offers a step-down on a d4 effect die and names the die by its effect id (DP-24b, ADR-026)", async () => {
+          const dice = pool([10, 8, 4]);
+          const rolled = applyResults(dice, [7, 5, 3]);
+          const [tenId, eightId, fourId] = dice.map(d => d.id);
+          const selection = { ...emptySelection(), totalIds: [tenId, eightId], effectDieIds: [fourId] };
+          const resolution = resolve(rolled, selection);
+
+          const message = await ChatMessage.create({
+            type: "poolRoll",
+            system: { schemaVersion: POOL_ROLL_SCHEMA_VERSION, pool: dice, rolled, selection, resolution, state: "resolved" }
+          });
+          messages.push(message);
+
+          const html = foundry.utils.parseHTML(await renderPoolRollCard(message));
+          const stepDown = html.querySelector('[data-action="step-effect-die"][data-steps="-1"]');
+          assert.isNotNull(stepDown, "a d4 effect die can be stepped down");
+          assert.equal(stepDown.dataset.effectId, "e1");
+          assert.isNull(html.querySelector("[data-effect-index]"), "no index-based controls are left");
+        });
+
+        it('shows "no effect die" and the removed die as used up once a d4 effect die is gone (DP-24b, DP-24c)',
+          async () => {
+            const dice = pool([10, 8, 4]);
+            const rolled = applyResults(dice, [7, 5, 3]);
+            const [tenId, eightId, fourId] = dice.map(d => d.id);
+            const selection = { ...emptySelection(), totalIds: [tenId, eightId], effectDieIds: [fourId] };
+            const resolution = stepEffectDie(rolled, resolve(rolled, selection), "e1", -1, "other");
+
+            const message = await ChatMessage.create({
+              type: "poolRoll",
+              system: {
+                schemaVersion: POOL_ROLL_SCHEMA_VERSION, pool: dice, rolled, selection, resolution, state: "resolved"
+              }
+            });
+            messages.push(message);
+
+            const html = foundry.utils.parseHTML(await renderPoolRollCard(message));
+            const expected = game.i18n.format("CORTEX.Chat.ResolvedHeadlineNoEffect", { total: 12 });
+            assert.notEqual(expected, "CORTEX.Chat.ResolvedHeadlineNoEffect", "the string exists");
+            assert.equal(html.querySelector(".dice-total").textContent.trim(), expected);
+
+            const four = html.querySelector(`li.roll[data-die-id="${fourId}"]`);
+            assert.isTrue(four.classList.contains("cp-used-up"), "the removed effect die's die is used up");
+            assert.isTrue(four.classList.contains("discarded"), "used up is muted like unused");
+            const usedUp = game.i18n.localize("CORTEX.Chat.Role.UsedUp");
+            assert.notEqual(usedUp, "CORTEX.Chat.Role.UsedUp", "the role string exists");
+            assert.include(four.dataset.tooltipText, usedUp);
+            assert.include(four.dataset.tooltipText, game.i18n.localize("CORTEX.Chat.Role.UsedUpTooltip"));
+            assert.notInclude(four.dataset.tooltipText, game.i18n.localize("CORTEX.Chat.Role.Unused"));
+          });
+
+        it('labels only the d4 default as "default d4", not an overflow d6 (ADR-026)', async () => {
+          const dice = pool([12, 10, 8]);
+          const rolled = applyResults(dice, [3, 9, 8]);
+          const [twelveId, tenId, eightId] = dice.map(d => d.id);
+          const selection = { ...emptySelection(), totalIds: [tenId, eightId], effectDieIds: [twelveId] };
+          const overflowed = stepEffectDie(rolled, resolve(rolled, selection), "e1", 1, "heroic");
+          const resolution = applyOverflowChoice(rolled, overflowed, { kind: "new-d6" });
+
+          const message = await ChatMessage.create({
+            type: "poolRoll",
+            system: { schemaVersion: POOL_ROLL_SCHEMA_VERSION, pool: dice, rolled, selection, resolution, state: "resolved" }
+          });
+          messages.push(message);
+
+          const html = foundry.utils.parseHTML(await renderPoolRollCard(message));
+          const expected = game.i18n.format("CORTEX.Chat.ResolvedHeadline", { total: 17, effect: "d12, d6" });
+          assert.equal(html.querySelector(".dice-total").textContent.trim(), expected);
+        });
+
         it("shows a preview headline for a valid, unconfirmed selection (DP-13)", async () => {
           const dice = pool([10, 8, 6]);
           const results = [7, 5, 3];
@@ -180,6 +252,32 @@ export function registerCardBatch(quench) {
 
           assert.isNotNull(content.querySelector(".cp-selection"), "controls show again after cancelling");
           assert.equal(toggle().textContent.trim(), game.i18n.localize("CORTEX.Chat.Reroll"));
+        });
+
+        it("shows a coded error's own string and a generic one for anything else, never a raw key", () => {
+          const shown = [];
+          const logged = [];
+          const unexpected = new Error("applyRerolls: no die with id x");
+          const originalError = ui.notifications.error;
+          const originalConsoleError = console.error;
+          try {
+            ui.notifications.error = text => shown.push(text);
+            console.error = err => logged.push(err);
+
+            notifyCardError(Object.assign(new Error("readable message"), { code: "HITCH_SELECTED" }));
+            notifyCardError(unexpected);
+            notifyCardError(Object.assign(new Error("readable message"), { code: "NO_SUCH_CODE" }));
+          } finally {
+            ui.notifications.error = originalError;
+            console.error = originalConsoleError;
+          }
+
+          const generic = game.i18n.localize("CORTEX.Chat.Errors.Unexpected");
+          assert.notEqual(generic, "CORTEX.Chat.Errors.Unexpected", "the generic string exists");
+          assert.deepEqual(shown, [game.i18n.localize("CORTEX.Chat.Errors.HITCH_SELECTED"), generic, generic]);
+          assert.lengthOf(logged, 2, "only the uncoded and unknown-code errors are logged");
+          assert.strictEqual(logged[0], unexpected);
+          assert.isFalse(shown.some(text => text.startsWith("CORTEX.")), "no raw key on screen");
         });
 
         it("leaves the content untouched for a message the current user can't see", () => {

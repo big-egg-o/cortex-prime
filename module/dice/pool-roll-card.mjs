@@ -34,15 +34,19 @@ const ROLE_LABEL_KEYS = {
   total: "CORTEX.Chat.Role.Total",
   effect: "CORTEX.Chat.Role.Effect",
   hitch: "CORTEX.Chat.Role.Hitch",
+  "used-up": "CORTEX.Chat.Role.UsedUp",
   unused: "CORTEX.Chat.Role.Unused"
 };
 
 /**
  * Each role drawn with core's result classes where one fits (ADR-019): a hitch is a 1, so it
- * gets core's `min` look; an unused die gets the `discarded` look. Total and effect have no
- * core equivalent.
+ * gets core's `min` look; an unused die gets the `discarded` look, and so does a used-up die
+ * (its effect die was stepped down and removed, DP-24c), with its own class on top. Total and
+ * effect have no core equivalent.
  */
-const ROLE_CSS = { hitch: "min", unused: "discarded", total: "cp-total", effect: "cp-effect" };
+const ROLE_CSS = {
+  hitch: "min", unused: "discarded", "used-up": "discarded cp-used-up", total: "cp-total", effect: "cp-effect"
+};
 
 /**
  * @typedef {Object} CardDie
@@ -50,8 +54,9 @@ const ROLE_CSS = { hitch: "min", unused: "discarded", total: "cp-total", effect:
  * @property {string} label - the die's source label (escaped by the template)
  * @property {number} size
  * @property {number} result
- * @property {'total'|'effect'|'unused'|'hitch'} role
+ * @property {'total'|'effect'|'used-up'|'unused'|'hitch'} role
  * @property {string} roleLabel - localized, for the die's tooltip/aria-label
+ * @property {string|null} roleHint - localized explanation added to the tooltip, or null
  * @property {string} cssClass - role, clickable and marked classes for the core `li.roll`
  * @property {boolean} clickable
  * @property {'cycle-die'|'toggle-reroll-mark'} action
@@ -68,16 +73,31 @@ export function preloadPoolRollCardTemplate() {
 }
 
 /**
- * The "effect {dice}" part of a headline: a default effect die (rule 20, rule 21, DP-22) shows
- * as "default d4" rather than its size, since every default is a d4 and showing both would be
- * redundant.
+ * The "effect {dice}" part of a headline: the d4 default (rule 20, rule 21, DP-22) shows as
+ * "default d4" rather than its size; every other entry, including an overflow d6 (rule 22),
+ * shows its size.
  * @param {import("../rules/types.mjs").EffectDieEntry[]} effectDice
  * @returns {string}
  */
 function formatEffectPhrase(effectDice) {
   return effectDice
-    .map(e => (e.isDefault ? game.i18n.localize("CORTEX.Chat.DefaultD4") : `d${e.size}`))
+    .map(e => (e.kind === "default" ? game.i18n.localize("CORTEX.Chat.DefaultD4") : `d${e.size}`))
     .join(", ");
+}
+
+/**
+ * The headline for a Resolution's total and effect dice; a separate wording when no effect
+ * die is left because the last one was stepped down and removed (DP-24b).
+ * @param {import("../rules/types.mjs").Resolution} resolution
+ * @returns {string}
+ */
+function formatResolvedHeadline(resolution) {
+  if ( resolution.effectDice.length === 0 ) {
+    return game.i18n.format("CORTEX.Chat.ResolvedHeadlineNoEffect", { total: resolution.total });
+  }
+  return game.i18n.format("CORTEX.Chat.ResolvedHeadline", {
+    total: resolution.total, effect: formatEffectPhrase(resolution.effectDice)
+  });
 }
 
 /**
@@ -92,7 +112,7 @@ function formatEffectPhrase(effectDice) {
  *   preview: boolean, interactive: boolean,
  *   selection: {valid: boolean, errors: {code: string, message: string}[],
  *     extraResultsPaid: number, extraEffectDicePaid: number}|null,
- *   effectControls: {effectId: string, size: number, canStepDown: boolean}[]|null,
+ *   effectControls: {effectId: string, size: number}[]|null,
  *   overflowChoice: {leftovers: {dieId: string, label: string}[], newDieLabel: string,
  *     takeOutAvailable: boolean, takeOutLabel: string}|null,
  *   reroll: {active: boolean, canReroll: boolean}|null}}
@@ -109,6 +129,7 @@ export function preparePoolRollCardContext(message) {
   const effectDieIds = resolvedState
     ? system.resolution.effectDice.map(e => e.dieId).filter(id => id !== null)
     : system.selection.effectDieIds;
+  const consumedIds = resolvedState ? system.resolution.consumedDieIds : [];
 
   // Reroll-marking mode (ADR-017) changes what a die click means and which dice can be
   // clicked at all, so it overrides the normal cycle-die clickability below.
@@ -118,7 +139,8 @@ export function preparePoolRollCardContext(message) {
   const dice = system.rolled.map(die => {
     const role = die.hitch ? "hitch"
       : totalIds.includes(die.id) ? "total"
-        : effectDieIds.includes(die.id) ? "effect" : "unused";
+        : effectDieIds.includes(die.id) ? "effect"
+          : consumedIds.includes(die.id) ? "used-up" : "unused";
     const clickable = rerollableSet
       ? rerollableSet.has(die.id)
       : interactive && !die.hitch && (die.state === "available");
@@ -126,6 +148,7 @@ export function preparePoolRollCardContext(message) {
     return {
       id: die.id, label: die.source.label, size: die.size, result: die.result, role,
       roleLabel: game.i18n.localize(ROLE_LABEL_KEYS[role]),
+      roleHint: role === "used-up" ? game.i18n.localize("CORTEX.Chat.Role.UsedUpTooltip") : null,
       cssClass: [ROLE_CSS[role], clickable ? "cp-clickable" : null, marked ? "cp-marked" : null].filterJoin(" "),
       clickable, action: rerollableSet ? "toggle-reroll-mark" : "cycle-die", marked
     };
@@ -142,11 +165,7 @@ export function preparePoolRollCardContext(message) {
   } else if ( resolvedState ) {
     if ( system.resolution.takeOut ) headline = game.i18n.localize("CORTEX.Chat.TakeOutVictory");
     else if ( system.resolution.overflow ) headline = game.i18n.localize("CORTEX.Chat.OverflowPending");
-    else {
-      headline = game.i18n.format("CORTEX.Chat.ResolvedHeadline", {
-        total: system.resolution.total, effect: formatEffectPhrase(system.resolution.effectDice)
-      });
-    }
+    else headline = formatResolvedHeadline(system.resolution);
   } else if ( !interactive ) {
     headline = game.i18n.localize("CORTEX.Chat.Choosing");
   } else {
@@ -156,10 +175,7 @@ export function preparePoolRollCardContext(message) {
       headline = game.i18n.localize(`CORTEX.Chat.Errors.${validation.errors[0].code}`);
       listedErrors = validation.errors.slice(1); // the headline already shows the first
     } else {
-      const previewResolution = resolve(system.rolled, system.selection);
-      headline = game.i18n.format("CORTEX.Chat.ResolvedHeadline", {
-        total: previewResolution.total, effect: formatEffectPhrase(previewResolution.effectDice)
-      });
+      headline = formatResolvedHeadline(resolve(system.rolled, system.selection));
       preview = true;
     }
   }
@@ -188,9 +204,7 @@ export function preparePoolRollCardContext(message) {
         takeOutLabel: game.i18n.localize("CORTEX.Chat.TakeOutVictory")
       };
     } else {
-      effectControls = system.resolution.effectDice.map(entry => (
-        { effectId: entry.id, size: entry.size, canStepDown: entry.size > 4 }
-      ));
+      effectControls = system.resolution.effectDice.map(entry => ({ effectId: entry.id, size: entry.size }));
     }
   }
 
@@ -237,10 +251,10 @@ function rerenderCardContent(message, content) {
  * purely local reroll-ui state (ADR-017) and never reach module/dice/card-actions.mjs:
  * toggling reroll mode and marking/unmarking a die, each followed by an in-place re-render.
  * Everything else — including "reroll" itself, once the marked ids are gathered — is
- * forwarded verbatim (the clicked element's whole dataset) to applyCardChange(). Catches a
- * thrown refusal (currently only EFFECT_DIE_D4_STEP_DOWN, RQ-009) so it reaches the roller as
- * a notification rather than an unhandled rejection; every other refusal is already silent by
- * design (card-actions.mjs).
+ * forwarded verbatim (the clicked element's whole dataset) to applyCardChange(). Every refusal
+ * there is silent by design (card-actions.mjs); the catch hands anything thrown to
+ * notifyCardError, so it reaches the roller as a notification rather than an unhandled
+ * rejection.
  * @param {ChatMessage} message
  * @param {HTMLElement} content
  */
@@ -269,13 +283,27 @@ function activatePoolRollCardListeners(message, content) {
       const dieIds = [...getRerollState(message.id).marked];
       rerollUiState.delete(message.id); // leaving reroll mode clears the marks (ADR-017)
       rerenderCardContent(message, content);
-      return applyCardChange(message, { action, dieIds })
-        .catch(err => ui.notifications.error(game.i18n.localize(`CORTEX.Chat.Errors.${err.message}`)));
+      return applyCardChange(message, { action, dieIds }).catch(notifyCardError);
     }
 
-    return applyCardChange(message, { action, ...rest })
-      .catch(err => ui.notifications.error(game.i18n.localize(`CORTEX.Chat.Errors.${err.message}`)));
+    return applyCardChange(message, { action, ...rest }).catch(notifyCardError);
   });
+}
+
+/**
+ * Shows an error from a card action without ever putting a raw key on screen: an error whose
+ * `code` has a CORTEX.Chat.Errors string shows that string; anything else is logged to the
+ * console and shown as the generic "unexpected" notification.
+ * @param {Error & {code?: string}} err
+ */
+export function notifyCardError(err) {
+  const key = `CORTEX.Chat.Errors.${err?.code}`;
+  if ( err?.code && game.i18n.has(key) ) {
+    ui.notifications.error(game.i18n.localize(key));
+    return;
+  }
+  console.error(err);
+  ui.notifications.error(game.i18n.localize("CORTEX.Chat.Errors.Unexpected"));
 }
 
 /**

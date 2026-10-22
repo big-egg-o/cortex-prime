@@ -29,14 +29,6 @@ import { rerollDice } from "./roll-pool.mjs";
  */
 
 /**
- * Rule 23 says an effect die can be stepped up or down, but — unlike a pool die (rule 3) —
- * never says what happens to one stepped below d4. Flagged as RQ-009 (open) rather than
- * guessed: the step-down control is hidden at d4, and this is the code a direct call (e.g.
- * Quench) sees if it tries anyway.
- */
-export const EFFECT_DIE_D4_STEP_DOWN = "EFFECT_DIE_D4_STEP_DOWN";
-
-/**
  * Whether `user` may change a poolRoll card: the same rule the server enforces on
  * `message.update()` (ADR-013) — the message's author as OWNER, or a GM, under the
  * ChatMessage document's default "update" permission.
@@ -142,15 +134,14 @@ function parseStepEffectDieChange(system, change) {
 }
 
 /**
- * Steps one effect die on a resolved card (rule 23). Cause is always "other" for now — the
+ * Steps one effect die on a resolved card (rule 23); a d4 stepped down is removed and its
+ * rolled die stays used up (RQ-009, DP-24b, DP-24c). Cause is always "other" for now — the
  * same options rule 22 offers either way, but the heroic-success label comes with Tests &
- * Contests. Refuses silently while a previous overflow is still pending or on a malformed
- * change; refuses a step down from d4 by throwing EFFECT_DIE_D4_STEP_DOWN (RQ-009) instead,
- * since that's an open rules question rather than an ordinary invalid click.
+ * Contests. Refuses silently while a previous overflow is still pending (the engine would
+ * refuse with OVERFLOW_PENDING, DP-E07) or on a malformed change.
  * @param {ChatMessage} message
  * @param {CardChange} change
  * @returns {Promise<void>}
- * @throws {Error} EFFECT_DIE_D4_STEP_DOWN, on a step down from a d4 effect die
  */
 async function stepEffectDieChange(message, change) {
   const system = message.system;
@@ -159,8 +150,6 @@ async function stepEffectDieChange(message, change) {
   const parsed = parseStepEffectDieChange(system, change);
   if ( !parsed ) return;
   const { entry, steps } = parsed;
-
-  if ( (steps === -1) && (entry.size === 4) ) throw new Error(EFFECT_DIE_D4_STEP_DOWN);
 
   const resolution = stepEffectDie(system.rolled, system.resolution, entry.id, steps, "other");
   await message.update({ "system.resolution": resolution });
@@ -256,8 +245,7 @@ async function rerollChange(message, change) {
  * when a step/overflow/reroll change doesn't name a real slot, step, offered option or
  * rerollable id, or when a reroll or step/overflow change is attempted in the wrong state.
  * Every selection change is stored even while incomplete, so other viewers see picks live as
- * they're made; see stepEffectDieChange for the one change that's refused by throwing instead
- * of silently, because it's an open rules question (RQ-009) rather than an ordinary mistake.
+ * they're made. Every refusal is silent; only an unexpected engine error can still throw.
  * @param {ChatMessage} message
  * @param {CardChange} change
  * @returns {Promise<void>}
