@@ -12,6 +12,7 @@ import { registerCardBatch } from "./card.mjs";
 import { registerChatBatch } from "./chat.mjs";
 import { registerDiceBatch } from "./dice.mjs";
 import { registerEffectBatch } from "./effect.mjs";
+import { registerMigrationBatch } from "./migration.mjs";
 import { registerRerollBatch } from "./reroll.mjs";
 import { registerSelectionBatch } from "./selection.mjs";
 
@@ -25,6 +26,7 @@ export function registerQuenchBatches(quench) {
   registerCardBatch(quench);
   registerSelectionBatch(quench);
   registerEffectBatch(quench);
+  registerMigrationBatch(quench);
   registerRerollBatch(quench);
   registerBuilderBatch(quench);
 
