@@ -69,9 +69,13 @@ export const DIE_SIZES = Object.freeze(/** @type {DieSize[]} */ ([4, 6, 8, 10, 1
  * defaulted instead: to a d4 normally (rule 20, rule 21, RQ-002), or to a d6 for a second
  * effect die from an effect-die overflow (rule 22, RQ-003, RQ-007).
  * @typedef {Object} EffectDieEntry
+ * @property {string} id - "e1", "e2", ... in the order the entries were created; never reused
+ *   within a roll, and separate from the rolled die's own id (ADR-026)
+ * @property {'rolled'|'default'|'overflow'} kind - a rolled die, the d4 default (rule 20,
+ *   rule 21), or the new d6 from an overflow choice (rule 22)
  * @property {DieSize} size
  * @property {string|null} dieId
- * @property {boolean} isDefault
+ * @property {boolean} isDefault - true for the "default" and "overflow" kinds
  */
 
 /**
@@ -96,10 +100,10 @@ export const DIE_SIZES = Object.freeze(/** @type {DieSize[]} */ ([4, 6, 8, 10, 1
  */
 
 /**
- * A pending overflow choice for one effect die (rule 22): which slot overflowed, why, and the
- * options offered. Cleared by applyOverflowChoice once the roller picks.
+ * A pending overflow choice for one effect die (rule 22): which effect die overflowed, why, and
+ * the options offered. Cleared by applyOverflowChoice once the roller picks.
  * @typedef {Object} OverflowSignal
- * @property {number} effectIndex - index into Resolution.effectDice
+ * @property {string} effectId - the id of the overflowing EffectDieEntry (ADR-026)
  * @property {'heroic'|'other'} cause
  * @property {OverflowOptions} options
  */
@@ -111,6 +115,10 @@ export const DIE_SIZES = Object.freeze(/** @type {DieSize[]} */ ([4, 6, 8, 10, 1
  * @property {string[]} totalIds - which RolledDie ids summed to `total`, kept around for
  *   working out leftovers and for display (added 2026-10-13)
  * @property {EffectDieEntry[]} effectDice
+ * @property {string[]} consumedDieIds - rolled dice whose effect die was stepped down and
+ *   removed; they stay used up and are never offered again (rule 23, DP-24c; added 2026-10-18)
+ * @property {number} nextEffectNumber - the number for the next effect id (`e<n>`); it only
+ *   goes up, so a removed entry's id is never reused (ADR-026)
  * @property {string[]} hitchIds
  * @property {boolean} botch
  * @property {boolean} takeOut - true once the take-out/victory option is chosen (rule 22;

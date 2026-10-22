@@ -92,7 +92,7 @@ function formatEffectPhrase(effectDice) {
  *   preview: boolean, interactive: boolean,
  *   selection: {valid: boolean, errors: {code: string, message: string}[],
  *     extraResultsPaid: number, extraEffectDicePaid: number}|null,
- *   effectControls: {index: number, size: number, canStepDown: boolean}[]|null,
+ *   effectControls: {effectId: string, size: number, canStepDown: boolean}[]|null,
  *   overflowChoice: {leftovers: {dieId: string, label: string}[], newDieLabel: string,
  *     takeOutAvailable: boolean, takeOutLabel: string}|null,
  *   reroll: {active: boolean, canReroll: boolean}|null}}
@@ -188,8 +188,8 @@ export function preparePoolRollCardContext(message) {
         takeOutLabel: game.i18n.localize("CORTEX.Chat.TakeOutVictory")
       };
     } else {
-      effectControls = system.resolution.effectDice.map((entry, index) => (
-        { index, size: entry.size, canStepDown: entry.size > 4 }
+      effectControls = system.resolution.effectDice.map(entry => (
+        { effectId: entry.id, size: entry.size, canStepDown: entry.size > 4 }
       ));
     }
   }

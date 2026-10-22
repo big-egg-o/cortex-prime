@@ -6,6 +6,7 @@
 
 import { applyResults, buildPool, evaluate, resolve, validateSelection } from "../../module/rules/index.mjs";
 import { applyCardChange } from "../../module/dice/card-actions.mjs";
+import { POOL_ROLL_SCHEMA_VERSION } from "../../module/data/chat/pool-roll.mjs";
 import { postPoolRoll } from "../../module/dice/post-pool-roll.mjs";
 
 /**
@@ -105,7 +106,7 @@ export function registerRerollBatch(quench) {
           const message = await ChatMessage.create({
             type: "poolRoll",
             system: {
-              schemaVersion: 1, pool: dice, rolled, selection: emptySelection(), resolution: null, state: "rolled"
+              schemaVersion: POOL_ROLL_SCHEMA_VERSION, pool: dice, rolled, selection: emptySelection(), resolution: null, state: "rolled"
             }
           });
           messages.push(message);
@@ -172,7 +173,7 @@ export function registerRerollBatch(quench) {
 
           const message = await ChatMessage.create({
             type: "poolRoll",
-            system: { schemaVersion: 1, pool: dice, rolled, selection, resolution, state: "resolved" }
+            system: { schemaVersion: POOL_ROLL_SCHEMA_VERSION, pool: dice, rolled, selection, resolution, state: "resolved" }
           });
           messages.push(message);
           const before = message.system.toObject();

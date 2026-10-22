@@ -9,6 +9,7 @@
 
 import { applyResults, buildPool, resolve, stepEffectDie } from "../../module/rules/index.mjs";
 import { EFFECT_DIE_D4_STEP_DOWN, applyCardChange } from "../../module/dice/card-actions.mjs";
+import { POOL_ROLL_SCHEMA_VERSION } from "../../module/data/chat/pool-roll.mjs";
 
 /**
  * @param {number[]} sizes
@@ -35,7 +36,7 @@ function emptySelection() {
 async function createResolvedMessage(diePool, rolled, selection, resolution) {
   return ChatMessage.create({
     type: "poolRoll",
-    system: { schemaVersion: 1, pool: diePool, rolled, selection, resolution, state: "resolved" }
+    system: { schemaVersion: POOL_ROLL_SCHEMA_VERSION, pool: diePool, rolled, selection, resolution, state: "resolved" }
   });
 }
 
@@ -70,7 +71,7 @@ export function registerEffectBatch(quench) {
             const message = await createResolvedMessage(dice, rolled, selection, resolution);
             messages.push(message);
 
-            await applyCardChange(message, { action: "step-effect-die", effectIndex: 1, steps: 1 });
+            await applyCardChange(message, { action: "step-effect-die", effectId: "e2", steps: 1 });
 
             const after = game.messages.get(message.id);
             assert.equal(after.system.resolution.effectDice[0].size, 10, "the other effect die stays d10");
@@ -86,7 +87,7 @@ export function registerEffectBatch(quench) {
           const [twelveId, tenId, eightId] = dice.map(d => d.id);
           const selection = { ...emptySelection(), totalIds: [tenId, eightId], effectDieIds: [twelveId] };
           const resolved = resolve(rolled, selection);
-          const overflowed = stepEffectDie(rolled, resolved, 0, 1, "other");
+          const overflowed = stepEffectDie(rolled, resolved, "e1", 1, "other");
 
           assert.deepEqual(overflowed.overflow.options.leftovers, []);
           assert.equal(overflowed.overflow.options.newDie, 6);
@@ -111,7 +112,7 @@ export function registerEffectBatch(quench) {
           const [twelveId, tenId, eightId] = dice.map(d => d.id);
           const selection = { ...emptySelection(), totalIds: [tenId, eightId], effectDieIds: [twelveId] };
           const resolved = resolve(rolled, selection);
-          const overflowed = stepEffectDie(rolled, resolved, 0, 1, "other");
+          const overflowed = stepEffectDie(rolled, resolved, "e1", 1, "other");
 
           const message = await createResolvedMessage(dice, rolled, selection, overflowed);
           messages.push(message);
@@ -132,7 +133,7 @@ export function registerEffectBatch(quench) {
             ...emptySelection(), totalIds: [tenId, firstEightId], effectDieIds: [twelveId]
           };
           const resolved = resolve(rolled, selection);
-          const overflowed = stepEffectDie(rolled, resolved, 0, 1, "other");
+          const overflowed = stepEffectDie(rolled, resolved, "e1", 1, "other");
 
           assert.deepEqual(overflowed.overflow.options.leftovers, [{ dieId: secondEightId, size: 8 }]);
           assert.equal(overflowed.overflow.options.newDie, 6);
@@ -160,7 +161,7 @@ export function registerEffectBatch(quench) {
             const [twelveId, tenId, eightId, fourId] = dice.map(d => d.id);
             const selection = { ...emptySelection(), totalIds: [tenId, eightId], effectDieIds: [twelveId] };
             const resolved = resolve(rolled, selection);
-            const overflowed = stepEffectDie(rolled, resolved, 0, 1, "other");
+            const overflowed = stepEffectDie(rolled, resolved, "e1", 1, "other");
 
             assert.deepEqual(overflowed.overflow.options.leftovers, [{ dieId: fourId, size: 4 }]);
             assert.equal(overflowed.overflow.options.newDie, 6, 'the "new die" option is never a d4');
@@ -191,7 +192,7 @@ export function registerEffectBatch(quench) {
 
             let thrown = null;
             try {
-              await applyCardChange(message, { action: "step-effect-die", effectIndex: 0, steps: -1 });
+              await applyCardChange(message, { action: "step-effect-die", effectId: "e1", steps: -1 });
             } catch ( err ) {
               thrown = err;
             }
@@ -200,7 +201,7 @@ export function registerEffectBatch(quench) {
 
             const after = game.messages.get(message.id);
             assert.deepEqual(after.system.toObject().resolution.effectDice, [
-              { size: 4, dieId: null, isDefault: true }
+              { id: "e1", kind: "default", size: 4, dieId: null, isDefault: true }
             ]);
           });
 
@@ -214,8 +215,8 @@ export function registerEffectBatch(quench) {
           const message = await createResolvedMessage(dice, rolled, selection, resolution);
           messages.push(message);
 
-          await applyCardChange(message, { action: "step-effect-die", effectIndex: 0, steps: 2 });
-          await applyCardChange(message, { action: "step-effect-die", effectIndex: 99, steps: 1 });
+          await applyCardChange(message, { action: "step-effect-die", effectId: "e1", steps: 2 });
+          await applyCardChange(message, { action: "step-effect-die", effectId: "e99", steps: 1 });
 
           const after = game.messages.get(message.id);
           assert.deepEqual(after.system.toObject().resolution, resolution);
@@ -235,7 +236,7 @@ export function registerEffectBatch(quench) {
           const originalUser = game.users.current;
           try {
             game.users.current = stranger;
-            await applyCardChange(message, { action: "step-effect-die", effectIndex: 0, steps: 1 });
+            await applyCardChange(message, { action: "step-effect-die", effectId: "e1", steps: 1 });
           } finally {
             game.users.current = originalUser;
             await stranger.delete();

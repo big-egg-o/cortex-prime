@@ -9,6 +9,12 @@ import { DIE_SIZES } from "../../rules/types.mjs";
 
 const { ArrayField, BooleanField, NumberField, SchemaField, StringField } = foundry.data.fields;
 
+/**
+ * The current poolRoll schema version. 2: effect dice have ids and kinds, and the Resolution
+ * has consumedDieIds and nextEffectNumber (Decisions ADR-026).
+ */
+export const POOL_ROLL_SCHEMA_VERSION = 2;
+
 /** @returns {Record<string, import("../../../reference/foundry-14.369/common/data/fields.mjs").DataField>} */
 function dieSourceSchema() {
   return {
@@ -55,6 +61,8 @@ function selectionSchema() {
 /** @returns {Record<string, DataField>} one effect die in a Resolution */
 function effectDieEntrySchema() {
   return {
+    id: new StringField({ required: true, blank: false }),
+    kind: new StringField({ required: true, choices: ["rolled", "default", "overflow"] }),
     size: new NumberField({ required: true, integer: true, choices: DIE_SIZES }),
     dieId: new StringField({ required: false, nullable: true, initial: null, blank: false }),
     isDefault: new BooleanField({ required: true, initial: false })
@@ -77,7 +85,7 @@ function overflowOptionsSchema() {
 /** @returns {Record<string, DataField>} a pending overflow choice for one effect die */
 function overflowSignalSchema() {
   return {
-    effectIndex: new NumberField({ required: true, integer: true, min: 0 }),
+    effectId: new StringField({ required: true, blank: false }),
     cause: new StringField({ required: true, choices: ["heroic", "other"] }),
     options: new SchemaField(overflowOptionsSchema())
   };
@@ -89,6 +97,8 @@ function resolutionSchema() {
     total: new NumberField({ required: true, integer: true, min: 0, initial: 0 }),
     totalIds: new ArrayField(new StringField({ blank: false })),
     effectDice: new ArrayField(new SchemaField(effectDieEntrySchema())),
+    consumedDieIds: new ArrayField(new StringField({ blank: false })),
+    nextEffectNumber: new NumberField({ required: true, integer: true, min: 1, initial: 1 }),
     hitchIds: new ArrayField(new StringField({ blank: false })),
     botch: new BooleanField({ required: true, initial: false }),
     takeOut: new BooleanField({ required: true, initial: false }),
@@ -106,7 +116,7 @@ export default class PoolRollData extends foundry.abstract.TypeDataModel {
   /** @override */
   static defineSchema() {
     return {
-      schemaVersion: new NumberField({ required: true, integer: true, initial: 1 }),
+      schemaVersion: new NumberField({ required: true, integer: true, initial: POOL_ROLL_SCHEMA_VERSION }),
       pool: new ArrayField(new SchemaField(poolDieSchema())),
       rolled: new ArrayField(new SchemaField(rolledDieSchema())),
       selection: new SchemaField(selectionSchema()),

@@ -118,10 +118,16 @@ export function validateSelection(rolled, selection) {
   return { valid: errors.length === 0, errors };
 }
 
+/** @param {number} n @returns {string} the effect id for number `n` (ADR-026) */
+function effectIdFor(n) {
+  return `e${n}`;
+}
+
 /**
  * Turns an already-valid selection into a Resolution: sums the total, assigns the chosen effect
  * dice in the order given, and fills any slot left empty (nothing eligible to pick, DP-20, 21,
- * 22) with a default d4 (rule 20, rule 21, RQ-002).
+ * 22) with a default d4 (rule 20, rule 21, RQ-002). The effect dice get the ids e1, e2, ... in
+ * that order (ADR-026).
  * @param {import("./types.mjs").RolledDie[]} rolled
  * @param {import("./types.mjs").Selection} selection
  * @returns {import("./types.mjs").Resolution}
@@ -139,14 +145,18 @@ export function resolve(rolled, selection) {
 
   const effectSlots = 1 + extraEffectDicePaid;
   const effectDice = Array.from({ length: effectSlots }, (_, i) => {
-    const id = effectDieIds[i];
-    if ( id === undefined ) return { size: 4, dieId: null, isDefault: true };
-    const die = byId.get(id);
-    return { size: die.size, dieId: die.id, isDefault: false };
+    const id = effectIdFor(i + 1);
+    const dieId = effectDieIds[i];
+    if ( dieId === undefined ) return { id, kind: "default", size: 4, dieId: null, isDefault: true };
+    const die = byId.get(dieId);
+    return { id, kind: "rolled", size: die.size, dieId: die.id, isDefault: false };
   });
 
   const { hitchIds, botch } = evaluate(rolled);
-  return { total, totalIds: [...totalIds], effectDice, hitchIds, botch, takeOut: false, overflow: null };
+  return {
+    total, totalIds: [...totalIds], effectDice, consumedDieIds: [], nextEffectNumber: effectSlots + 1,
+    hitchIds, botch, takeOut: false, overflow: null
+  };
 }
 
 /**
@@ -172,13 +182,15 @@ function leftoverEligible(rolled, resolution) {
  * a heroic success and for an SFX or other trigger.
  * @param {import("./types.mjs").RolledDie[]} rolled
  * @param {import("./types.mjs").Resolution} resolution
- * @param {number} effectIndex - index into resolution.effectDice
+ * @param {string} effectId - the id of the entry in resolution.effectDice (ADR-026)
  * @param {number} steps
  * @param {'heroic'|'other'} cause
  * @returns {import("./types.mjs").Resolution} a new Resolution
+ * @throws {Error} if no effect die has the id `effectId`
  */
-export function stepEffectDie(rolled, resolution, effectIndex, steps, cause) {
-  const entry = resolution.effectDice[effectIndex];
+export function stepEffectDie(rolled, resolution, effectId, steps, cause) {
+  const entry = resolution.effectDice.find(e => e.id === effectId);
+  if ( !entry ) throw new Error(`stepEffectDie: no effect die with id "${effectId}"`);
   const result = stepDie(entry.size, steps);
 
   if ( result.beyond ) {
@@ -188,18 +200,17 @@ export function stepEffectDie(rolled, resolution, effectIndex, steps, cause) {
       newDie: 6,
       takeOutAvailable: true
     };
-    return { ...resolution, overflow: { effectIndex, cause, options } };
+    return { ...resolution, overflow: { effectId, cause, options } };
   }
 
-  const effectDice = resolution.effectDice.slice();
-  effectDice[effectIndex] = { ...entry, size: result.size };
+  const effectDice = resolution.effectDice.map(e => (e === entry ? { ...e, size: result.size } : e));
   return { ...resolution, effectDice, overflow: null };
 }
 
 /**
  * Applies one of the options from a pending overflow (rule 22): adds the chosen leftover die
  * or a new d6 as a second effect die, or marks the take-out/victory outcome. Clears the
- * overflow once resolved.
+ * overflow once resolved. A new entry gets the id `e<nextEffectNumber>` (ADR-026).
  * @param {import("./types.mjs").RolledDie[]} rolled
  * @param {import("./types.mjs").Resolution} resolution
  * @param {import("./types.mjs").OverflowChoice} choice
@@ -213,16 +224,19 @@ export function applyOverflowChoice(rolled, resolution, choice) {
 
   if ( choice.kind === "take-out" ) return { ...resolution, overflow: null, takeOut: true };
 
+  const id = effectIdFor(resolution.nextEffectNumber);
+  const nextEffectNumber = resolution.nextEffectNumber + 1;
+
   if ( choice.kind === "new-d6" ) {
-    const effectDice = [...resolution.effectDice, { size: 6, dieId: null, isDefault: true }];
-    return { ...resolution, effectDice, overflow: null };
+    const added = { id, kind: "overflow", size: 6, dieId: null, isDefault: true };
+    return { ...resolution, effectDice: [...resolution.effectDice, added], nextEffectNumber, overflow: null };
   }
 
   if ( choice.kind === "leftover" ) {
     const picked = overflow.options.leftovers.find(l => l.dieId === choice.dieId);
     if ( !picked ) throw new Error(`applyOverflowChoice: "${choice.dieId}" is not an eligible leftover`);
-    const effectDice = [...resolution.effectDice, { size: picked.size, dieId: picked.dieId, isDefault: false }];
-    return { ...resolution, effectDice, overflow: null };
+    const added = { id, kind: "rolled", size: picked.size, dieId: picked.dieId, isDefault: false };
+    return { ...resolution, effectDice: [...resolution.effectDice, added], nextEffectNumber, overflow: null };
   }
 
   throw new Error(`applyOverflowChoice: unknown choice kind "${choice.kind}"`);

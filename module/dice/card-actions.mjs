@@ -19,7 +19,7 @@ import { rerollDice } from "./roll-pool.mjs";
  *   'confirm'|'step-effect-die'|'overflow-choice'|'reroll'} action
  * @property {string} [dieId] - required for 'cycle-die', and for 'overflow-choice' with kind
  *   "leftover"
- * @property {string|number} [effectIndex] - required for 'step-effect-die'
+ * @property {string} [effectId] - required for 'step-effect-die'; the effect die's id (ADR-026)
  * @property {string|number} [steps] - required for 'step-effect-die'; must be 1 or -1
  * @property {string} [kind] - required for 'overflow-choice'; one of 'leftover'|'new-d6'|
  *   'take-out'
@@ -126,19 +126,19 @@ async function confirm(message, system) {
 
 /**
  * Validates a "step-effect-die" change's own shape: steps must be exactly 1 or -1, and
- * effectIndex a whole number naming a slot that actually exists in the current Resolution.
+ * effectId must name an effect die that actually exists in the current Resolution (ADR-026).
  * Returns null to refuse silently on anything else — a card-actions-level guard independent
  * of whatever the UI does or doesn't render.
  * @param {import("../data/chat/pool-roll.mjs").default} system
  * @param {CardChange} change
- * @returns {{effectIndex: number, steps: number}|null}
+ * @returns {{entry: import("../rules/types.mjs").EffectDieEntry, steps: number}|null}
  */
 function parseStepEffectDieChange(system, change) {
   const steps = Number(change.steps);
   if ( (steps !== 1) && (steps !== -1) ) return null;
-  const effectIndex = Number(change.effectIndex);
-  if ( !Number.isInteger(effectIndex) || !system.resolution.effectDice[effectIndex] ) return null;
-  return { effectIndex, steps };
+  const entry = system.resolution.effectDice.find(e => e.id === change.effectId);
+  if ( !entry ) return null;
+  return { entry, steps };
 }
 
 /**
@@ -158,13 +158,11 @@ async function stepEffectDieChange(message, change) {
 
   const parsed = parseStepEffectDieChange(system, change);
   if ( !parsed ) return;
-  const { effectIndex, steps } = parsed;
+  const { entry, steps } = parsed;
 
-  if ( (steps === -1) && (system.resolution.effectDice[effectIndex].size === 4) ) {
-    throw new Error(EFFECT_DIE_D4_STEP_DOWN);
-  }
+  if ( (steps === -1) && (entry.size === 4) ) throw new Error(EFFECT_DIE_D4_STEP_DOWN);
 
-  const resolution = stepEffectDie(system.rolled, system.resolution, effectIndex, steps, "other");
+  const resolution = stepEffectDie(system.rolled, system.resolution, entry.id, steps, "other");
   await message.update({ "system.resolution": resolution });
 }
 

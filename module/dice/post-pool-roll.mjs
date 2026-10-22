@@ -3,6 +3,7 @@
  * @module dice/post-pool-roll
  */
 
+import { POOL_ROLL_SCHEMA_VERSION } from "../data/chat/pool-roll.mjs";
 import { applyResults, suggestSelection } from "../rules/index.mjs";
 import { rollPool } from "./roll-pool.mjs";
 
@@ -36,7 +37,7 @@ export async function postPoolRoll({ pool, speaker, results }) {
     type: "poolRoll",
     speaker: speaker ?? ChatMessage.getSpeaker(),
     system: {
-      schemaVersion: 1,
+      schemaVersion: POOL_ROLL_SCHEMA_VERSION,
       pool,
       rolled,
       selection: { ...counters, ...suggestSelection(rolled, counters) },

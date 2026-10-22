@@ -95,7 +95,7 @@ describe("engine functions never mutate their inputs", () => {
     };
     const resolution = deepFreeze(resolve(rolled, selection));
 
-    const stepped = stepEffectDie(rolled, resolution, 0, 1, "heroic");
+    const stepped = stepEffectDie(rolled, resolution, "e1", 1, "heroic");
     expect(stepped).not.toBe(resolution);
     expect(stepped.overflow).not.toBeNull();
 

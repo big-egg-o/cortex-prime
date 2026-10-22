@@ -4,6 +4,7 @@
  */
 
 import { applyResults, buildPool, resolve, twoHighest } from "../../module/rules/index.mjs";
+import { POOL_ROLL_SCHEMA_VERSION } from "../../module/data/chat/pool-roll.mjs";
 import { postPoolRoll } from "../../module/dice/post-pool-roll.mjs";
 import { onRenderPoolRollMessage, renderPoolRollCard } from "../../module/dice/pool-roll-card.mjs";
 
@@ -109,7 +110,7 @@ export function registerCardBatch(quench) {
 
           const message = await ChatMessage.create({
             type: "poolRoll",
-            system: { schemaVersion: 1, pool: dice, rolled, selection, resolution, state: "resolved" }
+            system: { schemaVersion: POOL_ROLL_SCHEMA_VERSION, pool: dice, rolled, selection, resolution, state: "resolved" }
           });
           messages.push(message);
 

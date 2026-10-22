@@ -65,15 +65,15 @@
   {{#if effectControls}}
   <div class="cp-controls cp-effect-controls">
     {{#each effectControls}}
-    <div class="cp-effect-control" data-effect-index="{{ this.index }}">
+    <div class="cp-effect-control" data-effect-id="{{ this.effectId }}">
       <span class="cp-effect-size">d{{ this.size }}</span>
       {{#if this.canStepDown}}
       <button type="button" class="ui-control icon" data-action="step-effect-die"
-        data-effect-index="{{ this.index }}" data-steps="-1"
+        data-effect-id="{{ this.effectId }}" data-steps="-1"
         data-tooltip aria-label="{{ localize "CORTEX.Chat.StepDown" }}"><i class="fa-solid fa-angle-down" inert></i></button>
       {{/if}}
       <button type="button" class="ui-control icon" data-action="step-effect-die"
-        data-effect-index="{{ this.index }}" data-steps="1"
+        data-effect-id="{{ this.effectId }}" data-steps="1"
         data-tooltip aria-label="{{ localize "CORTEX.Chat.StepUp" }}"><i class="fa-solid fa-angle-up" inert></i></button>
     </div>
     {{/each}}
