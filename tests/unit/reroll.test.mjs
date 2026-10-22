@@ -43,7 +43,7 @@ describe("shortcuts", () => {
     expect(validateSelection(rolled, sel).valid).toBe(true);
     expect(resolve(rolled, sel)).toMatchObject({
       total: 14,
-      effectDice: [{ size: 10, dieId: rolled[0].id, isDefault: false }]
+      effectDice: [{ id: "e1", kind: "rolled", size: 10, dieId: rolled[0].id, isDefault: false }]
     });
   });
 
@@ -72,7 +72,7 @@ describe("rerolls", () => {
     expect(validateSelection(rerolled, sel).valid).toBe(true);
     expect(resolve(rerolled, sel)).toMatchObject({
       total: 11,
-      effectDice: [{ size: 6, dieId: rerolled[2].id, isDefault: false }]
+      effectDice: [{ id: "e1", kind: "rolled", size: 6, dieId: rerolled[2].id, isDefault: false }]
     });
 
     expect(() => applyRerolls(rolled, { [rolled[0].id]: 9 })).toThrow();
@@ -99,7 +99,7 @@ describe("rerolls", () => {
     expect(validateSelection(rerolled, sel).valid).toBe(true);
     expect(resolve(rerolled, sel)).toMatchObject({
       total: 7,
-      effectDice: [{ size: 4, dieId: null, isDefault: true }]
+      effectDice: [{ id: "e1", kind: "default", size: 4, dieId: null, isDefault: true }]
     });
   });
 });

@@ -7,6 +7,7 @@
       "ChooseDice": "Choose dice",
       "Choosing": "Choosing…",
       "ResolvedHeadline": "{total} · effect {effect}",
+      "ResolvedHeadlineNoEffect": "{total} · no effect die",
       "NotConfirmed": "Not confirmed yet",
       "ResetSuggestion": "Reset to suggestion",
       "Increase": "Increase",
@@ -27,7 +28,9 @@
         "Total": "Total",
         "Effect": "Effect",
         "Hitch": "Hitch",
-        "Unused": "Unused"
+        "Unused": "Unused",
+        "UsedUp": "Used up",
+        "UsedUpTooltip": "Its effect die was stepped down and removed, so it can't be used again."
       },
       "Errors": {
         "HITCH_SELECTED": "A hitch can't be picked.",
@@ -38,7 +41,7 @@
         "KEEP_TOO_MANY": "Pick fewer dice for the total.",
         "TOO_MANY_EFFECT_DICE": "More effect dice than are available.",
         "EFFECT_DIE_MISSING": "An eligible die is still unused as an effect die.",
-        "EFFECT_DIE_D4_STEP_DOWN": "Stepping a d4 effect die down isn't supported yet."
+        "Unexpected": "Something went wrong with this card. The details are in the browser console."
       }
     },
     "Builder": {

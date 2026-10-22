@@ -52,7 +52,7 @@ describe("suggestSelection", () => {
 
     expect(suggestion).toEqual({ totalIds: [rolled[0].id, rolled[1].id], effectDieIds: [] });
     expect(resolution.total).toBe(12);
-    expect(resolution.effectDice).toEqual([{ size: 4, dieId: null, isDefault: true }]);
+    expect(resolution.effectDice).toEqual([{ id: "e1", kind: "default", size: 4, dieId: null, isDefault: true }]);
   });
 
   it("DP-19 suggests d8 + d6 and the d10 as effect die, skipping the d4 hitch", () => {
@@ -70,7 +70,7 @@ describe("suggestSelection", () => {
 
     expect(suggestion.totalIds).toEqual([rolled[0].id, rolled[1].id, rolled[2].id]);
     expect(resolution.total).toBe(19);
-    expect(resolution.effectDice).toEqual([{ size: 4, dieId: rolled[3].id, isDefault: false }]);
+    expect(resolution.effectDice).toEqual([{ id: "e1", kind: "rolled", size: 4, dieId: rolled[3].id, isDefault: false }]);
   });
 
   it("DP-21 fills a paid extra effect slot with the next largest leftover", () => {
@@ -88,7 +88,8 @@ describe("suggestSelection", () => {
     expect(suggestion.effectDieIds).toEqual([]);
     expect(resolution.total).toBe(9);
     expect(resolution.effectDice).toEqual([
-      { size: 4, dieId: null, isDefault: true }, { size: 4, dieId: null, isDefault: true }
+      { id: "e1", kind: "default", size: 4, dieId: null, isDefault: true },
+      { id: "e2", kind: "default", size: 4, dieId: null, isDefault: true }
     ]);
   });
 
@@ -114,7 +115,7 @@ describe("suggestSelection", () => {
 
     expect(suggestion).toEqual({ totalIds: [rolled[1].id, rolled[2].id], effectDieIds: [] });
     expect(resolution.total).toBe(9);
-    expect(resolution.effectDice).toEqual([{ size: 4, dieId: null, isDefault: true }]);
+    expect(resolution.effectDice).toEqual([{ id: "e1", kind: "default", size: 4, dieId: null, isDefault: true }]);
   });
 
   it("DP-29 suggests total 7 and a default d4 for a botch rerolled to 4 and 3", () => {
@@ -123,7 +124,7 @@ describe("suggestSelection", () => {
     const { resolution } = suggestAndResolve(rolled, counters());
 
     expect(resolution.total).toBe(7);
-    expect(resolution.effectDice).toEqual([{ size: 4, dieId: null, isDefault: true }]);
+    expect(resolution.effectDice).toEqual([{ id: "e1", kind: "default", size: 4, dieId: null, isDefault: true }]);
   });
 
   it("suggests the one usable die for a botch rerolled to 1 and 3", () => {

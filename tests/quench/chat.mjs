@@ -6,6 +6,7 @@
 import {
   applyResults, buildPool, resolve, stepEffectDie, twoHighest
 } from "../../module/rules/index.mjs";
+import { POOL_ROLL_SCHEMA_VERSION } from "../../module/data/chat/pool-roll.mjs";
 
 /** @returns {{pool: object[], rolled: object[]}} a plain 3-die pool with fixed, non-hitch results */
 function sampleRoll() {
@@ -66,7 +67,7 @@ export function registerChatBatch(quench) {
 
           message = await ChatMessage.create({
             type: "poolRoll",
-            system: { schemaVersion: 1, pool, rolled, selection, resolution, state: "resolved" }
+            system: { schemaVersion: POOL_ROLL_SCHEMA_VERSION, pool, rolled, selection, resolution, state: "resolved" }
           });
 
           const read = game.messages.get(message.id);
@@ -83,7 +84,7 @@ export function registerChatBatch(quench) {
 
           message = await ChatMessage.create({
             type: "poolRoll",
-            system: { schemaVersion: 1, pool, rolled, selection, resolution: null, state: "rolled" }
+            system: { schemaVersion: POOL_ROLL_SCHEMA_VERSION, pool, rolled, selection, resolution: null, state: "rolled" }
           });
 
           const read = game.messages.get(message.id);
@@ -105,12 +106,12 @@ export function registerChatBatch(quench) {
             extraResultsPaid: 0, extraEffectDicePaid: 0, keepLimit: 2
           };
           const resolved = resolve(rolled, selection);
-          const resolution = stepEffectDie(rolled, resolved, 0, 4, "heroic");
+          const resolution = stepEffectDie(rolled, resolved, "e1", 4, "heroic");
           assert.notEqual(resolution.overflow, null, "fixture should produce a pending overflow");
 
           message = await ChatMessage.create({
             type: "poolRoll",
-            system: { schemaVersion: 1, pool, rolled, selection, resolution, state: "resolved" }
+            system: { schemaVersion: POOL_ROLL_SCHEMA_VERSION, pool, rolled, selection, resolution, state: "resolved" }
           });
 
           const read = game.messages.get(message.id);
@@ -124,7 +125,7 @@ export function registerChatBatch(quench) {
           const selection = { totalIds: [], effectDieIds: [], extraResultsPaid: 0, extraEffectDicePaid: 0, keepLimit: 2 };
 
           await assertRejected(
-            { schemaVersion: 1, pool, rolled, selection, resolution: null, state: "rolled" },
+            { schemaVersion: POOL_ROLL_SCHEMA_VERSION, pool, rolled, selection, resolution: null, state: "rolled" },
             "a d7 pool die"
           );
         });
@@ -135,7 +136,7 @@ export function registerChatBatch(quench) {
           const selection = { totalIds: [], effectDieIds: [], extraResultsPaid: 0, extraEffectDicePaid: 0, keepLimit: 2 };
 
           await assertRejected(
-            { schemaVersion: 1, pool, rolled, selection, resolution: null, state: "rolled" },
+            { schemaVersion: POOL_ROLL_SCHEMA_VERSION, pool, rolled, selection, resolution: null, state: "rolled" },
             "a result past the die's size"
           );
         });
@@ -145,7 +146,7 @@ export function registerChatBatch(quench) {
           const selection = { totalIds: [], effectDieIds: [], extraResultsPaid: 0, extraEffectDicePaid: 0, keepLimit: 2 };
 
           await assertRejected(
-            { schemaVersion: 1, pool, rolled, selection, resolution: null, state: "resolved" },
+            { schemaVersion: POOL_ROLL_SCHEMA_VERSION, pool, rolled, selection, resolution: null, state: "resolved" },
             'state "resolved" with no resolution'
           );
         });
@@ -155,7 +156,7 @@ export function registerChatBatch(quench) {
           const selection = { totalIds: [], effectDieIds: [], extraResultsPaid: 0, extraEffectDicePaid: 0, keepLimit: 2 };
           message = await ChatMessage.create({
             type: "poolRoll",
-            system: { schemaVersion: 1, pool, rolled, selection, resolution: null, state: "rolled" }
+            system: { schemaVersion: POOL_ROLL_SCHEMA_VERSION, pool, rolled, selection, resolution: null, state: "rolled" }
           });
           const before = message.system.toObject();
 

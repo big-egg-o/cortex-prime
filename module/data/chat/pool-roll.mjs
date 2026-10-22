@@ -1,13 +1,19 @@
 /**
  * ChatMessage sub-type "poolRoll": structured dice-pool roll data (Decisions ADR-010).
  * Field shapes mirror module/rules/types.mjs; this model only adds schema validation and
- * (eventually) migration, never game logic.
+ * migration of stored data, never game logic.
  * @module data/chat/pool-roll
  */
 
 import { DIE_SIZES } from "../../rules/types.mjs";
 
 const { ArrayField, BooleanField, NumberField, SchemaField, StringField } = foundry.data.fields;
+
+/**
+ * The current poolRoll schema version. 2: effect dice have ids and kinds, and the Resolution
+ * has consumedDieIds and nextEffectNumber (Decisions ADR-026).
+ */
+export const POOL_ROLL_SCHEMA_VERSION = 2;
 
 /** @returns {Record<string, import("../../../reference/foundry-14.369/common/data/fields.mjs").DataField>} */
 function dieSourceSchema() {
@@ -55,6 +61,8 @@ function selectionSchema() {
 /** @returns {Record<string, DataField>} one effect die in a Resolution */
 function effectDieEntrySchema() {
   return {
+    id: new StringField({ required: true, blank: false }),
+    kind: new StringField({ required: true, choices: ["rolled", "default", "overflow"] }),
     size: new NumberField({ required: true, integer: true, choices: DIE_SIZES }),
     dieId: new StringField({ required: false, nullable: true, initial: null, blank: false }),
     isDefault: new BooleanField({ required: true, initial: false })
@@ -77,7 +85,7 @@ function overflowOptionsSchema() {
 /** @returns {Record<string, DataField>} a pending overflow choice for one effect die */
 function overflowSignalSchema() {
   return {
-    effectIndex: new NumberField({ required: true, integer: true, min: 0 }),
+    effectId: new StringField({ required: true, blank: false }),
     cause: new StringField({ required: true, choices: ["heroic", "other"] }),
     options: new SchemaField(overflowOptionsSchema())
   };
@@ -89,11 +97,48 @@ function resolutionSchema() {
     total: new NumberField({ required: true, integer: true, min: 0, initial: 0 }),
     totalIds: new ArrayField(new StringField({ blank: false })),
     effectDice: new ArrayField(new SchemaField(effectDieEntrySchema())),
+    consumedDieIds: new ArrayField(new StringField({ blank: false })),
+    nextEffectNumber: new NumberField({ required: true, integer: true, min: 1, initial: 1 }),
     hitchIds: new ArrayField(new StringField({ blank: false })),
     botch: new BooleanField({ required: true, initial: false }),
     takeOut: new BooleanField({ required: true, initial: false }),
     overflow: new SchemaField(overflowSignalSchema(), { nullable: true, initial: null })
   };
+}
+
+/**
+ * Schema version 1 to 2 for one Resolution, in place (ADR-026): entries without an id get the
+ * next `e<n>` in order, entries without a kind get one from their shape, a pending overflow's
+ * effectIndex becomes the effectId of that entry, and missing consumedDieIds and
+ * nextEffectNumber are filled in. Never overwrites a value that is already there.
+ * @param {object} resolution - poolRoll source data, possibly from before version 2
+ */
+function migrateResolutionToV2(resolution) {
+  const effectDice = resolution.effectDice;
+  const numbered = effectDice.map(e => Number(/^e(\d+)$/.exec(e.id ?? "")?.[1] ?? 0));
+  // New ids start after both the highest id present and any stored nextEffectNumber, so a
+  // removed entry's id is never handed out again.
+  let highest = Math.max(0, ...numbered, (resolution.nextEffectNumber ?? 1) - 1);
+  for ( const entry of effectDice ) {
+    if ( !entry.id ) {
+      highest += 1;
+      entry.id = `e${highest}`;
+    }
+    if ( !entry.kind ) {
+      if ( entry.dieId ) entry.kind = "rolled";
+      else if ( entry.isDefault && (entry.size === 4) ) entry.kind = "default";
+      else if ( entry.isDefault ) entry.kind = "overflow";
+    }
+  }
+  resolution.consumedDieIds ??= [];
+  resolution.nextEffectNumber ??= highest + 1;
+
+  const overflow = resolution.overflow;
+  if ( overflow && (typeof overflow === "object") && !overflow.effectId && ("effectIndex" in overflow) ) {
+    const entry = effectDice[overflow.effectIndex];
+    if ( entry ) overflow.effectId = entry.id;
+    delete overflow.effectIndex;
+  }
 }
 
 /**
@@ -106,13 +151,36 @@ export default class PoolRollData extends foundry.abstract.TypeDataModel {
   /** @override */
   static defineSchema() {
     return {
-      schemaVersion: new NumberField({ required: true, integer: true, initial: 1 }),
+      schemaVersion: new NumberField({ required: true, integer: true, initial: POOL_ROLL_SCHEMA_VERSION }),
       pool: new ArrayField(new SchemaField(poolDieSchema())),
       rolled: new ArrayField(new SchemaField(rolledDieSchema())),
       selection: new SchemaField(selectionSchema()),
       resolution: new SchemaField(resolutionSchema(), { nullable: true, initial: null }),
       state: new StringField({ required: true, choices: ["rolled", "resolved"], initial: "rolled" })
     };
+  }
+
+  /**
+   * Brings stored data up to the current schema. Foundry runs this whenever source data is
+   * cleaned: on world load, on create, and on every update, where the source is only the
+   * partial change. So it goes by shape, never overwrites a value, and running it twice changes
+   * nothing. A Resolution is migrated only when its effectDice are present and either an entry
+   * has no id or the source says it is from before version 2; a source without schemaVersion
+   * (a partial update) is treated as current (ADR-026).
+   * @override
+   * @param {object} source
+   * @returns {object} the same source, migrated in place
+   */
+  static migrateData(source) {
+    super.migrateData(source);
+    const old = (source.schemaVersion !== undefined) && (source.schemaVersion < 2);
+    const resolution = source.resolution;
+    if ( resolution && (typeof resolution === "object") && Array.isArray(resolution.effectDice)
+      && (old || resolution.effectDice.some(e => !e?.id)) ) {
+      migrateResolutionToV2(resolution);
+    }
+    if ( old ) source.schemaVersion = 2;
+    return source;
   }
 
   /**

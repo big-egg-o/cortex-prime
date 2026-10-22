@@ -34,7 +34,7 @@ describe("total and effect dice", () => {
     expect(validateSelection(rolled, sel).valid).toBe(true);
     expect(resolve(rolled, sel)).toMatchObject({
       total: 0,
-      effectDice: [{ size: 4, dieId: null, isDefault: true }]
+      effectDice: [{ id: "e1", kind: "default", size: 4, dieId: null, isDefault: true }]
     });
   });
 
@@ -45,7 +45,7 @@ describe("total and effect dice", () => {
     expect(validateSelection(rolled, sel).valid).toBe(true);
     expect(resolve(rolled, sel)).toMatchObject({
       total: 2,
-      effectDice: [{ size: 4, dieId: null, isDefault: true }]
+      effectDice: [{ id: "e1", kind: "default", size: 4, dieId: null, isDefault: true }]
     });
   });
 
@@ -55,7 +55,7 @@ describe("total and effect dice", () => {
     expect(validateSelection(hit, hitSel).valid).toBe(true);
     expect(resolve(hit, hitSel)).toMatchObject({
       total: 4,
-      effectDice: [{ size: 4, dieId: null, isDefault: true }]
+      effectDice: [{ id: "e1", kind: "default", size: 4, dieId: null, isDefault: true }]
     });
 
     const botch = rollPool([6], [1]);
@@ -63,7 +63,7 @@ describe("total and effect dice", () => {
     expect(validateSelection(botch, botchSel).valid).toBe(true);
     expect(resolve(botch, botchSel)).toMatchObject({
       total: 0,
-      effectDice: [{ size: 4, dieId: null, isDefault: true }]
+      effectDice: [{ id: "e1", kind: "default", size: 4, dieId: null, isDefault: true }]
     });
   });
 
@@ -72,9 +72,16 @@ describe("total and effect dice", () => {
     const sel = selection({ totalIds: [rolled[0].id, rolled[1].id], effectDieIds: [rolled[2].id] });
 
     expect(validateSelection(rolled, sel).valid).toBe(true);
-    expect(resolve(rolled, sel)).toMatchObject({
+    expect(resolve(rolled, sel)).toEqual({
       total: 12,
-      effectDice: [{ size: 6, dieId: rolled[2].id, isDefault: false }]
+      totalIds: [rolled[0].id, rolled[1].id],
+      effectDice: [{ id: "e1", kind: "rolled", size: 6, dieId: rolled[2].id, isDefault: false }],
+      consumedDieIds: [],
+      nextEffectNumber: 2,
+      hitchIds: [],
+      botch: false,
+      takeOut: false,
+      overflow: null
     });
   });
 
@@ -85,14 +92,14 @@ describe("total and effect dice", () => {
     expect(validateSelection(rolled, choiceA).valid).toBe(true);
     expect(resolve(rolled, choiceA)).toMatchObject({
       total: 16,
-      effectDice: [{ size: 8, dieId: rolled[2].id, isDefault: false }]
+      effectDice: [{ id: "e1", kind: "rolled", size: 8, dieId: rolled[2].id, isDefault: false }]
     });
 
     const choiceB = selection({ totalIds: [rolled[1].id, rolled[2].id], effectDieIds: [rolled[0].id] });
     expect(validateSelection(rolled, choiceB).valid).toBe(true);
     expect(resolve(rolled, choiceB)).toMatchObject({
       total: 13,
-      effectDice: [{ size: 12, dieId: rolled[0].id, isDefault: false }]
+      effectDice: [{ id: "e1", kind: "rolled", size: 12, dieId: rolled[0].id, isDefault: false }]
     });
   });
 
@@ -103,7 +110,7 @@ describe("total and effect dice", () => {
     expect(validateSelection(rolled, sel).valid).toBe(true);
     expect(resolve(rolled, sel)).toMatchObject({
       total: 10,
-      effectDice: [{ size: 4, dieId: null, isDefault: true }]
+      effectDice: [{ id: "e1", kind: "default", size: 4, dieId: null, isDefault: true }]
     });
   });
 
@@ -114,7 +121,7 @@ describe("total and effect dice", () => {
     expect(validateSelection(rolled, sel).valid).toBe(true);
     expect(resolve(rolled, sel)).toMatchObject({
       total: 11,
-      effectDice: [{ size: 4, dieId: rolled[3].id, isDefault: false }]
+      effectDice: [{ id: "e1", kind: "rolled", size: 4, dieId: rolled[3].id, isDefault: false }]
     });
 
     const hitchAsEffect = selection({ totalIds: [rolled[1].id, rolled[2].id], effectDieIds: [rolled[0].id] });
@@ -131,7 +138,7 @@ describe("total and effect dice", () => {
     expect(validateSelection(rolled, sel).valid).toBe(true);
     expect(resolve(rolled, sel)).toMatchObject({
       total: 5,
-      effectDice: [{ size: 4, dieId: null, isDefault: true }]
+      effectDice: [{ id: "e1", kind: "default", size: 4, dieId: null, isDefault: true }]
     });
   });
 
@@ -148,7 +155,7 @@ describe("total and effect dice", () => {
     expect(validateSelection(rolled, onlyValid).valid).toBe(true);
     expect(resolve(rolled, onlyValid)).toMatchObject({
       total: 12,
-      effectDice: [{ size: 4, dieId: null, isDefault: true }]
+      effectDice: [{ id: "e1", kind: "default", size: 4, dieId: null, isDefault: true }]
     });
 
     const withHitch = rollPool([10, 4], [1, 2]);
@@ -166,7 +173,7 @@ describe("total and effect dice", () => {
     expect(validateSelection(rolled, noPP).valid).toBe(true);
     expect(resolve(rolled, noPP)).toMatchObject({
       total: 14,
-      effectDice: [{ size: 6, dieId: rolled[2].id, isDefault: false }]
+      effectDice: [{ id: "e1", kind: "rolled", size: 6, dieId: rolled[2].id, isDefault: false }]
     });
 
     const keepD6 = selection({
@@ -177,7 +184,7 @@ describe("total and effect dice", () => {
     expect(validateSelection(rolled, keepD6).valid).toBe(true);
     expect(resolve(rolled, keepD6)).toMatchObject({
       total: 19,
-      effectDice: [{ size: 4, dieId: rolled[3].id, isDefault: false }]
+      effectDice: [{ id: "e1", kind: "rolled", size: 4, dieId: rolled[3].id, isDefault: false }]
     });
 
     const keepD4 = selection({
@@ -188,7 +195,7 @@ describe("total and effect dice", () => {
     expect(validateSelection(rolled, keepD4).valid).toBe(true);
     expect(resolve(rolled, keepD4)).toMatchObject({
       total: 18,
-      effectDice: [{ size: 6, dieId: rolled[2].id, isDefault: false }]
+      effectDice: [{ id: "e1", kind: "rolled", size: 6, dieId: rolled[2].id, isDefault: false }]
     });
 
     const reused = selection({
@@ -223,8 +230,8 @@ describe("total and effect dice", () => {
     expect(resolve(rolled, sel)).toMatchObject({
       total: 13,
       effectDice: [
-        { size: 12, dieId: rolled[0].id, isDefault: false },
-        { size: 6, dieId: rolled[3].id, isDefault: false }
+        { id: "e1", kind: "rolled", size: 12, dieId: rolled[0].id, isDefault: false },
+        { id: "e2", kind: "rolled", size: 6, dieId: rolled[3].id, isDefault: false }
       ]
     });
   });
@@ -240,8 +247,8 @@ describe("total and effect dice", () => {
     expect(resolve(rolled, sel)).toMatchObject({
       total: 9,
       effectDice: [
-        { size: 4, dieId: null, isDefault: true },
-        { size: 4, dieId: null, isDefault: true }
+        { id: "e1", kind: "default", size: 4, dieId: null, isDefault: true },
+        { id: "e2", kind: "default", size: 4, dieId: null, isDefault: true }
       ]
     });
   });
@@ -253,14 +260,14 @@ describe("total and effect dice", () => {
     expect(validateSelection(rolled, keepD10).valid).toBe(true);
     expect(resolve(rolled, keepD10)).toMatchObject({
       total: 7,
-      effectDice: [{ size: 8, dieId: rolled[1].id, isDefault: false }]
+      effectDice: [{ id: "e1", kind: "rolled", size: 8, dieId: rolled[1].id, isDefault: false }]
     });
 
     const keepD8 = selection({ totalIds: [rolled[1].id], effectDieIds: [rolled[0].id], keepLimit: 1 });
     expect(validateSelection(rolled, keepD8).valid).toBe(true);
     expect(resolve(rolled, keepD8)).toMatchObject({
       total: 6,
-      effectDice: [{ size: 10, dieId: rolled[0].id, isDefault: false }]
+      effectDice: [{ id: "e1", kind: "rolled", size: 10, dieId: rolled[0].id, isDefault: false }]
     });
 
     const keepTwo = selection({ totalIds: [rolled[0].id, rolled[1].id], keepLimit: 1 });
