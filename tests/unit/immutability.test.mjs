@@ -105,6 +105,29 @@ describe("engine functions never mutate their inputs", () => {
     expect(withD6.effectDice).toHaveLength(2);
   });
 
+  it("stepEffectDie removes a d4 effect die from a frozen roll and resolution (DP-24b)", () => {
+    const pool = buildPool([
+      { size: 10, source: source("Skill") },
+      { size: 8, source: source("Attribute") },
+      { size: 4, source: source("Asset") }
+    ]);
+    const rolled = deepFreeze(applyResults(pool, [7, 5, 3]));
+    const selection = {
+      totalIds: [rolled[0].id, rolled[1].id],
+      effectDieIds: [rolled[2].id],
+      extraResultsPaid: 0,
+      extraEffectDicePaid: 0
+    };
+    const resolution = deepFreeze(resolve(rolled, selection));
+
+    const removed = stepEffectDie(rolled, resolution, "e1", -1, "other");
+    expect(removed).not.toBe(resolution);
+    expect(removed.effectDice).toEqual([]);
+    expect(removed.consumedDieIds).toEqual([rolled[2].id]);
+    expect(resolution.effectDice).toHaveLength(1);
+    expect(resolution.consumedDieIds).toEqual([]);
+  });
+
   it("applyRerolls works from a frozen roll and a frozen results map", () => {
     const pool = buildPool([{ size: 8, source: source("Skill") }, { size: 6, source: source("Asset") }]);
     const rolled = deepFreeze(applyResults(pool, [1, 5]));

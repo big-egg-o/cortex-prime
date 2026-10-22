@@ -86,8 +86,8 @@ export const DIE_SIZES = Object.freeze(/** @type {DieSize[]} */ ([4, 6, 8, 10, 1
  * @typedef {Object} OverflowOptions
  * @property {'heroic'|'other'} cause
  * @property {{dieId: string, size: DieSize}[]} leftovers - every eligible unused die (not a
- *   hitch, available, not in the total, not already an effect die), in roll order; empty when
- *   none (RQ-003, RQ-007)
+ *   hitch, available, not in the total, not already an effect die, not in consumedDieIds), in
+ *   roll order; empty when none (RQ-003, RQ-007, DP-24c)
  * @property {6} newDie
  * @property {true} takeOutAvailable
  */

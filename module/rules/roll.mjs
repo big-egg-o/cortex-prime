@@ -161,25 +161,32 @@ export function resolve(rolled, selection) {
 
 /**
  * Every eligible leftover die for a second effect die: not a hitch, available, not in the
- * total, and not already an effect die, in roll order (rule 18, rule 19, RQ-003, RQ-007).
+ * total, not already an effect die, and not used up by an effect die that was removed, in roll
+ * order (rule 18, rule 19, rule 23, RQ-003, RQ-007, DP-24c).
  * @param {import("./types.mjs").RolledDie[]} rolled
  * @param {import("./types.mjs").Resolution} resolution
  * @returns {{dieId: string, size: import("./types.mjs").DieSize}[]}
  */
 function leftoverEligible(rolled, resolution) {
-  const usedInTotal = new Set(resolution.totalIds);
-  const usedAsEffect = new Set(resolution.effectDice.map(e => e.dieId).filter(id => id !== null));
+  const used = new Set([
+    ...resolution.totalIds,
+    ...resolution.effectDice.map(e => e.dieId).filter(id => id !== null),
+    ...resolution.consumedDieIds
+  ]);
   return rolled
-    .filter(d => !d.hitch && d.state === "available" && !usedInTotal.has(d.id) && !usedAsEffect.has(d.id))
+    .filter(d => !d.hitch && d.state === "available" && !used.has(d.id))
     .map(d => ({ dieId: d.id, size: d.size }));
 }
 
 /**
- * Steps one effect die up or down (rule 23). A step that would take it past d12 makes no size
- * change; instead it records a pending overflow with the options for the roller to pick from
- * (rule 22): every eligible leftover die, a new d6, or a take-out, resolved by
- * applyOverflowChoice. `cause` only affects labelling (RQ-005) — the options are identical for
- * a heroic success and for an SFX or other trigger.
+ * Steps one effect die up or down (rule 23). A d4 stepped down is removed from effectDice, no
+ * d4 default takes its place, and the rolled die it came from (if any) goes into
+ * consumedDieIds so it is never offered again (rule 23, RQ-009, DP-24b, DP-24c). The other
+ * entries keep their ids (ADR-026). A step that would take it past d12 makes no size change;
+ * instead it records a pending overflow with the options for the roller to pick from (rule
+ * 22): every eligible leftover die, a new d6, or a take-out, resolved by applyOverflowChoice.
+ * `cause` only affects labelling (RQ-005) — the options are identical for a heroic success and
+ * for an SFX or other trigger.
  * @param {import("./types.mjs").RolledDie[]} rolled
  * @param {import("./types.mjs").Resolution} resolution
  * @param {string} effectId - the id of the entry in resolution.effectDice (ADR-026)
@@ -201,6 +208,14 @@ export function stepEffectDie(rolled, resolution, effectId, steps, cause) {
       takeOutAvailable: true
     };
     return { ...resolution, overflow: { effectId, cause, options } };
+  }
+
+  if ( result.removed ) {
+    const effectDice = resolution.effectDice.filter(e => e !== entry);
+    const consumedDieIds = entry.dieId === null
+      ? resolution.consumedDieIds
+      : [...resolution.consumedDieIds, entry.dieId];
+    return { ...resolution, effectDice, consumedDieIds, overflow: null };
   }
 
   const effectDice = resolution.effectDice.map(e => (e === entry ? { ...e, size: result.size } : e));
@@ -259,8 +274,10 @@ export function twoHighest(rolled, keep = 2) {
 
 /**
  * Suggests the largest available, non-hitch, unused rolled die as an effect die (rule 18).
+ * It knows nothing of a Resolution: a caller working after Confirm must include the
+ * Resolution's consumedDieIds in `usedIds`, since those dice stay used up (rule 23, DP-24c).
  * @param {import("./types.mjs").RolledDie[]} rolled
- * @param {string[]} usedIds
+ * @param {string[]} usedIds - dice already in the total, chosen as effect dice, or used up
  * @returns {string|null} a die id, or null if none is eligible (rule 20 default applies)
  */
 export function largestEligible(rolled, usedIds) {
@@ -276,7 +293,9 @@ export function largestEligible(rolled, usedIds) {
  * eligible leftover for each effect slot, 1 plus paid extra effect dice (rule 18, rule 21).
  * Filling the total first means it never keeps fewer results than RQ-001 requires; an effect
  * slot with nothing left stays empty, for resolve() to default to a d4 (rule 20). A botch
- * gets no suggestion, since nothing is eligible.
+ * gets no suggestion, since nothing is eligible. Meant for before Confirm: it doesn't see a
+ * Resolution's consumedDieIds, so a caller after Confirm uses largestEligible with those ids
+ * in `usedIds` instead (rule 23, DP-24c).
  * @param {import("./types.mjs").RolledDie[]} rolled
  * @param {import("./types.mjs").Selection} selection - read for keepLimit and the paid counters
  * @returns {{totalIds: string[], effectDieIds: string[]}}
