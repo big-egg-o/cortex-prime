@@ -1,11 +1,13 @@
 /**
  * Contests between two sides: the exchange of rolls, giving in and declining (Tests & Contests
- * spec, rules 14-16). Every function here returns an EngineResult instead of throwing
- * (Decisions ADR-025). Who acts for each side and the revision number belong to the contest
- * message's data model, not to this engine (ADR-027).
+ * spec, rules 14-16), and what the result means for the loser (rules 17-21). Every function
+ * here returns an EngineResult instead of throwing (Decisions ADR-025). Who acts for each side
+ * and the revision number belong to the contest message's data model, not to this engine
+ * (ADR-027).
  * @module rules/contest
  */
 
+import { stepDie } from "./dice.mjs";
 import { beats, heroicSteps, isValidTotal } from "./outcome.mjs";
 import { fail, ok } from "./result.mjs";
 import { DIE_SIZES } from "./types.mjs";
@@ -155,4 +157,113 @@ export function decidingRolls(state) {
   const winnerRoll = state.rolls.findLast(r => r.side === state.winner) ?? null;
   const loserRoll = state.status === "won" ? state.rolls.at(-1) : null;
   return ok({ winnerRoll, loserRoll });
+}
+
+/**
+ * Compares one of the winner's effect dice with the loser's (rules 18-19). Normal scene: a
+ * loser's die equal to or larger than the winner's steps the winner's down by one first (RQ-010
+ * a), and a d4 stepped down goes away, leaving no complication (RQ-009); otherwise the
+ * complication is the winner's die. High stakes: nothing is stepped down; a winner's die larger
+ * than the loser's takes the loser out, otherwise the complication is the winner's die (RQ-010
+ * b). With no loser's die (`null`), nothing limits the winner: no step-down, and in high stakes
+ * the loser is taken out (RQ-015). When `takesOut` is true, `complication` is what the loser
+ * takes instead after paying a PP to stay in (rule 19; the spend belongs to Plot Points, M4).
+ * @param {import("./types.mjs").DieSize} winnerDie
+ * @param {import("./types.mjs").DieSize|null} loserDie - null when the loser has no effect die
+ * @param {boolean} highStakes
+ * @returns {import("./types.mjs").EngineResult<import("./types.mjs").DieComparison>}
+ *   INVALID_DIE_SIZE unless `winnerDie` is a die size and `loserDie` a die size or null
+ */
+export function compareEffectDie(winnerDie, loserDie, highStakes) {
+  if ( !DIE_SIZES.includes(winnerDie) ) return fail("INVALID_DIE_SIZE");
+  if ( loserDie !== null && !DIE_SIZES.includes(loserDie) ) return fail("INVALID_DIE_SIZE");
+
+  const limited = loserDie !== null && loserDie >= winnerDie;
+  const full = { winnerDie, loserDie, steppedDown: false, complication: winnerDie };
+  if ( highStakes === true ) return ok({ ...full, takesOut: !limited });
+  if ( !limited ) return ok({ ...full, takesOut: false });
+
+  const stepped = stepDie(winnerDie, -1);
+  return ok({ ...full, steppedDown: true, complication: stepped.removed ? null : stepped.size, takesOut: false });
+}
+
+/**
+ * What a finished contest means for the loser (rules 16-21). Everything comes from the contest
+ * state, read from the contest's own copy of the deciding rolls (ADR-027), except which of the
+ * winner's effect dice are used against the loser.
+ *
+ * Won by a failed roll: each effect die used against the loser is compared on its own with the
+ * loser's largest effect die (rule 20, RQ-011 c), as it stands after any heroic steps (RQ-011 b).
+ * An effect die whose overflow was answered with the take-out takes the loser out in any scene
+ * without a comparison, whether or not it is listed, and a PP would turn it into a d12
+ * complication (rule 21, RQ-013, RQ-016). One PP avoids every take-out (RQ-017): `avoidWithPP`
+ * lists the complication each take-out turns into; the other comparisons' complications stand
+ * either way. `takeOutCause` is "overflow" whenever an overflow take-out is among them.
+ *
+ * Given in or declined: nothing is compared and nobody is taken out, and `usedAgainstLoser` is
+ * only checked (rules 2, 16, RQ-014). `winnerEffects` still reports the winner's effect dice,
+ * empty when the opposition declined before the initiator rolled; the UI then takes the largest
+ * die of the initiator's pool (Dice & Pools rule 24). A side that gave in after rolling is
+ * eligible for a PP, and an initiator who gave in can't start a new contest against the same
+ * opponent straight away (rule 16).
+ *
+ * Each complication is reported as a size; whether it becomes a new complication or steps up one
+ * the loser has belongs to Assets & Complications (M4).
+ * @param {import("./types.mjs").ContestState} state
+ * @param {{usedAgainstLoser?: string[]}} [input] - effect ids of the winner's last roll
+ * @returns {import("./types.mjs").EngineResult<import("./types.mjs").Consequence>} refuses,
+ *   checked in this order: CONTEST_NOT_RESOLVED, DUPLICATE_EFFECT_DIE, EFFECT_DIE_NOT_FOUND,
+ *   INVALID_DIE_SIZE (a stored effect die of a size that doesn't exist)
+ */
+export function contestConsequence(state, { usedAgainstLoser = [] } = {}) {
+  if ( state.status === "open" ) return fail("CONTEST_NOT_RESOLVED");
+  const { winnerRoll, loserRoll } = decidingRolls(state).value;
+  const winnerEffects = (winnerRoll?.effects ?? []).map(({ id, size }) => ({ id, size }));
+  if ( new Set(usedAgainstLoser).size !== usedAgainstLoser.length ) return fail("DUPLICATE_EFFECT_DIE");
+  if ( !usedAgainstLoser.every(id => winnerEffects.some(e => e.id === id)) ) return fail("EFFECT_DIE_NOT_FOUND");
+
+  const loser = otherSide(state.winner);
+  const consequence = {
+    winner: state.winner,
+    loser,
+    ending: state.status,
+    margin: state.margin,
+    heroicSteps: state.heroicSteps,
+    winnerEffects,
+    comparisons: [],
+    takenOut: false,
+    takeOutCause: null,
+    avoidWithPP: null,
+    ppEligible: state.status === "gaveIn" && state.hasRolled[loser],
+    rematchBlocked: state.status === "gaveIn" && loser === "initiator"
+  };
+  if ( state.status !== "won" ) return ok(consequence);
+
+  const overflowTakeOut = winnerRoll.overflow?.kind === "take-out" ? winnerRoll.overflow.effectId : null;
+  const loserSizes = loserRoll.effects.map(e => e.size);
+  const loserDie = loserSizes.length > 0 ? Math.max(...loserSizes) : null;
+
+  const comparisons = [];
+  const avoidWithPP = [];
+  for ( const effect of winnerEffects ) {
+    if ( effect.id === overflowTakeOut ) {
+      avoidWithPP.push({ effectId: effect.id, size: 12 });
+      continue;
+    }
+    if ( !usedAgainstLoser.includes(effect.id) ) continue;
+    const compared = compareEffectDie(effect.size, loserDie, state.highStakes);
+    if ( !compared.ok ) return compared;
+    comparisons.push({ effectId: effect.id, ...compared.value });
+    if ( compared.value.takesOut ) avoidWithPP.push({ effectId: effect.id, size: compared.value.complication });
+  }
+
+  const takenOut = avoidWithPP.length > 0;
+  const byOverflow = avoidWithPP.some(a => a.effectId === overflowTakeOut);
+  return ok({
+    ...consequence,
+    comparisons,
+    takenOut,
+    takeOutCause: byOverflow ? "overflow" : takenOut ? "comparison" : null,
+    avoidWithPP: takenOut ? avoidWithPP : null
+  });
 }

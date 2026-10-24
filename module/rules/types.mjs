@@ -205,4 +205,44 @@ export const DIE_SIZES = Object.freeze(/** @type {DieSize[]} */ ([4, 6, 8, 10, 1
  * @property {boolean} closed - every action is refused once closed (ADR-027)
  */
 
+/**
+ * One of the winner's effect dice compared with the loser's (Tests & Contests rules 18-19).
+ * @typedef {Object} DieComparison
+ * @property {DieSize} winnerDie - as it stands after heroic steps (RQ-011 b)
+ * @property {DieSize|null} loserDie - the loser's largest effect die; null when it has none
+ *   (RQ-015)
+ * @property {boolean} steppedDown - the winner's die was stepped down first (normal scene)
+ * @property {DieSize|null} complication - the complication's size; null when a d4 was stepped
+ *   away (RQ-009). When `takesOut` is true, the complication a PP gives instead (rule 19).
+ * @property {boolean} takesOut - this die takes the loser out (high stakes)
+ */
+
+/**
+ * A DieComparison for one effect die of the winner's last roll.
+ * @typedef {DieComparison & {effectId: string}} EffectComparison
+ */
+
+/**
+ * What a finished contest means for both sides (Tests & Contests rules 16-21). Complications are
+ * sizes only; Assets & Complications (M4) decides whether each is new or steps one up.
+ * @typedef {Object} Consequence
+ * @property {ContestSide} winner
+ * @property {ContestSide} loser
+ * @property {'won'|'gaveIn'|'declined'} ending
+ * @property {number|null} margin - null after giving in or declining
+ * @property {number} heroicSteps
+ * @property {ContestEffect[]} winnerEffects - the winner's last roll's effect dice, reported even
+ *   when nothing is compared (RQ-014); empty after a decline before any roll
+ * @property {EffectComparison[]} comparisons - one per effect die used against the loser, except
+ *   an overflow take-out die (RQ-016)
+ * @property {boolean} takenOut - once, however many dice would take the loser out (RQ-017)
+ * @property {'comparison'|'overflow'|null} takeOutCause - "overflow" when an overflow take-out is
+ *   among them
+ * @property {{effectId: string, size: DieSize}[]|null} avoidWithPP - null unless taken out;
+ *   otherwise the complication each take-out turns into for the one PP that keeps the loser in:
+ *   the die's own size, or d12 for an overflow take-out (RQ-013, RQ-017)
+ * @property {boolean} ppEligible - the side that gave in had rolled (rule 16)
+ * @property {boolean} rematchBlocked - the initiator gave in (rule 16)
+ */
+
 export {};
