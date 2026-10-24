@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
-  applyOverflowChoice, applyRerolls, applyResults, buildPool, doubleDie, resolve,
-  stepEffectDie, stepPoolDie
+  applyHeroicSteps, applyOverflowChoice, applyRerolls, applyResults, buildPool, doubleDie, resolve,
+  resolveTest, stepEffectDie, stepPoolDie
 } from "../../module/rules/index.mjs";
 
 /** @param {*} value @returns {*} the same value, frozen all the way down */
@@ -136,5 +136,29 @@ describe("engine functions never mutate their inputs", () => {
     const rerolled = applyRerolls(rolled, results);
     expect(rerolled).not.toBe(rolled);
     expect(rerolled[0].result).toBe(6);
+  });
+
+  it("applyHeroicSteps works from a frozen roll, resolution and test outcome", () => {
+    const pool = buildPool([
+      { size: 10, source: source("Skill") },
+      { size: 8, source: source("Attribute") },
+      { size: 6, source: source("Asset") }
+    ]);
+    const rolled = deepFreeze(applyResults(pool, [9, 7, 4]));
+    const selection = {
+      totalIds: [rolled[0].id, rolled[1].id],
+      effectDieIds: [rolled[2].id],
+      extraResultsPaid: 0,
+      extraEffectDicePaid: 0
+    };
+    const resolution = deepFreeze(resolve(rolled, selection));
+    const outcome = deepFreeze(resolveTest({ total: resolution.total, difficulty: 8 }).value);
+
+    const stepped = applyHeroicSteps(rolled, resolution, outcome, "e1");
+    expect(stepped.value.resolution).not.toBe(resolution);
+    expect(stepped.value.heroic).not.toBe(outcome);
+    expect(stepped.value.resolution.effectDice[0].size).toBe(8);
+    expect(resolution.effectDice[0].size).toBe(6);
+    expect(outcome.heroicAppliedTo).toBeUndefined();
   });
 });

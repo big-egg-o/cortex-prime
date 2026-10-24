@@ -11,6 +11,9 @@ export { DIE_SIZES } from "./types.mjs";
 export { stepDie } from "./dice.mjs";
 export { buildPool, doubleDie, stepPoolDie } from "./pool.mjs";
 export {
+  DIFFICULTY_LEVELS, applyHeroicSteps, beats, difficultyDice, difficultyEntry, heroicSteps, resolveTest
+} from "./outcome.mjs";
+export {
   OVERFLOW_PENDING, applyOverflowChoice, applyRerolls, applyResults, evaluate, largestEligible, rerollableIds,
   resolve, stepEffectDie, suggestSelection, twoHighest, unrolledEffectDie, validateSelection
 } from "./roll.mjs";

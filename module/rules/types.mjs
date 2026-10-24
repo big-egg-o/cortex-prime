@@ -1,8 +1,15 @@
 /**
- * Shared JSDoc typedefs for the dice engine (Dice & Pools spec). Pure data shapes only:
- * nothing here decides an outcome, so there is nothing to unit test beyond the DIE_SIZES
- * constant.
+ * Shared JSDoc typedefs for the rules engine (Dice & Pools and Tests & Contests specs). Pure
+ * data shapes only: nothing here decides an outcome, so there is nothing to unit test beyond
+ * the DIE_SIZES constant.
  * @module rules/types
+ */
+
+/**
+ * What new engine functions return instead of throwing (Decisions ADR-025): the value, or the
+ * upper-case code of the first check that failed.
+ * @template T
+ * @typedef {{ok: true, value: T} | {ok: false, code: string}} EngineResult
  */
 
 /**
@@ -19,7 +26,8 @@ export const DIE_SIZES = Object.freeze(/** @type {DieSize[]} */ ([4, 6, 8, 10, 1
  * (overflow and doubled dice carry their origin die's source, but stepping or doubling a pool
  * die never changes the source itself).
  * @typedef {Object} DieSource
- * @property {string} kind - e.g. "trait", "asset", "sfx", "complication", "doom", "custom"
+ * @property {string} kind - e.g. "trait", "asset", "sfx", "complication", "doom", "difficulty",
+ *   "custom"
  * @property {string} [actorId]
  * @property {string} [traitId]
  * @property {string} label - display label for the chat card
@@ -124,6 +132,28 @@ export const DIE_SIZES = Object.freeze(/** @type {DieSize[]} */ ([4, 6, 8, 10, 1
  * @property {boolean} takeOut - true once the take-out/victory option is chosen (rule 22;
  *   added 2026-10-13)
  * @property {OverflowSignal|null} overflow
+ */
+
+/**
+ * A test's difficulty level on the chart (Tests & Contests rule 5).
+ * @typedef {'veryEasy'|'easy'|'challenging'|'hard'|'veryHard'} DifficultyLevel
+ */
+
+/**
+ * The outcome of a test (Tests & Contests rules 8, 10-11).
+ * @typedef {Object} TestOutcome
+ * @property {boolean} success - the total beat the difficulty
+ * @property {number} margin - total minus difficulty; negative on a failure
+ * @property {boolean} heroic - margin of 5 or more
+ * @property {number} heroicSteps - one per full 5 points of margin
+ */
+
+/**
+ * The heroic steps a success earned, and the effect die that took them, if any (ADR-023).
+ * A TestOutcome and a ContestState both carry these fields.
+ * @typedef {Object} HeroicRecord
+ * @property {number} heroicSteps
+ * @property {string|null} [heroicAppliedTo] - an effect id; missing or null until applied
  */
 
 export {};
