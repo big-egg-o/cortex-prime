@@ -156,4 +156,53 @@ export const DIE_SIZES = Object.freeze(/** @type {DieSize[]} */ ([4, 6, 8, 10, 1
  * @property {string|null} [heroicAppliedTo] - an effect id; missing or null until applied
  */
 
+/**
+ * The two sides of a contest (Tests & Contests rule 14).
+ * @typedef {'initiator'|'opposition'} ContestSide
+ */
+
+/**
+ * One effect die of a contest roll, as it stands after heroic steps and overflow choices
+ * (ADR-027), named by its stable effect id (ADR-026).
+ * @typedef {Object} ContestEffect
+ * @property {string} id
+ * @property {DieSize} size
+ */
+
+/**
+ * How a contest roll's effect die past d12 was answered (Dice & Pools rule 22).
+ * @typedef {Object} ContestOverflow
+ * @property {string} effectId - the effect die that went past d12
+ * @property {'leftover'|'new-d6'|'take-out'} kind - the OverflowChoice kind
+ */
+
+/**
+ * One roll of a contest, the contest's own copy of a confirmed poolRoll (ADR-027).
+ * @typedef {Object} ContestRoll
+ * @property {ContestSide} side
+ * @property {number} total
+ * @property {ContestEffect[]} effects - empty for a typed total (ADR-021)
+ * @property {ContestOverflow|null} overflow
+ * @property {string|null} messageRef - the poolRoll message it came from; opaque to the engine
+ */
+
+/**
+ * The state of a contest (Tests & Contests rules 14-16). Who acts for each side and the
+ * revision number live in the contest message's data model (ADR-027).
+ * @typedef {Object} ContestState
+ * @property {boolean} highStakes - set by the GM (ADR-022)
+ * @property {ContestRoll[]} rolls - in the order they were rolled
+ * @property {number|null} difficulty - the total to beat; null before the first roll
+ * @property {ContestSide|null} turn - null once the contest has a winner
+ * @property {'open'|'won'|'gaveIn'|'declined'} status
+ * @property {ContestSide|null} winner
+ * @property {{initiator: boolean, opposition: boolean}} hasRolled - for the PP on giving in
+ *   (rule 16)
+ * @property {number|null} margin - the winner's standing total minus the loser's failed total;
+ *   null unless a roll failed
+ * @property {number} heroicSteps - from the margin (rules 10-11); 0 after giving in or declining
+ * @property {string|null} heroicAppliedTo - the effect id that took the heroic steps (ADR-023)
+ * @property {boolean} closed - every action is refused once closed (ADR-027)
+ */
+
 export {};

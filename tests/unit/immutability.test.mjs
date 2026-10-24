@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
-  applyHeroicSteps, applyOverflowChoice, applyRerolls, applyResults, buildPool, doubleDie, resolve,
-  resolveTest, stepEffectDie, stepPoolDie
+  addContestRoll, applyHeroicSteps, applyOverflowChoice, applyRerolls, applyResults, buildPool, closeContest,
+  createContest, doubleDie, giveIn, resolve, resolveTest, stepEffectDie, stepPoolDie
 } from "../../module/rules/index.mjs";
 
 /** @param {*} value @returns {*} the same value, frozen all the way down */
@@ -160,5 +160,30 @@ describe("engine functions never mutate their inputs", () => {
     expect(stepped.value.resolution.effectDice[0].size).toBe(8);
     expect(resolution.effectDice[0].size).toBe(6);
     expect(outcome.heroicAppliedTo).toBeUndefined();
+  });
+
+  it("addContestRoll, giveIn and closeContest work from a frozen contest and roll", () => {
+    const opening = deepFreeze({
+      side: "initiator", total: 11, effects: [{ id: "e1", size: 6 }], overflow: null, messageRef: "roll-i1"
+    });
+    const started = deepFreeze(createContest().value);
+
+    const opened = addContestRoll(started, opening);
+    expect(opened.value).not.toBe(started);
+    expect(opened.value.rolls[0]).not.toBe(opening);
+    expect(opened.value.rolls[0].effects).not.toBe(opening.effects);
+    expect(started.rolls).toEqual([]);
+
+    const frozenOpened = deepFreeze(opened.value);
+    const declined = giveIn(frozenOpened, "opposition");
+    expect(declined.value).not.toBe(frozenOpened);
+    expect(frozenOpened.status).toBe("open");
+
+    const closed = closeContest(frozenOpened);
+    expect(closed.value).not.toBe(frozenOpened);
+    expect(frozenOpened.closed).toBe(false);
+
+    const refused = addContestRoll(frozenOpened, { ...opening });
+    expect(refused).toEqual({ ok: false, code: "CONTEST_NOT_YOUR_TURN" });
   });
 });
