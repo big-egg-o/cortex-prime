@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
-  applyOverflowChoice, applyRerolls, applyResults, buildPool, doubleDie, resolve,
-  stepEffectDie, stepPoolDie
+  addContestRoll, applyHeroicSteps, applyOverflowChoice, applyRerolls, applyResults, buildPool, closeContest,
+  contestConsequence, createContest, doubleDie, giveIn, resolve, resolveTest, stepEffectDie, stepPoolDie
 } from "../../module/rules/index.mjs";
 
 /** @param {*} value @returns {*} the same value, frozen all the way down */
@@ -136,5 +136,70 @@ describe("engine functions never mutate their inputs", () => {
     const rerolled = applyRerolls(rolled, results);
     expect(rerolled).not.toBe(rolled);
     expect(rerolled[0].result).toBe(6);
+  });
+
+  it("applyHeroicSteps works from a frozen roll, resolution and test outcome", () => {
+    const pool = buildPool([
+      { size: 10, source: source("Skill") },
+      { size: 8, source: source("Attribute") },
+      { size: 6, source: source("Asset") }
+    ]);
+    const rolled = deepFreeze(applyResults(pool, [9, 7, 4]));
+    const selection = {
+      totalIds: [rolled[0].id, rolled[1].id],
+      effectDieIds: [rolled[2].id],
+      extraResultsPaid: 0,
+      extraEffectDicePaid: 0
+    };
+    const resolution = deepFreeze(resolve(rolled, selection));
+    const outcome = deepFreeze(resolveTest({ total: resolution.total, difficulty: 8 }).value);
+
+    const stepped = applyHeroicSteps(rolled, resolution, outcome, "e1");
+    expect(stepped.value.resolution).not.toBe(resolution);
+    expect(stepped.value.heroic).not.toBe(outcome);
+    expect(stepped.value.resolution.effectDice[0].size).toBe(8);
+    expect(resolution.effectDice[0].size).toBe(6);
+    expect(outcome.heroicAppliedTo).toBeUndefined();
+  });
+
+  it("addContestRoll, giveIn and closeContest work from a frozen contest and roll", () => {
+    const opening = deepFreeze({
+      side: "initiator", total: 11, effects: [{ id: "e1", size: 6 }], overflow: null, messageRef: "roll-i1"
+    });
+    const started = deepFreeze(createContest().value);
+
+    const opened = addContestRoll(started, opening);
+    expect(opened.value).not.toBe(started);
+    expect(opened.value.rolls[0]).not.toBe(opening);
+    expect(opened.value.rolls[0].effects).not.toBe(opening.effects);
+    expect(started.rolls).toEqual([]);
+
+    const frozenOpened = deepFreeze(opened.value);
+    const declined = giveIn(frozenOpened, "opposition");
+    expect(declined.value).not.toBe(frozenOpened);
+    expect(frozenOpened.status).toBe("open");
+
+    const closed = closeContest(frozenOpened);
+    expect(closed.value).not.toBe(frozenOpened);
+    expect(frozenOpened.closed).toBe(false);
+
+    const refused = addContestRoll(frozenOpened, { ...opening });
+    expect(refused).toEqual({ ok: false, code: "CONTEST_NOT_YOUR_TURN" });
+  });
+
+  it("contestConsequence works from a frozen contest and input", () => {
+    let state = createContest({ highStakes: true }).value;
+    state = addContestRoll(state, {
+      side: "initiator", total: 15, effects: [{ id: "e1", size: 10 }, { id: "e2", size: 6 }], overflow: null, messageRef: null
+    }).value;
+    state = deepFreeze(addContestRoll(state, {
+      side: "opposition", total: 12, effects: [{ id: "e1", size: 8 }], overflow: null, messageRef: null
+    }).value);
+    const input = deepFreeze({ usedAgainstLoser: ["e1", "e2"] });
+
+    const consequence = contestConsequence(state, input);
+    expect(consequence.value.takenOut).toBe(true);
+    expect(consequence.value.winnerEffects).not.toBe(state.rolls[0].effects);
+    expect(consequence.value.winnerEffects[0]).not.toBe(state.rolls[0].effects[0]);
   });
 });
