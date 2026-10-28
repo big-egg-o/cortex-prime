@@ -13,6 +13,9 @@
   ],
   "url": "https://github.com/big-egg-o/cortex-prime",
   "documentTypes": {
+    "Actor": {
+      "character": {}
+    },
     "ChatMessage": {
       "poolRoll": {}
     }
