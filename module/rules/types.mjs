@@ -1,7 +1,7 @@
 /**
- * Shared JSDoc typedefs for the rules engine (Dice & Pools and Tests & Contests specs). Pure
- * data shapes only: nothing here decides an outcome, so there is nothing to unit test beyond
- * the DIE_SIZES constant.
+ * Shared JSDoc typedefs for the rules engine (Dice & Pools, Tests & Contests and Traits & Trait
+ * Sets specs). Pure data shapes only: nothing here decides an outcome, so there is nothing to
+ * unit test beyond the DIE_SIZES constant.
  * @module rules/types
  */
 
@@ -243,6 +243,58 @@ export const DIE_SIZES = Object.freeze(/** @type {DieSize[]} */ ([4, 6, 8, 10, 1
  *   the die's own size, or d12 for an overflow take-out (RQ-013, RQ-017)
  * @property {boolean} ppEligible - the side that gave in had rolled (rule 16)
  * @property {boolean} rematchBlocked - the initiator gave in (rule 16)
+ */
+
+/**
+ * One trait as a character stores it (Decisions ADR-032 to ADR-034).
+ * @typedef {Object} TraitEntryData
+ * @property {string} id - 16 letters or digits, unique across the character's sets and free traits
+ * @property {string|null} [defId] - set entries only: the definition in a fixed set, otherwise
+ *   null; missing counts as null
+ * @property {string} [name]
+ * @property {unknown[]} dice - the rating before its die sizes are checked: any array is accepted
+ *   here, and a later check refuses values that aren't die sizes
+ */
+
+/**
+ * A character's trait data as plain data, as diffCharacterTraits compares it. Other properties,
+ * such as schemaVersion and names, are ignored.
+ * @typedef {Object} CharacterTraitData
+ * @property {string|null} kindId
+ * @property {Object<string, {entries: TraitEntryData[]}>} traits - keyed by trait-set id
+ * @property {TraitEntryData[]} freeTraits
+ */
+
+/**
+ * One entry whose rating or definition id the checks against the game configuration must look at
+ * (ADR-037 point 2).
+ * @typedef {Object} TraitEntryChange
+ * @property {string|null} setId - null for a free trait
+ * @property {string} id
+ * @property {boolean} entered - the id wasn't at this place before: a new entry, or one moved here
+ * @property {boolean} diceChanged - the rating needs checking: the entry entered, or its dice
+ *   differ, as a multiset, from its earlier version here
+ * @property {boolean} defIdChanged - a validation flag, not a record of every difference: true when
+ *   a set entry has a non-null definition id that needs checking, because the entry entered or
+ *   because the id differs from its earlier version here. A definition id cleared to null or
+ *   left unchanged needs no check, so it is false
+ * @property {unknown[]} dice - an independent copy of the proposed rating; its elements are not
+ *   validated yet
+ * @property {string|null} defId - the proposed definition id; always null for a free trait
+ */
+
+/**
+ * What an edit changes in a character's traits (ADR-037 point 2).
+ * @typedef {Object} TraitChanges
+ * @property {boolean} kindChanged
+ * @property {string|null} kindId - the proposed kind
+ * @property {string[]} addedSetIds - set keys new to the character, empty sets included, in
+ *   proposed key order
+ * @property {string[]} removedSetIds - set keys the edit deletes, in current key order
+ * @property {TraitEntryChange[]} entries - in proposed order: sets in key order, entries in array
+ *   order, then the free traits
+ * @property {string[]} removedEntryIds - ids the edit removes from the character altogether, in
+ *   the order they first appear in the current data; for information, nothing to check
  */
 
 export {};
