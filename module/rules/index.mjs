@@ -20,3 +20,4 @@ export {
   OVERFLOW_PENDING, applyOverflowChoice, applyRerolls, applyResults, evaluate, largestEligible, rerollableIds,
   resolve, stepEffectDie, suggestSelection, twoHighest, unrolledEffectDie, validateSelection
 } from "./roll.mjs";
+export { validateRating } from "./traits.mjs";
