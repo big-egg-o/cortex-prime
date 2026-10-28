@@ -13,6 +13,7 @@ import { registerChatBatch } from "./chat.mjs";
 import { registerDiceBatch } from "./dice.mjs";
 import { registerEffectBatch } from "./effect.mjs";
 import { registerMigrationBatch } from "./migration.mjs";
+import { registerRatingFieldBatch } from "./rating-field.mjs";
 import { registerRerollBatch } from "./reroll.mjs";
 import { registerSelectionBatch } from "./selection.mjs";
 
@@ -29,6 +30,7 @@ export function registerQuenchBatches(quench) {
   registerMigrationBatch(quench);
   registerRerollBatch(quench);
   registerBuilderBatch(quench);
+  registerRatingFieldBatch(quench);
 
   quench.registerBatch(
     "cortex-prime.smoke",
