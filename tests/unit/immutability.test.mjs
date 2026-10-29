@@ -4,6 +4,11 @@ import {
   chooseContestOverflow, closeContest, contestConsequence, contestRollFromResolution, createContest, doubleDie, giveIn,
   resolve, resolveTest, stepEffectDie, stepPoolDie
 } from "../../module/rules/index.mjs";
+import {
+  addTestRoll, applyTestHeroicSteps, autoApplyContestHeroicSteps, autoApplyTestHeroicSteps, chooseTestOverflow, closeTest,
+  contestRollFromTotal, createTest, setContestHighStakes, setTestHighStakes, testResult
+} from "../../module/rules/contest.mjs";
+import { DIFFICULTY_SOURCE_KIND, difficultyEntry, difficultyLevelOfPool } from "../../module/rules/outcome.mjs";
 
 /** @param {*} value @returns {*} the same value, frozen all the way down */
 function deepFreeze(value) {
@@ -262,5 +267,156 @@ describe("engine functions never mutate their inputs", () => {
     expect(chosen.value.rolls[0].effects).toEqual([{ id: "e1", size: 12 }, { id: "e2", size: 4 }]);
     expect(state.rolls[0].overflows[0].kind).toBeNull();
     expect(state.rolls[0].effects).toEqual([{ id: "e1", size: 12 }]);
+  });
+});
+
+describe("the Step 4.4 engine functions never mutate their inputs", () => {
+  /**
+   * @param {number} total
+   * @param {import("../../module/rules/types.mjs").ContestEffect[]} effects
+   * @param {object} [extra] - fields that replace the defaults, such as overflows or leftovers
+   * @returns {import("../../module/rules/types.mjs").ContestRoll} a hand-built roll for a test's roller
+   */
+  function rollerRoll(total, effects, extra = {}) {
+    return {
+      side: "roller", total, effects, overflows: [], leftovers: [], nextEffectNumber: effects.length + 1,
+      messageRef: null, ...extra
+    };
+  }
+
+  /**
+   * A frozen test against difficulty 8 holding a roll of 17 with effect dice d12 (e1, its overflow
+   * open, a d4 "d4" left over) and d6 (e2): margin 9, one heroic step not yet applied.
+   */
+  function frozenHeroicTest() {
+    const started = createTest({ difficulty: 8 }).value;
+    return deepFreeze(addTestRoll(started, rollerRoll(17, [{ id: "e1", size: 12 }, { id: "e2", size: 6 }], {
+      overflows: [{ effectId: "e1", cause: "other", kind: null, dieId: null }], leftovers: [{ dieId: "d4", size: 4 }]
+    })).value);
+  }
+
+  /** A frozen test against difficulty 13 holding a roll of 14 with a d6 effect die: no heroic steps. */
+  function frozenPlainTest() {
+    const started = createTest({ difficulty: 13 }).value;
+    return deepFreeze(addTestRoll(started, rollerRoll(14, [{ id: "e1", size: 6 }])).value);
+  }
+
+  it("createTest works from frozen options", () => {
+    const options = deepFreeze({ difficulty: 13, highStakes: true });
+    const started = createTest(options);
+    expect(started.value).not.toBe(options);
+    expect(started.value).toMatchObject({ difficulty: 13, highStakes: true });
+  });
+
+  it("addTestRoll works from a frozen test and roll", () => {
+    const started = deepFreeze(createTest({ difficulty: 13 }).value);
+    const roll = deepFreeze(rollerRoll(14, [{ id: "e1", size: 6 }], { leftovers: [{ dieId: "d4", size: 4 }] }));
+
+    const added = addTestRoll(started, roll);
+    expect(added.value).not.toBe(started);
+    expect(added.value.roll).not.toBe(roll);
+    expect(added.value.roll.effects).not.toBe(roll.effects);
+    expect(added.value.roll.leftovers).not.toBe(roll.leftovers);
+    expect(started.roll).toBeNull();
+  });
+
+  it("applyTestHeroicSteps works from a frozen test", () => {
+    const state = frozenHeroicTest();
+    const stepped = applyTestHeroicSteps(state, "e2");
+    expect(stepped.value).not.toBe(state);
+    expect(stepped.value.roll).not.toBe(state.roll);
+    expect(stepped.value.roll.effects).toEqual([{ id: "e1", size: 12 }, { id: "e2", size: 8 }]);
+    expect(state.roll.effects[1].size).toBe(6);
+    expect(state.heroicAppliedTo).toBeNull();
+  });
+
+  it("chooseTestOverflow works from a frozen test and choice", () => {
+    const stepped = deepFreeze(applyTestHeroicSteps(frozenHeroicTest(), "e1").value);
+    const choice = deepFreeze({ kind: "leftover", dieId: "d4" });
+
+    const chosen = chooseTestOverflow(stepped, choice);
+    expect(chosen.value).not.toBe(stepped);
+    expect(chosen.value.roll.effects).toEqual([{ id: "e1", size: 12 }, { id: "e2", size: 6 }, { id: "e3", size: 4 }]);
+    expect(stepped.roll.overflows[0].kind).toBeNull();
+    expect(stepped.roll.leftovers).toEqual([{ dieId: "d4", size: 4 }]);
+  });
+
+  it("setTestHighStakes and closeTest work from a frozen test", () => {
+    const state = frozenPlainTest();
+    const on = setTestHighStakes(state, true);
+    expect(on.value).not.toBe(state);
+    expect(on.value.highStakes).toBe(true);
+    expect(state.highStakes).toBe(false);
+
+    const closed = closeTest(state);
+    expect(closed.value).not.toBe(state);
+    expect(closed.value.closed).toBe(true);
+    expect(state.closed).toBe(false);
+  });
+
+  it("testResult works from a frozen test", () => {
+    const state = frozenPlainTest();
+    const result = testResult(state);
+    expect(result.value.effects).toEqual([{ id: "e1", size: 6 }]);
+    expect(result.value.effects).not.toBe(state.roll.effects);
+    expect(result.value.effects[0]).not.toBe(state.roll.effects[0]);
+  });
+
+  it("setContestHighStakes works from a frozen contest", () => {
+    let state = createContest().value;
+    state = addContestRoll(state, {
+      side: "initiator", total: 15, effects: [{ id: "e1", size: 10 }], overflows: [], leftovers: [], nextEffectNumber: 2,
+      messageRef: null
+    }).value;
+    state = deepFreeze(addContestRoll(state, {
+      side: "opposition", total: 12, effects: [{ id: "e1", size: 6 }], overflows: [], leftovers: [], nextEffectNumber: 2,
+      messageRef: null
+    }).value);
+
+    const on = setContestHighStakes(state, true);
+    expect(on.value).not.toBe(state);
+    expect(on.value.highStakes).toBe(true);
+    expect(state.highStakes).toBe(false);
+  });
+
+  it("contestRollFromTotal works from a frozen list of typed effect dice", () => {
+    const sizes = deepFreeze([10, 6]);
+    const roll = contestRollFromTotal("initiator", 12, sizes);
+    expect(roll.value.effects).toEqual([{ id: "e1", size: 10 }, { id: "e2", size: 6 }]);
+    expect(sizes).toEqual([10, 6]);
+  });
+
+  it("autoApplyContestHeroicSteps works from a frozen contest", () => {
+    let state = createContest().value;
+    state = addContestRoll(state, {
+      side: "initiator", total: 17, effects: [{ id: "e1", size: 8 }], overflows: [], leftovers: [], nextEffectNumber: 2,
+      messageRef: null
+    }).value;
+    state = deepFreeze(addContestRoll(state, {
+      side: "opposition", total: 12, effects: [{ id: "e1", size: 8 }], overflows: [], leftovers: [], nextEffectNumber: 2,
+      messageRef: null
+    }).value);
+
+    const stepped = autoApplyContestHeroicSteps(state);
+    expect(stepped.value).not.toBe(state);
+    expect(stepped.value.rolls[0].effects).toEqual([{ id: "e1", size: 10 }]);
+    expect(state.rolls[0].effects[0].size).toBe(8);
+    expect(state.heroicAppliedTo).toBeNull();
+  });
+
+  it("autoApplyTestHeroicSteps works from a frozen test", () => {
+    const started = createTest({ difficulty: 8 }).value;
+    const state = deepFreeze(addTestRoll(started, rollerRoll(16, [{ id: "e1", size: 6 }])).value);
+
+    const stepped = autoApplyTestHeroicSteps(state);
+    expect(stepped.value).not.toBe(state);
+    expect(stepped.value.roll.effects).toEqual([{ id: "e1", size: 8 }]);
+    expect(state.roll.effects[0].size).toBe(6);
+    expect(state.heroicAppliedTo).toBeNull();
+  });
+
+  it("difficultyLevelOfPool works from a frozen pool", () => {
+    const pool = deepFreeze(buildPool(difficultyEntry("hard", { kind: DIFFICULTY_SOURCE_KIND, label: "Hard" }).value));
+    expect(difficultyLevelOfPool(pool)).toEqual({ ok: true, value: "hard" });
   });
 });

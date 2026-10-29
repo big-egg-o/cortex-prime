@@ -4,6 +4,7 @@ import {
 } from "../../module/rules/outcome.mjs";
 import { buildPool } from "../../module/rules/pool.mjs";
 import { applyResults, resolve, stepEffectDie, unrolledEffectDie } from "../../module/rules/roll.mjs";
+import { DIFFICULTY_SOURCE_KIND, difficultyLevelOfPool, doubleDie, stepPoolDie } from "../../module/rules/index.mjs";
 
 /** @returns {{kind: string, label: string}} a minimal DieSource for tests */
 function source(label) {
@@ -273,5 +274,64 @@ describe("bad totals", () => {
     expect(resolveTest({})).toEqual({ ok: false, code: "INVALID_TOTAL" });
     expect(heroicSteps(5.5)).toEqual({ ok: false, code: "INVALID_TOTAL" });
     expect(heroicSteps("5")).toEqual({ ok: false, code: "INVALID_TOTAL" });
+  });
+});
+
+describe("the difficulty level of a pool (display only)", () => {
+  /**
+   * @param {import("../../module/rules/types.mjs").DifficultyLevel} level
+   * @returns {{size: number, source: object}[]} the level's two difficulty dice, marked with the
+   *   difficulty source kind as the pool builder adds them (rule 4)
+   */
+  function difficultyDiceFor(level) {
+    return difficultyEntry(level, { kind: DIFFICULTY_SOURCE_KIND, label: `Difficulty ${level}` }).value;
+  }
+
+  it("TC-53 TC-02's pool reads as hard, and each of the five levels reads back the same way", () => {
+    const pool = buildPool([
+      ...difficultyDiceFor("hard"),
+      { size: 8, source: { kind: "trait", label: "Gate guard" } },
+      { size: 6, source: { kind: "risk", label: "Extra risk" } }
+    ]);
+    expect(pool.map(d => d.size)).toEqual([10, 10, 8, 6]);
+    expect(difficultyLevelOfPool(pool)).toEqual({ ok: true, value: "hard" });
+
+    for ( const level of DIFFICULTY_LEVELS ) {
+      expect(difficultyLevelOfPool(buildPool(difficultyDiceFor(level))), level).toEqual({ ok: true, value: level });
+    }
+  });
+
+  it("TC-53 two d10 added as ordinary dice, and an empty pool, have no level", () => {
+    const ordinary = buildPool([{ size: 10, source: { kind: "custom", label: "Hard" }, count: 2 }]);
+    expect(difficultyLevelOfPool(ordinary)).toEqual({ ok: true, value: null });
+    expect(difficultyLevelOfPool([])).toEqual({ ok: true, value: null });
+  });
+
+  it("TC-53 one difficulty die stepped or doubled, an overflow d6 from a stepped d12, or two pairs leave no level", () => {
+    const hard = buildPool(difficultyDiceFor("hard"));
+    const stepped = stepPoolDie(hard, hard[0].id, 1);
+    expect(stepped.map(d => d.size)).toEqual([12, 10]);
+    expect(difficultyLevelOfPool(stepped)).toEqual({ ok: true, value: null });
+
+    const doubled = doubleDie(hard, hard[0].id);
+    expect(doubled.map(d => d.size)).toEqual([10, 10, 10]);
+    expect(difficultyLevelOfPool(doubled)).toEqual({ ok: true, value: null });
+
+    const veryHard = buildPool(difficultyDiceFor("veryHard"));
+    const overflow = stepPoolDie(veryHard, veryHard[0].id, 1);
+    expect(overflow.map(d => [d.size, d.source.kind])).toEqual([
+      [12, DIFFICULTY_SOURCE_KIND], [6, DIFFICULTY_SOURCE_KIND], [12, DIFFICULTY_SOURCE_KIND]
+    ]);
+    expect(difficultyLevelOfPool(overflow)).toEqual({ ok: true, value: null });
+
+    const twoPairs = buildPool([...difficultyDiceFor("hard"), ...difficultyDiceFor("easy")]);
+    expect(difficultyLevelOfPool(twoPairs)).toEqual({ ok: true, value: null });
+  });
+
+  it("TC-53 both difficulty d10 stepped up to d12 read as veryHard", () => {
+    const hard = buildPool(difficultyDiceFor("hard"));
+    const both = stepPoolDie(stepPoolDie(hard, hard[0].id, 1), hard[1].id, 1);
+    expect(both.map(d => d.size)).toEqual([12, 12]);
+    expect(difficultyLevelOfPool(both)).toEqual({ ok: true, value: "veryHard" });
   });
 });

@@ -187,9 +187,10 @@ export const DIE_SIZES = Object.freeze(/** @type {DieSize[]} */ ([4, 6, 8, 10, 1
  */
 
 /**
- * One roll of a contest, the contest's own copy of a confirmed poolRoll (ADR-027).
+ * One roll of a contest, the contest's own copy of a confirmed poolRoll (ADR-027). A test keeps its
+ * roll in the same shape, with side "roller" (ADR-020).
  * @typedef {Object} ContestRoll
- * @property {ContestSide} side
+ * @property {ContestSide|TestSide} side
  * @property {number} total
  * @property {ContestEffect[]} effects - empty for a typed total (ADR-021)
  * @property {ContestOverflow[]} overflows - its effect dice past d12, in the order they opened:
@@ -260,6 +261,47 @@ export const DIE_SIZES = Object.freeze(/** @type {DieSize[]} */ ([4, 6, 8, 10, 1
  *   the die's own size, or d12 for an overflow take-out (RQ-013, RQ-017)
  * @property {boolean} ppEligible - the side that gave in had rolled (rule 16)
  * @property {boolean} rematchBlocked - the initiator gave in (rule 16)
+ */
+
+/**
+ * The two sides of a test (Tests & Contests rules 1, 7): the roller, and the side that set the
+ * difficulty. Only the roller's roll is in the engine; who set the difficulty, and with which card,
+ * lives in the contest message's model (ADR-020).
+ * @typedef {'roller'|'setter'} TestSide
+ */
+
+/**
+ * The state of a test, the test variant of the contest message (ADR-020; Tests & Contests rules 8,
+ * 10-12, 21). The roll is the test's own copy, with its effect dice as they stand after heroic steps
+ * and the overflow choice (ADR-027, RQ-026). Who acts for each side, the difficulty card and level,
+ * and the revision number live in the contest message's model.
+ * @typedef {Object} TestState
+ * @property {boolean} highStakes - set by the GM (ADR-022); the engine only reports it, since what a
+ *   failed high-stakes test means is the GM's call (rule 24)
+ * @property {number} difficulty - the total to beat (rule 8)
+ * @property {ContestRoll|null} roll - the roller's roll, side "roller"; null until it is added
+ * @property {boolean|null} success - the roll beat the difficulty; null until the roll is added
+ * @property {number|null} margin - total minus difficulty, negative on a failure; null until the
+ *   roll is added
+ * @property {number} heroicSteps - from the margin (rules 10-11); 0 until the roll is added, and on a
+ *   failure
+ * @property {string|null} heroicAppliedTo - the effect id that took the heroic steps (ADR-023)
+ * @property {boolean} closed - every action is refused once closed (ADR-027)
+ */
+
+/**
+ * What a finished test means once its end choices are made, the test's counterpart of a
+ * Consequence (ADR-028).
+ * @typedef {Object} TestResult
+ * @property {boolean} success
+ * @property {number} margin - total minus difficulty; negative on a failure
+ * @property {boolean} heroic - a margin of 5 or more (rule 10)
+ * @property {number} heroicSteps - reported even when they lapsed because the roll has no effect die
+ *   (RQ-027)
+ * @property {ContestEffect[]} effects - the roll's effect dice as they stand; a die whose overflow
+ *   lapsed after a failure counts as a d12 (RQ-028)
+ * @property {boolean} takeOut - the take-out or victory was chosen for an effect die past d12
+ *   (rule 12)
  */
 
 /**
