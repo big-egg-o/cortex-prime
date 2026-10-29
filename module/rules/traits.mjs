@@ -11,29 +11,39 @@ import { DIE_SIZES } from "./types.mjs";
 /**
  * Checks a trait's rating: a list of die sizes (ADR-033), several for mobs, bosses, resources
  * and the like (rule 2), none for a trait with no die (rule 3). This is technical validation,
- * which ADR-029 keeps enforced: every entry must be a size on the step ladder (TS-E01), and a
- * set whose traits need dice of one size refuses a mix (TS-E02). Nothing is coerced, so a rating
- * that isn't an array, an entry that isn't one of the DIE_SIZES numbers, or an empty slot is
- * refused. A set's usual range is guidance for the sheet, not checked here (rule 9).
+ * which ADR-029 keeps enforced: every entry must be a size on the step ladder (TS-E01), and the
+ * rating must fit its set's shape (ADR-037 point 2): a set without dice refuses any die, a set
+ * with one die per trait refuses more, and a set whose traits need dice of one size refuses a
+ * mix (TS-E02). An empty rating passes whatever the options, which restrict only the dice a
+ * rating holds. Nothing is coerced, so a rating that isn't an array, an entry that isn't one of
+ * the DIE_SIZES numbers, or an empty slot is refused. A set's usual range is guidance for the
+ * sheet, not checked here (rule 9).
  * @param {unknown} dice
- * @param {{sameSizeDice?: boolean}} [options] - an object, or left out. `sameSizeDice: true`
- *   refuses mixed sizes; `false`, left out or `undefined` allows them.
+ * @param {{hasDice?: boolean, multiDice?: boolean, sameSizeDice?: boolean}} [options] - an
+ *   object, or left out. Each option is true, false, left out or `undefined`, and left out or
+ *   `undefined` allows: `hasDice: false` refuses any die, `multiDice: false` refuses more than
+ *   one, and `sameSizeDice: true` refuses mixed sizes. Any combination is accepted; the first
+ *   check that fails decides.
  * @returns {import("./types.mjs").EngineResult<import("./types.mjs").DieSize[]>} a copy of the
  *   rating; refuses, checked in this order: INVALID_RATING_OPTIONS (options that aren't an
- *   object, or a sameSizeDice that isn't a boolean: a calling error, not a rule),
- *   INVALID_DIE_SIZE, RATING_MIXED_SIZES
+ *   object, or an option that isn't a boolean: a calling error, not a rule), INVALID_DIE_SIZE,
+ *   RATING_DICE_NOT_ALLOWED, RATING_TOO_MANY_DICE, RATING_MIXED_SIZES
  */
 export function validateRating(dice, options = {}) {
   if ( (typeof options !== "object") || (options === null) || Array.isArray(options) ) {
     return fail("INVALID_RATING_OPTIONS");
   }
-  const { sameSizeDice = false } = options;
-  if ( typeof sameSizeDice !== "boolean" ) return fail("INVALID_RATING_OPTIONS");
+  const { hasDice = true, multiDice = true, sameSizeDice = false } = options;
+  if ( [hasDice, multiDice, sameSizeDice].some(flag => typeof flag !== "boolean") ) {
+    return fail("INVALID_RATING_OPTIONS");
+  }
   if ( !Array.isArray(dice) ) return fail("INVALID_DIE_SIZE");
   // An indexed loop, not some(), so an empty slot is checked rather than skipped.
   for ( let i = 0; i < dice.length; i++ ) {
     if ( !DIE_SIZES.includes(dice[i]) ) return fail("INVALID_DIE_SIZE");
   }
+  if ( !hasDice && (dice.length > 0) ) return fail("RATING_DICE_NOT_ALLOWED");
+  if ( !multiDice && (dice.length > 1) ) return fail("RATING_TOO_MANY_DICE");
   if ( sameSizeDice && dice.some(size => size !== dice[0]) ) return fail("RATING_MIXED_SIZES");
   return ok([...dice]);
 }
