@@ -6,6 +6,7 @@ import {
 import { applyHeroicSteps } from "../../module/rules/outcome.mjs";
 import { buildPool } from "../../module/rules/pool.mjs";
 import { applyOverflowChoice, applyResults, resolve, stepEffectDie } from "../../module/rules/roll.mjs";
+import { autoApplyContestHeroicSteps } from "../../module/rules/index.mjs";
 
 /** @returns {{kind: string, label: string}} a minimal DieSource for tests */
 function source(label) {
@@ -993,5 +994,52 @@ describe("end-of-contest guards", () => {
     const afterE1 = unwrap(chooseContestOverflow(stepped, { effectId: "e1", kind: "new-d6" }), "new d6 for e1");
     expect(chooseContestOverflow(afterE1, { effectId: "e1", kind: "new-d6" }))
       .toEqual({ ok: false, code: "OVERFLOW_NOT_PENDING" });
+  });
+});
+
+describe("automatic heroic steps in a contest (ADR-023)", () => {
+  it("TC-47 with one effect die the step is applied automatically: e1 becomes a d10, giving a d10 complication", () => {
+    const state = exchange([I(17, 8), O(12, 8)]);
+    expect(state).toMatchObject({ status: "won", winner: "initiator", margin: 5, heroicSteps: 1, heroicAppliedTo: null });
+
+    const stepped = unwrap(autoApplyContestHeroicSteps(state), "automatic step");
+    expect(stepped.heroicAppliedTo).toBe("e1");
+    expect(winnerEffectsOf(stepped)).toEqual([{ id: "e1", size: 10 }]);
+    expect(unwrap(contestConsequence(stepped, { usedAgainstLoser: ["e1"] }), "consequence").comparisons).toEqual([
+      { effectId: "e1", winnerDie: 10, loserDie: 8, steppedDown: false, complication: 10, takesOut: false }
+    ]);
+  });
+
+  it("TC-47 TC-37's two effect dice: nothing changes, and the consequence still waits with HEROIC_PENDING", () => {
+    const state = exchange([I(17, 8, 6), O(12, 8)]);
+    const result = autoApplyContestHeroicSteps(state);
+    expect(result.ok).toBe(true);
+    expect(result.value).toBe(state);
+    expect(contestConsequence(result.value, { usedAgainstLoser: ["e1", "e2"] }))
+      .toEqual({ ok: false, code: "HEROIC_PENDING" });
+  });
+
+  it("TC-47 TC-41's typed 18 has no effect die: nothing changes", () => {
+    const state = exchange([{ side: "initiator", total: 18 }, O(12, 8)]);
+    expect(state).toMatchObject({ status: "won", margin: 6, heroicSteps: 1 });
+    const result = autoApplyContestHeroicSteps(state);
+    expect(result.ok).toBe(true);
+    expect(result.value).toBe(state);
+  });
+
+  it("TC-47 after giving in there are no heroic steps: nothing changes", () => {
+    const state = giveIn(exchange([I(11, 6), O(14, 8)]), "initiator").value;
+    const result = autoApplyContestHeroicSteps(state);
+    expect(result.ok).toBe(true);
+    expect(result.value).toBe(state);
+  });
+
+  it("TC-52 automatic heroic steps on a closed contest are refused with CONTEST_CLOSED, checked first", () => {
+    const beforeRolls = unwrap(closeContest(createContest().value), "close before any roll");
+    expect(autoApplyContestHeroicSteps(beforeRolls)).toEqual({ ok: false, code: "CONTEST_CLOSED" });
+
+    const stepsWaiting = unwrap(closeContest(exchange([I(17, 8), O(12, 8)])), "close while the step waits");
+    expect(autoApplyContestHeroicSteps(stepsWaiting)).toEqual({ ok: false, code: "CONTEST_CLOSED" });
+    expect(winnerEffectsOf(stepsWaiting)).toEqual([{ id: "e1", size: 8 }]);
   });
 });

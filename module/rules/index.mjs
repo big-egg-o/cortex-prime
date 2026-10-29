@@ -11,11 +11,14 @@ export { DIE_SIZES } from "./types.mjs";
 export { stepDie } from "./dice.mjs";
 export { buildPool, doubleDie, stepPoolDie } from "./pool.mjs";
 export {
-  DIFFICULTY_LEVELS, applyHeroicSteps, beats, difficultyDice, difficultyEntry, heroicSteps, resolveTest
+  DIFFICULTY_LEVELS, DIFFICULTY_SOURCE_KIND, applyHeroicSteps, beats, difficultyDice, difficultyEntry,
+  difficultyLevelOfPool, heroicSteps, resolveTest
 } from "./outcome.mjs";
 export {
-  addContestRoll, applyContestHeroicSteps, chooseContestOverflow, closeContest, compareEffectDie, contestConsequence,
-  contestRollFromResolution, createContest, decidingRolls, giveIn
+  CONTEST_SIDES, TEST_SIDES, addContestRoll, addTestRoll, applyContestHeroicSteps, applyTestHeroicSteps,
+  autoApplyContestHeroicSteps, autoApplyTestHeroicSteps, chooseContestOverflow, chooseTestOverflow, closeContest,
+  closeTest, compareEffectDie, contestConsequence, contestRollFromResolution, contestRollFromTotal, createContest,
+  createTest, decidingRolls, giveIn, setContestHighStakes, setTestHighStakes, testResult
 } from "./contest.mjs";
 export {
   OVERFLOW_PENDING, applyOverflowChoice, applyRerolls, applyResults, evaluate, largestEligible, rerollableIds,

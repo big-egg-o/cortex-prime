@@ -6,6 +6,7 @@ import { buildPool } from "../../module/rules/pool.mjs";
 import {
   applyOverflowChoice, applyResults, resolve, stepEffectDie, unrolledEffectDie
 } from "../../module/rules/roll.mjs";
+import { contestConsequence, contestRollFromTotal, setContestHighStakes } from "../../module/rules/index.mjs";
 
 /** @returns {{kind: string, label: string}} a minimal DieSource for tests */
 function source(label) {
@@ -428,5 +429,111 @@ describe("an overflow during the exchange (rule 21, RQ-018)", () => {
       side: "initiator", total: 11, effects: [{ id: "e1", size: 8 }, { id: "e3", size: 6 }], overflows: [],
       leftovers: [], nextEffectNumber: 4, messageRef: null
     }]);
+  });
+});
+
+describe("typed totals and high stakes (Step 4.4)", () => {
+  /**
+   * @template T
+   * @param {import("../../module/rules/types.mjs").EngineResult<T>} result
+   * @param {string} label
+   * @returns {T} the value, failing the test on a refusal
+   */
+  function unwrapped(result, label) {
+    expect(result, label).toMatchObject({ ok: true });
+    return result.value;
+  }
+
+  /**
+   * @param {'initiator'|'opposition'} side
+   * @param {number} total
+   * @param {number[]} [sizes] - typed effect dice
+   * @returns {import("../../module/rules/types.mjs").ContestRoll} a roll typed by hand
+   */
+  function typed(side, total, sizes) {
+    return unwrapped(contestRollFromTotal(side, total, sizes), `typed ${side} ${total}`);
+  }
+
+  /**
+   * TC-54: I types 11, O rolls 13 (effect die d8), and I types 12 with `lastSizes` as its typed
+   * effect dice, which fails: O wins by 1.
+   * @param {{highStakes?: boolean, lastSizes?: number[]}} [options]
+   * @returns {import("../../module/rules/types.mjs").ContestState}
+   */
+  function tc54({ highStakes = false, lastSizes = [] } = {}) {
+    const state = exchange([typed("initiator", 11), O(13, 8), typed("initiator", 12, lastSizes)], { highStakes });
+    expect(state).toMatchObject({ status: "won", winner: "opposition", margin: 1, heroicSteps: 0 });
+    return state;
+  }
+
+  it("TC-54 a typed roll has no effect die, so O's d8 isn't limited: a d8 complication in a normal scene", () => {
+    expect(contestRollFromTotal("initiator", 11)).toEqual({
+      ok: true,
+      value: { side: "initiator", total: 11, effects: [], overflows: [], leftovers: [], nextEffectNumber: 1, messageRef: null }
+    });
+    const consequence = unwrapped(contestConsequence(tc54(), { usedAgainstLoser: ["e1"] }), "consequence");
+    expect(consequence.comparisons).toEqual([
+      { effectId: "e1", winnerDie: 8, loserDie: null, steppedDown: false, complication: 8, takesOut: false }
+    ]);
+    expect(consequence.takenOut).toBe(false);
+  });
+
+  it("TC-54 in a high-stakes scene I is taken out, and a PP would give a d8 complication instead", () => {
+    const consequence = unwrapped(contestConsequence(tc54({ highStakes: true }), { usedAgainstLoser: ["e1"] }), "consequence");
+    expect(consequence).toMatchObject({
+      takenOut: true, takeOutCause: "comparison", avoidWithPP: [{ effectId: "e1", size: 8 }]
+    });
+  });
+
+  it("TC-54b I's typed 12 with a d10: d8 against d10 is stepped down to a d6 complication", () => {
+    expect(contestRollFromTotal("initiator", 12, [10])).toEqual({
+      ok: true,
+      value: {
+        side: "initiator", total: 12, effects: [{ id: "e1", size: 10 }], overflows: [], leftovers: [],
+        nextEffectNumber: 2, messageRef: null
+      }
+    });
+    const consequence = unwrapped(contestConsequence(tc54({ lastSizes: [10] }), { usedAgainstLoser: ["e1"] }), "consequence");
+    expect(consequence.comparisons).toEqual([
+      { effectId: "e1", winnerDie: 8, loserDie: 10, steppedDown: true, complication: 6, takesOut: false }
+    ]);
+  });
+
+  it("TC-54b in a high-stakes scene I isn't taken out: a d8 complication", () => {
+    const state = tc54({ highStakes: true, lastSizes: [10] });
+    const consequence = unwrapped(contestConsequence(state, { usedAgainstLoser: ["e1"] }), "consequence");
+    expect(consequence.comparisons).toEqual([
+      { effectId: "e1", winnerDie: 8, loserDie: 10, steppedDown: false, complication: 8, takesOut: false }
+    ]);
+    expect(consequence.takenOut).toBe(false);
+  });
+
+  it("TC-51 high stakes on turns TC-24's d10 against d6 into a take-out, and off again into a d10 complication", () => {
+    const state = exchange([I(15, 10), O(12, 6)]);
+    expect(state).toMatchObject({ status: "won", winner: "initiator", margin: 3, heroicSteps: 0, highStakes: false });
+    expect(unwrapped(contestConsequence(state, { usedAgainstLoser: ["e1"] }), "normal")).toMatchObject({
+      takenOut: false, comparisons: [{ effectId: "e1", complication: 10, takesOut: false }]
+    });
+
+    const on = unwrapped(setContestHighStakes(state, true), "high stakes on");
+    expect(on.highStakes).toBe(true);
+    expect(unwrapped(contestConsequence(on, { usedAgainstLoser: ["e1"] }), "high stakes")).toMatchObject({
+      takenOut: true, avoidWithPP: [{ effectId: "e1", size: 10 }]
+    });
+
+    const off = unwrapped(setContestHighStakes(on, false), "high stakes off");
+    expect(off.highStakes).toBe(false);
+    expect(unwrapped(contestConsequence(off, { usedAgainstLoser: ["e1"] }), "normal again")).toMatchObject({
+      takenOut: false, comparisons: [{ effectId: "e1", complication: 10, takesOut: false }]
+    });
+  });
+
+  it("TC-E11 a high-stakes value that isn't true or false is refused; a closed contest refuses first with CONTEST_CLOSED", () => {
+    const state = exchange([I(15, 10), O(12, 6)]);
+    for ( const bad of ["true", 1, null] ) {
+      expect(setContestHighStakes(state, bad), `value ${bad}`).toEqual({ ok: false, code: "INVALID_HIGH_STAKES" });
+    }
+    const closed = unwrapped(closeContest(state), "close");
+    expect(setContestHighStakes(closed, "true")).toEqual({ ok: false, code: "CONTEST_CLOSED" });
   });
 });

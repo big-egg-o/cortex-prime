@@ -98,6 +98,28 @@ export function resolveTest({ total, difficulty } = {}) {
 }
 
 /**
+ * The source kind of the two difficulty dice the pool builder adds to an opposition pool (rule 4),
+ * so the level the pool was built for can be read back for display (difficultyLevelOfPool).
+ */
+export const DIFFICULTY_SOURCE_KIND = "difficulty";
+
+/**
+ * The difficulty level an opposition pool was built for, for display only (rules 4-5): the level
+ * whose chart size both dice have, when exactly two dice have the difficulty source kind and the
+ * same size. Two difficulty dice stepped by the same amount read as the matching level. Anything
+ * else gives null: no difficulty dice, one stepped or doubled, a third one from an overflow, two
+ * pairs. The card shows the level stored on the test; this only pre-selects it (ADR-020).
+ * @param {import("./types.mjs").PoolDie[]} pool - a RolledDie list works too
+ * @returns {import("./types.mjs").EngineResult<import("./types.mjs").DifficultyLevel|null>} never
+ *   refuses
+ */
+export function difficultyLevelOfPool(pool) {
+  const dice = (Array.isArray(pool) ? pool : []).filter(d => d?.source?.kind === DIFFICULTY_SOURCE_KIND);
+  if ( dice.length !== 2 || dice[0].size !== dice[1].size ) return ok(null);
+  return ok(DIFFICULTY_LEVELS.find(level => DIFFICULTY_DIE_SIZES.get(level) === dice[0].size) ?? null);
+}
+
+/**
  * Puts all of a success's heroic steps on the one effect die the roller picks (rules 11-12,
  * RQ-011 a, ADR-023), through stepEffectDie with the cause "heroic": a step past d12 leaves the
  * usual overflow options pending for applyOverflowChoice (Dice & Pools rule 22). `heroic` is
