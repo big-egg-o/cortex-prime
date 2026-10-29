@@ -1,19 +1,23 @@
 /**
  * Contests between two sides: the exchange of rolls, giving in and declining (Tests & Contests
- * spec, rules 14-16), and what the result means for the loser (rules 17-21). Every function
- * here returns an EngineResult instead of throwing (Decisions ADR-025). Who acts for each side
- * and the revision number belong to the contest message's data model, not to this engine
- * (ADR-027).
+ * spec, rules 14-16), what the result means for the loser (rules 17-21), and the heroic steps and
+ * overflow choices made at the end (rule 21, ADR-028). Every function here returns an EngineResult
+ * instead of throwing (Decisions ADR-025). Who acts for each side and the revision number belong
+ * to the contest message's data model, not to this engine (ADR-027).
  * @module rules/contest
  */
 
 import { stepDie } from "./dice.mjs";
-import { beats, heroicSteps, isValidTotal } from "./outcome.mjs";
+import { applyHeroicSteps, beats, heroicSteps, isValidTotal } from "./outcome.mjs";
 import { fail, ok } from "./result.mjs";
+import { OVERFLOW_PENDING, applyOverflowChoice, leftoverEligible } from "./roll.mjs";
 import { DIE_SIZES } from "./types.mjs";
 
 /** @type {readonly import("./types.mjs").ContestSide[]} */
 const SIDES = Object.freeze(["initiator", "opposition"]);
+
+/** The options for an effect die past d12 (Dice & Pools rule 22). */
+const OVERFLOW_KINDS = Object.freeze(["leftover", "new-d6", "take-out"]);
 
 /**
  * @param {import("./types.mjs").ContestSide} side
@@ -33,6 +37,110 @@ function effectsProblem(effects) {
   if ( !Array.isArray(effects) || effects.some(e => !DIE_SIZES.includes(e?.size)) ) return "INVALID_DIE_SIZE";
   if ( new Set(effects.map(e => e.id)).size !== effects.length ) return "DUPLICATE_EFFECT_DIE";
   return null;
+}
+
+/**
+ * One more than the highest effect number among ids of the form `e<n>`, or 1 with none: the next
+ * effect number for a roll added without its pool roll's own (ADR-026, ADR-028). It can't know
+ * about ids removed above the highest one, which is why contestRollFromResolution copies the pool
+ * roll's number.
+ * @param {import("./types.mjs").ContestEffect[]} effects
+ * @returns {number}
+ */
+function nextEffectNumberAfter(effects) {
+  const numbers = effects.map(e => /^e(\d+)$/.exec(e.id)).filter(m => m).map(m => Number(m[1]));
+  return numbers.length > 0 ? Math.max(...numbers) + 1 : 1;
+}
+
+/**
+ * @param {import("./types.mjs").ContestOverflow} record
+ * @returns {boolean} the record is still waiting for its choice
+ */
+function isOpen(record) {
+  return record.kind == null;
+}
+
+/**
+ * @param {import("./types.mjs").ContestRoll|null} roll
+ * @returns {import("./types.mjs").ContestOverflow[]} the roll's overflow records; none without a roll
+ */
+function overflowsOf(roll) {
+  return roll?.overflows ?? [];
+}
+
+/**
+ * @param {import("./types.mjs").ContestRoll[]} rolls
+ * @param {import("./types.mjs").ContestRoll} roll
+ * @param {import("./types.mjs").ContestRoll} updated
+ * @returns {import("./types.mjs").ContestRoll[]} a new list with `updated` in place of `roll`
+ */
+function replaceRoll(rolls, roll, updated) {
+  return rolls.map(r => (r === roll ? updated : r));
+}
+
+/**
+ * Whether the contest still waits for its heroic steps: won with steps earned and not yet applied,
+ * and an effect die on the winner's last roll to take them. With no effect die the steps lapse
+ * (ADR-028, RQ-025).
+ * @param {import("./types.mjs").ContestState} state
+ * @param {import("./types.mjs").ContestRoll|null} winnerRoll
+ * @returns {boolean}
+ */
+function heroicPending(state, winnerRoll) {
+  return state.status === "won" && state.heroicSteps > 0 && state.heroicAppliedTo == null
+    && (winnerRoll?.effects ?? []).length > 0;
+}
+
+/**
+ * The open overflow record a choice answers on the winner's last roll: the one named by
+ * `effectId`, or the only open one when the id is left out (ADR-028, Step 4.3.4 test review).
+ * @param {import("./types.mjs").ContestRoll|null} roll
+ * @param {string|undefined} effectId
+ * @returns {import("./types.mjs").EngineResult<import("./types.mjs").ContestOverflow>} refuses with
+ *   EFFECT_DIE_NOT_FOUND (not an effect die of the roll), OVERFLOW_NOT_PENDING (no open record for
+ *   it, or none at all) or INVALID_OVERFLOW_CHOICE (the id left out while several are open)
+ */
+function openOverflowFor(roll, effectId) {
+  const open = overflowsOf(roll).filter(isOpen);
+  if ( effectId == null ) {
+    if ( open.length > 1 ) return fail("INVALID_OVERFLOW_CHOICE");
+    return open.length === 1 ? ok(open[0]) : fail("OVERFLOW_NOT_PENDING");
+  }
+  if ( !(roll?.effects ?? []).some(e => e.id === effectId) ) return fail("EFFECT_DIE_NOT_FOUND");
+  const record = open.find(o => o.effectId === effectId);
+  return record ? ok(record) : fail("OVERFLOW_NOT_PENDING");
+}
+
+/**
+ * A minimal Resolution and rolled-die list built from a contest roll, so the dice engine's
+ * applyHeroicSteps and applyOverflowChoice act on the contest's own copy (ADR-027, ADR-028). The
+ * dice list holds only the roll's stored leftovers, as available non-hitch dice, and the
+ * Resolution has no total ids and no used-up dice, so the engine's leftover rule offers exactly
+ * those leftovers. Only `open` becomes the pending overflow: the other open records stay on the
+ * contest roll, so heroic steps aren't refused while one is open (ADR-028, Step 4.3.4
+ * clarification).
+ * @param {import("./types.mjs").ContestRoll|null} roll - null after a decline before any roll
+ * @param {import("./types.mjs").ContestOverflow|null} open
+ * @returns {{rolled: import("./types.mjs").RolledDie[], resolution: import("./types.mjs").Resolution}}
+ */
+function asPoolRoll(roll, open) {
+  const leftovers = (roll?.leftovers ?? []).map(({ dieId, size }) => ({ dieId, size }));
+  const rolled = /** @type {import("./types.mjs").RolledDie[]} */ (
+    leftovers.map(({ dieId, size }) => ({ id: dieId, size, hitch: false, state: "available" }))
+  );
+  const options = open ? { cause: open.cause, leftovers, newDie: 6, takeOutAvailable: true } : null;
+  const resolution = {
+    total: roll?.total ?? 0,
+    totalIds: [],
+    effectDice: (roll?.effects ?? []).map(({ id, size }) => ({ id, kind: "rolled", size, dieId: null, isDefault: false })),
+    consumedDieIds: [],
+    nextEffectNumber: roll?.nextEffectNumber ?? 1,
+    hitchIds: [],
+    botch: false,
+    takeOut: false,
+    overflow: open ? { effectId: open.effectId, cause: open.cause, options } : null
+  };
+  return { rolled, resolution: /** @type {import("./types.mjs").Resolution} */ (resolution) };
 }
 
 /**
@@ -64,15 +172,18 @@ export function createContest({ highStakes = false } = {}) {
  * the standing total minus the failed one, and gives heroic steps from 5 up (rules 10-11). A
  * tie doesn't beat the difficulty (rule 8); a botch's 0 is a total like any other (rule 9).
  *
- * A roll that already chose the overflow take-out (Dice & Pools rule 22) is refused: nothing
- * says yet what that take-out does during an exchange (RQ-018, proposed).
+ * An effect die past d12 keeps its choice open until the contest is decided (rule 21, RQ-018):
+ * a roll whose overflow records are all open is added as it is, and one with a choice already
+ * made is refused. The roll is stored as a copy; a roll without its pool roll's data, such as a
+ * typed total (ADR-021), gets no leftovers and the next effect number after its highest effect id
+ * (ADR-028, Step 4.3.4 test review).
  * @param {import("./types.mjs").ContestState} state
- * @param {import("./types.mjs").ContestRoll} roll - `effects` and `overflow` may be left out,
- *   as for a typed total (ADR-021)
+ * @param {import("./types.mjs").ContestRoll} roll - `effects`, `overflows`, `leftovers` and
+ *   `nextEffectNumber` may be left out, as for a typed total
  * @returns {import("./types.mjs").EngineResult<import("./types.mjs").ContestState>} refuses,
  *   checked in this order: CONTEST_CLOSED, CONTEST_RESOLVED, INVALID_SIDE, INVALID_TOTAL,
  *   INVALID_DIE_SIZE, DUPLICATE_EFFECT_DIE, EFFECT_DIE_NOT_FOUND (an overflow naming a missing
- *   effect die), CONTEST_TAKE_OUT_IN_EXCHANGE, CONTEST_NOT_YOUR_TURN
+ *   effect die), CONTEST_OVERFLOW_CHOICE_IN_EXCHANGE, CONTEST_NOT_YOUR_TURN
  */
 export function addContestRoll(state, roll) {
   if ( state.closed ) return fail("CONTEST_CLOSED");
@@ -82,16 +193,18 @@ export function addContestRoll(state, roll) {
   const effects = roll.effects ?? [];
   const problem = effectsProblem(effects);
   if ( problem ) return fail(problem);
-  const overflow = roll.overflow ?? null;
-  if ( overflow && !effects.some(e => e.id === overflow.effectId) ) return fail("EFFECT_DIE_NOT_FOUND");
-  if ( overflow?.kind === "take-out" ) return fail("CONTEST_TAKE_OUT_IN_EXCHANGE");
+  const overflows = roll.overflows ?? [];
+  if ( !overflows.every(o => effects.some(e => e.id === o?.effectId)) ) return fail("EFFECT_DIE_NOT_FOUND");
+  if ( !overflows.every(isOpen) ) return fail("CONTEST_OVERFLOW_CHOICE_IN_EXCHANGE");
   if ( roll.side !== state.turn ) return fail("CONTEST_NOT_YOUR_TURN");
 
   const entry = {
     side: roll.side,
     total: roll.total,
     effects: effects.map(({ id, size }) => ({ id, size })),
-    overflow: overflow ? { effectId: overflow.effectId, kind: overflow.kind } : null,
+    overflows: overflows.map(({ effectId, cause }) => ({ effectId, cause: cause ?? "other", kind: null, dieId: null })),
+    leftovers: (roll.leftovers ?? []).map(({ dieId, size }) => ({ dieId, size })),
+    nextEffectNumber: roll.nextEffectNumber ?? nextEffectNumberAfter(effects),
     messageRef: roll.messageRef ?? null
   };
   const rolls = [...state.rolls, entry];
@@ -192,9 +305,14 @@ export function compareEffectDie(winnerDie, loserDie, highStakes) {
  * state, read from the contest's own copy of the deciding rolls (ADR-027), except which of the
  * winner's effect dice are used against the loser.
  *
+ * Nothing is answered while the end-of-contest choices are still to be made (ADR-028): heroic
+ * steps earned but not applied, unless the winner's last roll has no effect die to take them
+ * (RQ-025), and then any open overflow record on that roll, whatever the ending (RQ-018, RQ-024).
+ * Open records on any other roll have lapsed and are ignored (RQ-018).
+ *
  * Won by a failed roll: each effect die used against the loser is compared on its own with the
  * loser's largest effect die (rule 20, RQ-011 c), as it stands after any heroic steps (RQ-011 b).
- * An effect die whose overflow was answered with the take-out takes the loser out in any scene
+ * Each effect die whose overflow was answered with the take-out takes the loser out in any scene
  * without a comparison, whether or not it is listed, and a PP would turn it into a d12
  * complication (rule 21, RQ-013, RQ-016). One PP avoids every take-out (RQ-017): `avoidWithPP`
  * lists the complication each take-out turns into; the other comparisons' complications stand
@@ -212,12 +330,15 @@ export function compareEffectDie(winnerDie, loserDie, highStakes) {
  * @param {import("./types.mjs").ContestState} state
  * @param {{usedAgainstLoser?: string[]}} [input] - effect ids of the winner's last roll
  * @returns {import("./types.mjs").EngineResult<import("./types.mjs").Consequence>} refuses,
- *   checked in this order: CONTEST_NOT_RESOLVED, DUPLICATE_EFFECT_DIE, EFFECT_DIE_NOT_FOUND,
- *   INVALID_DIE_SIZE (a stored effect die of a size that doesn't exist)
+ *   checked in this order: CONTEST_NOT_RESOLVED, HEROIC_PENDING, OVERFLOW_PENDING,
+ *   DUPLICATE_EFFECT_DIE, EFFECT_DIE_NOT_FOUND, INVALID_DIE_SIZE (a stored effect die of a size
+ *   that doesn't exist)
  */
 export function contestConsequence(state, { usedAgainstLoser = [] } = {}) {
   if ( state.status === "open" ) return fail("CONTEST_NOT_RESOLVED");
   const { winnerRoll, loserRoll } = decidingRolls(state).value;
+  if ( heroicPending(state, winnerRoll) ) return fail("HEROIC_PENDING");
+  if ( overflowsOf(winnerRoll).some(isOpen) ) return fail(OVERFLOW_PENDING);
   const winnerEffects = (winnerRoll?.effects ?? []).map(({ id, size }) => ({ id, size }));
   if ( new Set(usedAgainstLoser).size !== usedAgainstLoser.length ) return fail("DUPLICATE_EFFECT_DIE");
   if ( !usedAgainstLoser.every(id => winnerEffects.some(e => e.id === id)) ) return fail("EFFECT_DIE_NOT_FOUND");
@@ -239,14 +360,14 @@ export function contestConsequence(state, { usedAgainstLoser = [] } = {}) {
   };
   if ( state.status !== "won" ) return ok(consequence);
 
-  const overflowTakeOut = winnerRoll.overflow?.kind === "take-out" ? winnerRoll.overflow.effectId : null;
+  const takeOutIds = new Set(overflowsOf(winnerRoll).filter(o => o.kind === "take-out").map(o => o.effectId));
   const loserSizes = loserRoll.effects.map(e => e.size);
   const loserDie = loserSizes.length > 0 ? Math.max(...loserSizes) : null;
 
   const comparisons = [];
   const avoidWithPP = [];
   for ( const effect of winnerEffects ) {
-    if ( effect.id === overflowTakeOut ) {
+    if ( takeOutIds.has(effect.id) ) {
       avoidWithPP.push({ effectId: effect.id, size: 12 });
       continue;
     }
@@ -258,7 +379,7 @@ export function contestConsequence(state, { usedAgainstLoser = [] } = {}) {
   }
 
   const takenOut = avoidWithPP.length > 0;
-  const byOverflow = avoidWithPP.some(a => a.effectId === overflowTakeOut);
+  const byOverflow = avoidWithPP.some(a => takeOutIds.has(a.effectId));
   return ok({
     ...consequence,
     comparisons,
@@ -266,4 +387,112 @@ export function contestConsequence(state, { usedAgainstLoser = [] } = {}) {
     takeOutCause: byOverflow ? "overflow" : takenOut ? "comparison" : null,
     avoidWithPP: takenOut ? avoidWithPP : null
   });
+}
+
+/**
+ * The contest roll for a confirmed pool roll (ADR-028, Step 4.3.4): its total and effect dice,
+ * its pending overflow as an open record, a copy of its eligible leftover dice (Dice & Pools
+ * rule 22) and its own next effect number (ADR-026), so the contest needn't read the poolRoll
+ * message again (ADR-020, ADR-027).
+ *
+ * A pool roll whose overflow was already answered on its own card is refused, as addContestRoll
+ * refuses a choice made before the end (rule 21, RQ-018): the Resolution shows a take-out, or an
+ * effect die of kind "overflow" (a new d6). A leftover taken on the card can't be told apart from
+ * an extra effect die in the Resolution, so the card mustn't offer the choice while its roll
+ * belongs to an open contest (ADR-028, Step 4.3.4 implementation review).
+ * @param {import("./types.mjs").ContestSide} side
+ * @param {import("./types.mjs").RolledDie[]} rolled
+ * @param {import("./types.mjs").Resolution} resolution
+ * @param {string|null} messageRef
+ * @returns {import("./types.mjs").EngineResult<import("./types.mjs").ContestRoll>}
+ *   CONTEST_OVERFLOW_CHOICE_IN_EXCHANGE for an overflow already answered on the card; the rest of
+ *   the roll is checked by addContestRoll
+ */
+export function contestRollFromResolution(side, rolled, resolution, messageRef) {
+  const answeredOnCard = resolution.takeOut === true || resolution.effectDice.some(e => e.kind === "overflow");
+  if ( answeredOnCard ) return fail("CONTEST_OVERFLOW_CHOICE_IN_EXCHANGE");
+  const pending = resolution.overflow;
+  return ok({
+    side,
+    total: resolution.total,
+    effects: resolution.effectDice.map(({ id, size }) => ({ id, size })),
+    overflows: pending ? [{ effectId: pending.effectId, cause: pending.cause, kind: null, dieId: null }] : [],
+    leftovers: leftoverEligible(rolled, resolution).map(({ dieId, size }) => ({ dieId, size })),
+    nextEffectNumber: resolution.nextEffectNumber,
+    messageRef: messageRef ?? null
+  });
+}
+
+/**
+ * Puts all the heroic steps on the effect die the roller picks on the winner's last roll (rules
+ * 11-12, RQ-011 a, ADR-023, ADR-028), through applyHeroicSteps. Steps on a die whose overflow is
+ * still open join it: the die stays d12 and keeps its record, which gets one choice (RQ-023).
+ * Otherwise steps past d12 open a new record with the cause "heroic", after the roll's others.
+ * Steps on another die are allowed while a record is open (ADR-028, Step 4.3.4 clarification).
+ * @param {import("./types.mjs").ContestState} state
+ * @param {string} effectId - an effect die of the winner's last roll (ADR-026)
+ * @returns {import("./types.mjs").EngineResult<import("./types.mjs").ContestState>} the roll's
+ *   `effects` and `overflows` updated and `heroicAppliedTo` set; refuses, checked in this order:
+ *   CONTEST_CLOSED, CONTEST_NOT_RESOLVED, HEROIC_NOT_EARNED (giving in, declining, a margin under
+ *   5), HEROIC_ALREADY_APPLIED, EFFECT_DIE_NOT_FOUND (including a roll with no effect die, RQ-025)
+ */
+export function applyContestHeroicSteps(state, effectId) {
+  if ( state.closed ) return fail("CONTEST_CLOSED");
+  if ( state.status === "open" ) return fail("CONTEST_NOT_RESOLVED");
+  const { winnerRoll } = decidingRolls(state).value;
+  const { rolled, resolution } = asPoolRoll(winnerRoll, null);
+  const stepped = applyHeroicSteps(rolled, resolution, state, effectId);
+  if ( !stepped.ok ) return stepped;
+
+  const joinsOpen = overflowsOf(winnerRoll).some(o => o.effectId === effectId && isOpen(o));
+  const signal = stepped.value.resolution.overflow;
+  const updated = joinsOpen ? winnerRoll : {
+    ...winnerRoll,
+    effects: stepped.value.resolution.effectDice.map(({ id, size }) => ({ id, size })),
+    overflows: signal
+      ? [...winnerRoll.overflows, { effectId: signal.effectId, cause: signal.cause, kind: null, dieId: null }]
+      : winnerRoll.overflows
+  };
+  return ok({ ...stepped.value.heroic, rolls: replaceRoll(state.rolls, winnerRoll, updated) });
+}
+
+/**
+ * Records the choice for an open overflow on the winner's last roll (rules 12, 21, RQ-018,
+ * ADR-028), through applyOverflowChoice: an eligible leftover or a new d6 as a further effect
+ * die, with the id `e<nextEffectNumber>` (ADR-026), or the take-out. The overflowing die stays a
+ * d12, and a leftover that is taken leaves the roll's leftovers. After giving in or declining
+ * only a further effect die can be chosen (RQ-024). Heroic steps come first (RQ-023).
+ * @param {import("./types.mjs").ContestState} state
+ * @param {import("./types.mjs").ContestOverflowChoice} choice
+ * @returns {import("./types.mjs").EngineResult<import("./types.mjs").ContestState>} the roll's
+ *   `effects`, `overflows`, `leftovers` and `nextEffectNumber` updated; refuses, checked in this
+ *   order: CONTEST_CLOSED, CONTEST_NOT_RESOLVED, HEROIC_PENDING, then for the record
+ *   EFFECT_DIE_NOT_FOUND, OVERFLOW_NOT_PENDING or INVALID_OVERFLOW_CHOICE (no effect id while
+ *   several are open), then INVALID_OVERFLOW_CHOICE for the option (an unknown kind, a leftover
+ *   that wasn't offered, or the take-out after giving in or declining)
+ */
+export function chooseContestOverflow(state, choice) {
+  if ( state.closed ) return fail("CONTEST_CLOSED");
+  if ( state.status === "open" ) return fail("CONTEST_NOT_RESOLVED");
+  const { winnerRoll } = decidingRolls(state).value;
+  if ( heroicPending(state, winnerRoll) ) return fail("HEROIC_PENDING");
+  const { effectId, kind, dieId } = choice ?? {};
+  const found = openOverflowFor(winnerRoll, effectId);
+  if ( !found.ok ) return found;
+  const record = found.value;
+  if ( !OVERFLOW_KINDS.includes(kind) ) return fail("INVALID_OVERFLOW_CHOICE");
+  if ( kind === "leftover" && !winnerRoll.leftovers.some(l => l.dieId === dieId) ) return fail("INVALID_OVERFLOW_CHOICE");
+  if ( kind === "take-out" && state.status !== "won" ) return fail("INVALID_OVERFLOW_CHOICE");
+
+  const { rolled, resolution } = asPoolRoll(winnerRoll, record);
+  const answered = applyOverflowChoice(rolled, resolution, kind === "leftover" ? { kind, dieId } : { kind });
+  const takenDieId = kind === "leftover" ? dieId : null;
+  const updated = {
+    ...winnerRoll,
+    effects: answered.effectDice.map(({ id, size }) => ({ id, size })),
+    overflows: winnerRoll.overflows.map(o => (o === record ? { ...o, kind, dieId: takenDieId } : o)),
+    leftovers: takenDieId === null ? winnerRoll.leftovers : winnerRoll.leftovers.filter(l => l.dieId !== takenDieId),
+    nextEffectNumber: answered.nextEffectNumber
+  };
+  return ok({ ...state, rolls: replaceRoll(state.rolls, winnerRoll, updated) });
 }
