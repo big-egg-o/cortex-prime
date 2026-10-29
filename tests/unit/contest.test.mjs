@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { addContestRoll, closeContest, createContest, decidingRolls, giveIn } from "../../module/rules/contest.mjs";
+import {
+  addContestRoll, closeContest, contestRollFromResolution, createContest, decidingRolls, giveIn
+} from "../../module/rules/contest.mjs";
 import { buildPool } from "../../module/rules/pool.mjs";
-import { applyResults, resolve, unrolledEffectDie } from "../../module/rules/roll.mjs";
+import {
+  applyOverflowChoice, applyResults, resolve, stepEffectDie, unrolledEffectDie
+} from "../../module/rules/roll.mjs";
 
 /** @returns {{kind: string, label: string}} a minimal DieSource for tests */
 function source(label) {
@@ -25,7 +29,7 @@ function selection({ totalIds = [], effectDieIds = [], extraResultsPaid = 0, ext
 
 /**
  * A contest roll for a side, with effect ids e1, e2, ... in the order of `sizes`, as the
- * contest copies them from a confirmed poolRoll (ADR-027).
+ * contest copies them from a confirmed poolRoll (ADR-027), with no leftover dice.
  * @param {'initiator'|'opposition'} side
  * @param {number} total
  * @param {number[]} sizes
@@ -33,7 +37,8 @@ function selection({ totalIds = [], effectDieIds = [], extraResultsPaid = 0, ext
  */
 function contestRoll(side, total, sizes = []) {
   return {
-    side, total, effects: sizes.map((size, i) => ({ id: `e${i + 1}`, size })), overflow: null, messageRef: null
+    side, total, effects: sizes.map((size, i) => ({ id: `e${i + 1}`, size })), overflows: [],
+    leftovers: [], nextEffectNumber: sizes.length + 1, messageRef: null
   };
 }
 
@@ -48,7 +53,8 @@ function O(total, ...sizes) {
 }
 
 /**
- * A contest roll copied from a Resolution of the dice engine.
+ * A contest roll copied from a Resolution of the dice engine. Every roll in this file uses all its
+ * dice, so none has a leftover.
  * @param {'initiator'|'opposition'} side
  * @param {import("../../module/rules/types.mjs").Resolution} resolution
  * @param {string} messageRef
@@ -59,7 +65,9 @@ function fromResolution(side, resolution, messageRef) {
     side,
     total: resolution.total,
     effects: resolution.effectDice.map(({ id, size }) => ({ id, size })),
-    overflow: null,
+    overflows: [],
+    leftovers: [],
+    nextEffectNumber: resolution.nextEffectNumber,
     messageRef
   };
 }
@@ -124,8 +132,14 @@ describe("the exchange", () => {
     expect(decidingRolls(ended.value)).toEqual({
       ok: true,
       value: {
-        winnerRoll: { side: "initiator", total: 11, effects: [{ id: "e1", size: 6 }], overflow: null, messageRef: "roll-i1" },
-        loserRoll: { side: "opposition", total: 10, effects: [{ id: "e1", size: 6 }], overflow: null, messageRef: "roll-o1" }
+        winnerRoll: {
+          side: "initiator", total: 11, effects: [{ id: "e1", size: 6 }], overflows: [],
+          leftovers: [], nextEffectNumber: 2, messageRef: "roll-i1"
+        },
+        loserRoll: {
+          side: "opposition", total: 10, effects: [{ id: "e1", size: 6 }], overflows: [],
+          leftovers: [], nextEffectNumber: 2, messageRef: "roll-o1"
+        }
       }
     });
   });
@@ -293,23 +307,25 @@ describe("contest guards (ADR-025)", () => {
   it("accepts a roll with no effect dice, such as a typed total (ADR-021)", () => {
     const typed = { side: "initiator", total: 11 };
     const state = addContestRoll(createContest().value, typed).value;
-    expect(state.rolls).toEqual([{ side: "initiator", total: 11, effects: [], overflow: null, messageRef: null }]);
+    expect(state.rolls).toEqual([{
+      side: "initiator", total: 11, effects: [], overflows: [], leftovers: [], nextEffectNumber: 1, messageRef: null
+    }]);
   });
 
-  it("keeps an overflow answered with a second effect die, and refuses one that names a missing effect die", () => {
-    const withD6 = { ...I(15, 12, 6), overflow: { effectId: "e1", kind: "new-d6" } };
-    expect(addContestRoll(createContest().value, withD6).value.rolls[0].overflow).toEqual({ effectId: "e1", kind: "new-d6" });
+  it("refuses an overflow already answered with a second effect die, and one that names a missing effect die (RQ-018)", () => {
+    const withD6 = { ...I(15, 12, 6), overflows: [{ effectId: "e1", kind: "new-d6" }] };
+    expect(addContestRoll(createContest().value, withD6))
+      .toEqual({ ok: false, code: "CONTEST_OVERFLOW_CHOICE_IN_EXCHANGE" });
 
-    const missing = { ...I(15, 12, 6), overflow: { effectId: "e3", kind: "new-d6" } };
+    const missing = { ...I(15, 12, 6), overflows: [{ effectId: "e3", kind: "new-d6" }] };
     expect(addContestRoll(createContest().value, missing)).toEqual({ ok: false, code: "EFFECT_DIE_NOT_FOUND" });
   });
 
-  it("refuses a roll that already chose the overflow take-out, until RQ-018 (proposed) is decided", () => {
-    const takeOut = { ...I(15, 12), overflow: { effectId: "e1", kind: "take-out" } };
-    expect(addContestRoll(createContest().value, takeOut)).toEqual({ ok: false, code: "CONTEST_TAKE_OUT_IN_EXCHANGE" });
+  it("refuses a roll that already chose the overflow take-out during the exchange (RQ-018)", () => {
+    const takeOut = { ...I(15, 12), overflows: [{ effectId: "e1", kind: "take-out" }] };
+    expect(addContestRoll(createContest().value, takeOut))
+      .toEqual({ ok: false, code: "CONTEST_OVERFLOW_CHOICE_IN_EXCHANGE" });
   });
-
-  it.todo("RQ-018 (proposed): what an overflow take-out chosen during the exchange does to the contest");
 
   it("closing refuses every later roll and give-in, and can't be done twice", () => {
     const closed = closeContest(exchange([I(11, 6)]));
@@ -326,5 +342,91 @@ describe("contest guards (ADR-025)", () => {
   it("has no deciding rolls while the contest is still open", () => {
     expect(decidingRolls(createContest().value)).toEqual({ ok: false, code: "CONTEST_NOT_RESOLVED" });
     expect(decidingRolls(exchange([I(11, 6), O(13, 8)]))).toEqual({ ok: false, code: "CONTEST_NOT_RESOLVED" });
+  });
+});
+
+describe("an overflow during the exchange (rule 21, RQ-018)", () => {
+  /**
+   * TC-32's pool roll: d10:7, d8:6, d12:5, d4:3, total d10 + d8 = 13, effect die d12 (e1), the d4
+   * left over; an SFX then steps e1 past d12, which leaves its overflow choice pending.
+   */
+  function tc32PoolRoll() {
+    const rolled = rollPool([10, 8, 12, 4], [7, 6, 5, 3]);
+    const [d10, d8, d12, d4] = rolled;
+    const resolution = resolve(rolled, selection({ totalIds: [d10.id, d8.id], effectDieIds: [d12.id] }));
+    expect(resolution.total).toBe(13);
+    const pastD12 = stepEffectDie(rolled, resolution, "e1", 1, "other");
+    expect(pastD12.overflow).toMatchObject({ effectId: "e1", cause: "other" });
+    return { rolled, resolution: pastD12, d4 };
+  }
+
+  /** @returns {import("../../module/rules/types.mjs").ContestRoll} TC-32's contest roll, overflow open */
+  function tc32Roll() {
+    const { d4 } = tc32PoolRoll();
+    return {
+      side: "initiator",
+      total: 13,
+      effects: [{ id: "e1", size: 12 }],
+      overflows: [{ effectId: "e1", cause: "other", kind: null, dieId: null }],
+      leftovers: [{ dieId: d4.id, size: 4 }],
+      nextEffectNumber: 2,
+      messageRef: "roll-i1"
+    };
+  }
+
+  it("TC-32 a pool roll whose d12 effect die went past d12 becomes a contest roll with the overflow open, the d4 left over and next effect number 2", () => {
+    const { rolled, resolution } = tc32PoolRoll();
+    expect(contestRollFromResolution("initiator", rolled, resolution, "roll-i1")).toEqual({ ok: true, value: tc32Roll() });
+  });
+
+  it("TC-32 the roll joins the contest with its overflow still open: the difficulty is 13 and it is the opposition's turn", () => {
+    const added = addContestRoll(createContest().value, tc32Roll());
+    expect(added.ok).toBe(true);
+    expect(added.value.rolls).toEqual([tc32Roll()]);
+    expect(added.value).toMatchObject({ difficulty: 13, turn: "opposition", status: "open", winner: null });
+  });
+
+  it("TC-33 the take-out chosen during the exchange is refused", () => {
+    const roll = { ...tc32Roll(), overflows: [{ effectId: "e1", cause: "other", kind: "take-out", dieId: null }] };
+    expect(addContestRoll(createContest().value, roll)).toEqual({ ok: false, code: "CONTEST_OVERFLOW_CHOICE_IN_EXCHANGE" });
+  });
+
+  it("TC-33 a new d6 chosen during the exchange is refused", () => {
+    const roll = { ...tc32Roll(), overflows: [{ effectId: "e1", cause: "other", kind: "new-d6", dieId: null }] };
+    expect(addContestRoll(createContest().value, roll)).toEqual({ ok: false, code: "CONTEST_OVERFLOW_CHOICE_IN_EXCHANGE" });
+  });
+
+  it("TC-33 taking the leftover d4 during the exchange is refused", () => {
+    const base = tc32Roll();
+    const roll = {
+      ...base, overflows: [{ effectId: "e1", cause: "other", kind: "leftover", dieId: base.leftovers[0].dieId }]
+    };
+    expect(addContestRoll(createContest().value, roll)).toEqual({ ok: false, code: "CONTEST_OVERFLOW_CHOICE_IN_EXCHANGE" });
+  });
+
+  it("TC-33 a pool roll whose take-out was already chosen on its own card can't become a contest roll", () => {
+    const { rolled, resolution } = tc32PoolRoll();
+    const takenOut = applyOverflowChoice(rolled, resolution, { kind: "take-out" });
+    expect(takenOut).toMatchObject({ takeOut: true, overflow: null });
+    expect(contestRollFromResolution("initiator", rolled, takenOut, "roll-i1"))
+      .toEqual({ ok: false, code: "CONTEST_OVERFLOW_CHOICE_IN_EXCHANGE" });
+  });
+
+  it("TC-33 a pool roll whose new d6 was already chosen on its own card can't become a contest roll", () => {
+    const { rolled, resolution } = tc32PoolRoll();
+    const withD6 = applyOverflowChoice(rolled, resolution, { kind: "new-d6" });
+    expect(withD6.effectDice).toMatchObject([{ id: "e1", size: 12 }, { id: "e2", kind: "overflow", size: 6 }]);
+    expect(contestRollFromResolution("initiator", rolled, withD6, "roll-i1"))
+      .toEqual({ ok: false, code: "CONTEST_OVERFLOW_CHOICE_IN_EXCHANGE" });
+  });
+
+  it("TC-32 a roll added without its pool roll's data gets no leftovers and the number after its highest effect id", () => {
+    const handBuilt = { side: "initiator", total: 11, effects: [{ id: "e1", size: 8 }, { id: "e3", size: 6 }] };
+    const added = addContestRoll(createContest().value, handBuilt);
+    expect(added.ok).toBe(true);
+    expect(added.value.rolls).toEqual([{
+      side: "initiator", total: 11, effects: [{ id: "e1", size: 8 }, { id: "e3", size: 6 }], overflows: [],
+      leftovers: [], nextEffectNumber: 4, messageRef: null
+    }]);
   });
 });

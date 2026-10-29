@@ -174,7 +174,7 @@ export function resolve(rolled, selection) {
  * @param {import("./types.mjs").Resolution} resolution
  * @returns {{dieId: string, size: import("./types.mjs").DieSize}[]}
  */
-function leftoverEligible(rolled, resolution) {
+export function leftoverEligible(rolled, resolution) {
   const used = new Set([
     ...resolution.totalIds,
     ...resolution.effectDice.map(e => e.dieId).filter(id => id !== null),

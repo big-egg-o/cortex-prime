@@ -170,10 +170,20 @@ export const DIE_SIZES = Object.freeze(/** @type {DieSize[]} */ ([4, 6, 8, 10, 1
  */
 
 /**
- * How a contest roll's effect die past d12 was answered (Dice & Pools rule 22).
+ * A contest roll's effect die past d12 (Dice & Pools rule 22), and how it was answered. It stays
+ * open until the contest is decided, and only the winner's last roll answers it; an open record
+ * on any other roll stays as stored (Tests & Contests rule 21, RQ-018, ADR-028).
  * @typedef {Object} ContestOverflow
  * @property {string} effectId - the effect die that went past d12
- * @property {'leftover'|'new-d6'|'take-out'} kind - the OverflowChoice kind
+ * @property {'heroic'|'other'} cause - kept as it was when heroic steps join the record (RQ-023)
+ * @property {'leftover'|'new-d6'|'take-out'|null} kind - the OverflowChoice kind; null while open
+ * @property {string|null} dieId - the leftover die taken, when kind is "leftover"
+ */
+
+/**
+ * The roller's pick for an open overflow of the winner's last roll (ADR-028, Step 4.3.4).
+ * `effectId` names the overflowing die; it may be left out while only one record is open.
+ * @typedef {OverflowChoice & {effectId?: string}} ContestOverflowChoice
  */
 
 /**
@@ -182,7 +192,14 @@ export const DIE_SIZES = Object.freeze(/** @type {DieSize[]} */ ([4, 6, 8, 10, 1
  * @property {ContestSide} side
  * @property {number} total
  * @property {ContestEffect[]} effects - empty for a typed total (ADR-021)
- * @property {ContestOverflow|null} overflow
+ * @property {ContestOverflow[]} overflows - its effect dice past d12, in the order they opened:
+ *   the pool roll's first, then one opened by the heroic steps; empty when none (ADR-028)
+ * @property {{dieId: string, size: DieSize}[]} leftovers - the pool roll's eligible unused dice,
+ *   taken when the roll is added, for rule 22's leftover option; a leftover taken for an
+ *   overflow leaves the list (ADR-028, Step 4.3.4)
+ * @property {number} nextEffectNumber - the pool roll's number for its next effect id (`e<n>`),
+ *   so a new effect die never reuses an id (ADR-026); for a roll added without it, one more than
+ *   its highest effect number, or 1
  * @property {string|null} messageRef - the poolRoll message it came from; opaque to the engine
  */
 

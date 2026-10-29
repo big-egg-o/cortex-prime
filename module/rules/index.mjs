@@ -14,7 +14,8 @@ export {
   DIFFICULTY_LEVELS, applyHeroicSteps, beats, difficultyDice, difficultyEntry, heroicSteps, resolveTest
 } from "./outcome.mjs";
 export {
-  addContestRoll, closeContest, compareEffectDie, contestConsequence, createContest, decidingRolls, giveIn
+  addContestRoll, applyContestHeroicSteps, chooseContestOverflow, closeContest, compareEffectDie, contestConsequence,
+  contestRollFromResolution, createContest, decidingRolls, giveIn
 } from "./contest.mjs";
 export {
   OVERFLOW_PENDING, applyOverflowChoice, applyRerolls, applyResults, evaluate, largestEligible, rerollableIds,
