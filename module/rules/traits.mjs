@@ -1,7 +1,7 @@
 /**
  * Traits, their ratings, and what an edit changes in a character's traits (Traits & Trait Sets
- * spec, Decisions ADR-037). Every function here returns an EngineResult instead of throwing
- * (Decisions ADR-025).
+ * spec, Decisions ADR-037 and ADR-038). Every function here returns an EngineResult instead of
+ * throwing (Decisions ADR-025).
  * @module rules/traits
  */
 
@@ -146,13 +146,17 @@ function sameOccurrence(a, b) {
 }
 
 /**
- * Whether two groups of occurrences of one id are the same, in any order: every proposed
- * occurrence pairs with a different earlier one that agrees on place, definition id and dice.
- * Names are not compared, because no check depends on them.
+ * Whether a proposed group of occurrences of one id is a multiset subset of the earlier group
+ * (ADR-038): every proposed occurrence pairs with a different earlier one that agrees on place,
+ * definition id (missing counts as null) and dice as a multiset, in any order. The group may be
+ * smaller than before, never larger. Names are not compared, because no check depends on them.
+ * Only the resulting occurrences are compared, not how they came about. Taking the first unused
+ * match is enough: agreeing on place, definition id and dice is an equivalence, so the earlier
+ * occurrences a proposed one could pair with are interchangeable.
  * @returns {boolean}
  */
 function sameGroup(proposed, current) {
-  if ( proposed.length !== current.length ) return false;
+  if ( proposed.length > current.length ) return false;
   const used = new Array(current.length).fill(false);
   for ( const occurrence of proposed ) {
     const match = current.findIndex((earlier, i) => !used[i] && sameOccurrence(earlier, occurrence));
@@ -202,15 +206,23 @@ function entryChange(occurrence, earlier) {
  * definition id that needs checking. Names, and entries that only moved within their list, are
  * never reported. Die sizes are not checked here: a changed [7] is reported like any rating.
  *
- * An id that occurs more than once in the proposed data is accepted only if its copies are the
- * same as before (same places, definition ids and dice, in any order); such a group is not
- * reported. Any other duplicate is refused, whether new or a changed old one. A repair that
- * leaves one copy compares it with the earlier copies at its place, as above.
+ * An id that occurs more than once in the proposed data is accepted only if its copies form a
+ * multiset subset of the earlier copies of that id (ADR-038): each matches a different earlier
+ * copy with the same place, definition id (missing counts as null) and dice as a multiset, in
+ * any order. A legacy duplicate can thus shrink over several edits, but a group that stays
+ * duplicated can't hold any combination of place, definition id and dice more often than before.
+ * Such a group is not reported, and its id isn't in removedEntryIds, because it is still there.
+ * Any other duplicate is refused. A group reduced to one copy compares it with the earlier copies
+ * at its place, as above; an id with no copies left is listed as removed. Only the resulting
+ * copies are compared, not how they came about: a removal alone and an edit plus a removal that
+ * leave the same copies give the same answer, an ambiguity ADR-038 accepts. An empty result
+ * therefore doesn't mean the proposed data equals the current data.
  * @param {import("./types.mjs").CharacterTraitData} current - the stored data before the edit
  * @param {import("./types.mjs").CharacterTraitData} proposed - the complete data after the edit
  * @returns {import("./types.mjs").EngineResult<import("./types.mjs").TraitChanges>} refuses,
  *   checked in this order: INVALID_TRAIT_DATA (either state isn't shaped like trait data, or an
- *   id isn't 16 letters or digits), DUPLICATE_TRAIT_ID (a new duplicate, or a changed one)
+ *   id isn't 16 letters or digits), DUPLICATE_TRAIT_ID (a duplicate group that isn't a subset of
+ *   the earlier copies of its id; a new duplicate never is)
  */
 export function diffCharacterTraits(current, proposed) {
   if ( !traitDataWellFormed(current) || !traitDataWellFormed(proposed) ) return fail("INVALID_TRAIT_DATA");
@@ -224,7 +236,7 @@ export function diffCharacterTraits(current, proposed) {
 
   const entries = [];
   for ( const occurrence of afterList ) {
-    if ( after.get(occurrence.id).length > 1 ) continue; // an unchanged duplicate group, checked above
+    if ( after.get(occurrence.id).length > 1 ) continue; // a subset of the earlier copies, checked above
     const change = entryChange(occurrence, before.get(occurrence.id) ?? []);
     if ( change ) entries.push(change);
   }

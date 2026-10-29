@@ -64,6 +64,23 @@ function withTwins(twins = [entry("twin", [6], "defA"), entry("twin", [8], "defB
   });
 }
 
+/** @returns {object[]} three copies of "twin" to pass to withTwins: defA d6, defB d8 and defC d10 */
+function triplets() {
+  return [entry("twin", [6], "defA"), entry("twin", [8], "defB"), entry("twin", [10], "defC")];
+}
+
+/**
+ * A character holding "twin" d8 without a definition id three times, the same contents in three
+ * places: in the attributes, in the skills and as a free trait.
+ * @returns {object}
+ */
+function spread() {
+  return character({
+    traits: { [ATTRS]: { entries: [entry("twin", [8])] }, [SKILLS]: { entries: [entry("twin", [8])] } },
+    freeTraits: [free("twin", [8])]
+  });
+}
+
 /** @returns {object} a fresh sample with one change applied */
 function broken(change) {
   const data = sample();
@@ -354,13 +371,25 @@ describe("diffCharacterTraits: duplicate ids", () => {
     expect(diffCharacterTraits(sample(), setAndFree)).toEqual(DUPLICATE);
   });
 
-  it("refuses a change to a duplicate group that stays duplicated", () => {
+  it("refuses the whole edit when a new duplicate comes with an unrelated edit or a repair", () => {
+    const unrelated = sample();
+    unrelated.traits[SKILLS].entries[0].dice = [6, 10];
+    unrelated.freeTraits.push(free("physical", [8]));
+    expect(diffCharacterTraits(sample(), unrelated)).toEqual(DUPLICATE);
+
+    const repaired = withTwins([entry("twin", [6], "defA"), entry("twin", [8], "defB")]); // a valid repair
+    repaired.traits[ATTRS].entries.push(entry("mental", [6], "defMental"));
+    expect(diffCharacterTraits(withTwins(triplets()), repaired)).toEqual(DUPLICATE);
+  });
+
+  it("refuses a duplicate group with a changed, moved or extra copy", () => {
     const moved = withTwins([entry("twin", [6], "defA")]);
     moved.traits[SKILLS].entries.push(entry("twin", [8], "defB"));
     const changed = [
       withTwins([entry("twin", [10], "defA"), entry("twin", [8], "defB")]), // one copy's dice
       withTwins([entry("twin", [6], "defA"), entry("twin", [8], "defC")]), // one copy's defId
       withTwins([entry("twin", [6], "defA"), entry("twin", [8], "defB"), entry("twin", [4])]), // a third copy
+      withTwins([entry("twin", [6], "defA"), entry("twin", [8], "defB"), entry("twin", [6], "defA")]), // an identical one
       moved // one copy moved to another set
     ];
     for ( const proposed of changed ) expect(diffCharacterTraits(withTwins(), proposed)).toEqual(DUPLICATE);
@@ -388,8 +417,104 @@ describe("diffCharacterTraits: duplicate ids", () => {
     ]);
   });
 
+  it("lets a repair remove one copy of three when the copies left match earlier ones", () => {
+    const [a, b, c] = triplets();
+    for ( const left of [[a, b], [a, c], [b, c]] ) {
+      // The whole result: nothing to check, and the id isn't in removedEntryIds, as it is still there.
+      expect(diffCharacterTraits(withTwins(triplets()), withTwins(left))).toEqual({ ok: true, value: nothing() });
+    }
+  });
+
+  it("refuses a repair that leaves a copy no earlier copy matches, never property by property", () => {
+    const changed = [
+      [entry("twin", [6], "defA"), entry("twin", [12], "defC")], // a new rating
+      [entry("twin", [6], "defA"), entry("twin", [10], "defD")], // a new definition id
+      [entry("twin", [6], "defA"), entry("twin", [8], "defC")] // d8 from one copy, defC from another
+    ];
+    for ( const left of changed ) expect(diffCharacterTraits(withTwins(triplets()), withTwins(left))).toEqual(DUPLICATE);
+  });
+
+  it("matches each earlier copy at most once", () => {
+    const six = () => entry("twin", [6], "defA");
+    const eight = () => entry("twin", [8], "defB");
+    expect(diffCharacterTraits(withTwins(triplets()), withTwins([six(), six()]))).toEqual(DUPLICATE);
+
+    // With two equal earlier copies both may stay, but the third can't be kept twice.
+    const current = withTwins([six(), six(), eight()]);
+    expect(diff(current, withTwins([six(), six()]))).toEqual(nothing());
+    expect(diffCharacterTraits(current, withTwins([eight(), eight()]))).toEqual(DUPLICATE);
+  });
+
+  it("tells copies apart by place, the free traits included, when a repair removes one", () => {
+    const emptied = spread();
+    emptied.traits[SKILLS].entries = [];
+    expect(diff(spread(), emptied)).toEqual(nothing());
+
+    const deleted = spread();
+    delete deleted.traits[SKILLS];
+    expect(diff(spread(), deleted)).toEqual({ ...nothing(), removedSetIds: [SKILLS] });
+
+    const freed = spread();
+    freed.freeTraits = [];
+    expect(diff(spread(), freed)).toEqual(nothing());
+  });
+
+  it("refuses a copy moved to another place while its id stays duplicated", () => {
+    const toSet = withTwins([entry("twin", [6], "defA")]); // defB moved to the skills, defC removed
+    toSet.traits[SKILLS].entries.push(entry("twin", [8], "defB"));
+    expect(diffCharacterTraits(withTwins(triplets()), toSet)).toEqual(DUPLICATE);
+
+    const together = spread(); // the skills copy moved next to the attributes copy, the free copy removed
+    together.traits[ATTRS].entries.push(entry("twin", [8]));
+    together.traits[SKILLS].entries = [];
+    together.freeTraits = [];
+    expect(diffCharacterTraits(spread(), together)).toEqual(DUPLICATE);
+
+    const fromFree = spread(); // the free copy moved into a new set, the attributes copy removed
+    fromFree.traits[DISTS] = { entries: [{ ...fromFree.freeTraits.pop(), defId: null }] };
+    fromFree.traits[ATTRS].entries = [];
+    expect(diffCharacterTraits(spread(), fromFree)).toEqual(DUPLICATE);
+  });
+
+  it("ignores the order and names of the copies a repair leaves", () => {
+    const [first, , third] = triplets();
+    const left = [{ ...third, name: "Younger twin" }, { ...first, name: "Older twin" }];
+    expect(diff(withTwins(triplets()), withTwins(left))).toEqual(nothing());
+  });
+
+  it("judges a repair by what the copies hold, because nothing else tells copies of one id apart", () => {
+    const current = withTwins([
+      { ...entry("twin", [6], "defA"), name: "Alpha" },
+      { ...entry("twin", [8], "defA"), name: "Beta" },
+      { ...entry("twin", [6], "defA"), name: "Gamma" }
+    ]);
+    const proposed = withTwins([
+      { ...entry("twin", [8], "defA"), name: "Alpha" },
+      { ...entry("twin", [6], "defA"), name: "Gamma" }
+    ]);
+    // By name, Alpha went from d6 to d8 and Beta was removed; by contents, one d6 copy was removed.
+    // Both leave the same copies, so the edit is accepted with no rating to check.
+    expect(diff(current, proposed)).toEqual(nothing());
+  });
+
+  it("keeps the sole-survivor rule when a repair leaves one copy of three", () => {
+    expect(diff(withTwins(triplets()), withTwins([entry("twin", [10], "defC")]))).toEqual(nothing());
+    // No earlier copy is defA d10, so it is compared with the first copy here, defA d6.
+    expect(diff(withTwins(triplets()), withTwins([entry("twin", [10], "defA")])).entries).toEqual([
+      record(ATTRS, "twin", { diceChanged: true, dice: [10], def: "defA" })
+    ]);
+    // A sole survivor in another place entered it.
+    const moved = withTwins([]);
+    moved.traits[SKILLS].entries.push(entry("twin", [8], "defB"));
+    expect(diff(withTwins(triplets()), moved).entries).toEqual([
+      record(SKILLS, "twin", { entered: true, diceChanged: true, defIdChanged: true, dice: [8], def: "defB" })
+    ]);
+  });
+
   it("lists a duplicate id as removed once all its copies are gone", () => {
-    expect(diff(withTwins(), withTwins([]))).toEqual({ ...nothing(), removedEntryIds: [id("twin")] });
+    for ( const current of [withTwins(), withTwins(triplets())] ) {
+      expect(diff(current, withTwins([]))).toEqual({ ...nothing(), removedEntryIds: [id("twin")] });
+    }
   });
 
   it("treats a copy given a new id during a repair as a new entry", () => {
