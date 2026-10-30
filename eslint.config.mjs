@@ -28,13 +28,13 @@ export default [
   {
     // Client code: browser + Foundry globals.
     files: ["module/**/*.mjs"],
-    ignores: ["module/rules/**"],
+    ignores: ["module/rules/**", "module/data/chat/contest-mapping.mjs"],
     languageOptions: { globals: { ...globals.browser, ...foundryGlobals } }
   },
   {
-    // Pure rules: ECMAScript built-ins only. Imports staying inside module/rules/
-    // are checked by tests/unit/rules-boundary.test.mjs.
-    files: ["module/rules/**/*.mjs"],
+    // Pure rules, and the pure mapping of the contest message: ECMAScript built-ins only.
+    // Imports staying inside module/rules/ are checked by tests/unit/rules-boundary.test.mjs.
+    files: ["module/rules/**/*.mjs", "module/data/chat/contest-mapping.mjs"],
     rules: {
       "no-restricted-globals": ["error", ...forbiddenInRules]
     }

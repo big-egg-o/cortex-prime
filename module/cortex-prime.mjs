@@ -6,6 +6,7 @@
  */
 
 import CharacterData from "./data/actor/character.mjs";
+import ContestData from "./data/chat/contest.mjs";
 import PoolRollData from "./data/chat/pool-roll.mjs";
 import { onRenderPoolRollMessage, preloadPoolRollCardTemplate } from "./dice/pool-roll-card.mjs";
 import { togglePoolBuilder } from "./apps/pool-builder.mjs";
@@ -18,6 +19,7 @@ Hooks.once("init", () => {
 
   CONFIG.Actor.dataModels.character = CharacterData;
   CONFIG.ChatMessage.dataModels.poolRoll = PoolRollData;
+  CONFIG.ChatMessage.dataModels.contest = ContestData;
   Hooks.on("renderChatMessageHTML", onRenderPoolRollMessage);
   preloadPoolRollCardTemplate(); // fire-and-forget: ready well before the first roll in practice
 

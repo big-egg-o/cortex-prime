@@ -65,7 +65,8 @@
       "character": "Character"
     },
     "ChatMessage": {
-      "poolRoll": "Dice Pool Roll"
+      "poolRoll": "Dice Pool Roll",
+      "contest": "Test or Contest"
     }
   }
 }
