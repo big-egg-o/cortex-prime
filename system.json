@@ -17,7 +17,8 @@
       "character": {}
     },
     "ChatMessage": {
-      "poolRoll": {}
+      "poolRoll": {},
+      "contest": {}
     }
   },
   "esmodules": ["module/cortex-prime.mjs"],
