@@ -305,6 +305,57 @@ export const DIE_SIZES = Object.freeze(/** @type {DieSize[]} */ ([4, 6, 8, 10, 1
  */
 
 /**
+ * One trait the GM defines in a fixed set (ADR-034). Names are the GM's or our own words, never
+ * handbook descriptions (ADR-036).
+ * @typedef {Object} TraitDef
+ * @property {string} id - 16 letters or digits; a rename keeps it (TS-E04)
+ * @property {string} name
+ * @property {string} [description]
+ */
+
+/**
+ * One trait set of the game configuration (Traits & Trait Sets implementation notes).
+ * @typedef {Object} TraitSetDef
+ * @property {string} id - 16 letters or digits
+ * @property {string} name
+ * @property {"distinctions"|"prime"|"other"} role - distinctions, or the game's equivalent
+ *   descriptive set that takes their place (Handbook p. 26); a prime set supplies baseline dice
+ *   (rule 7)
+ * @property {"fixed"|"open"} list - fixed: the GM defines the traits; open: each actor adds its
+ *   own (ADR-034)
+ * @property {TraitDef[]} [traits] - a fixed set's definitions; an open set has none
+ * @property {boolean} hasDice - false: the set's traits have no die, like talents (rule 3)
+ * @property {boolean} multiDice - true: a rating may hold several dice (rule 2)
+ * @property {boolean} sameSizeDice - true: a rating's dice must share one size (TS-E02)
+ * @property {DieSize|null} usualMin - guidance only (rule 9)
+ * @property {DieSize|null} usualMax - guidance only (rule 9)
+ * @property {DieSize|null} startingRating - the rating a new trait starts with
+ * @property {4|null} fallbackDie - the die a trait with no rating counts as, or none (rule 8)
+ * @property {"pp"|"none"} extraTraits - a further trait from the set costs a PP, or the game's
+ *   rules don't allow one, which is a warning and the die stays in the pool (rule 6, TS-10)
+ * @property {{description: boolean, sfx: boolean, statements: boolean, tags: boolean,
+ *   subTraits: boolean, hinder: boolean, setSfx: boolean, shutDown: boolean}} features
+ */
+
+/**
+ * A GM-defined kind of actor: a bundle of trait sets (ADR-031). Whether it uses prime sets is
+ * derived from its sets.
+ * @typedef {Object} ActorKindDef
+ * @property {string} id - 16 letters or digits
+ * @property {string} name
+ * @property {string[]} traitSetIds
+ * @property {boolean} freeTraits - its actors may hold traits that belong to no set (TS-22)
+ */
+
+/**
+ * The game configuration a world setting holds (ADR-030).
+ * @typedef {Object} GameConfig
+ * @property {number} schemaVersion
+ * @property {TraitSetDef[]} traitSets
+ * @property {ActorKindDef[]} actorKinds
+ */
+
+/**
  * One trait as a character stores it (Decisions ADR-032 to ADR-034).
  * @typedef {Object} TraitEntryData
  * @property {string} id - 16 letters or digits, unique across the character's sets and free traits

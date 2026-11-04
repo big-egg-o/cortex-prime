@@ -24,4 +24,8 @@ export {
   OVERFLOW_PENDING, applyOverflowChoice, applyRerolls, applyResults, evaluate, largestEligible, rerollableIds,
   resolve, stepEffectDie, suggestSelection, twoHighest, unrolledEffectDie, validateSelection
 } from "./roll.mjs";
+export {
+  EXTRA_TRAIT_RULES, GAME_CONFIG_SCHEMA_VERSION, TRAIT_SET_FEATURES, TRAIT_SET_LISTS, TRAIT_SET_ROLES, actorKindById,
+  defaultGameConfig, kindUsesPrimeSets, ratingOptionsOf, traitDefById, traitSetById, validateGameConfig
+} from "./game-config.mjs";
 export { diffCharacterTraits, validateRating } from "./traits.mjs";
