@@ -28,6 +28,7 @@ export {
   EXTRA_TRAIT_RULES, GAME_CONFIG_SCHEMA_VERSION, TRAIT_SET_FEATURES, TRAIT_SET_LISTS, TRAIT_SET_ROLES, actorKindById,
   defaultGameConfig, kindUsesPrimeSets, ratingOptionsOf, traitDefById, traitSetById, validateGameConfig
 } from "./game-config.mjs";
+export { effectiveRating, poolTraitCost, traitPoolEntries } from "./trait-pool.mjs";
 export {
   checkCharacterEdit, checkCharacterUpdate, diffCharacterTraits, proposedTraitData, validateRating, validateTraitChanges
 } from "./traits.mjs";
