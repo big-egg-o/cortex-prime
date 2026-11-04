@@ -1,11 +1,12 @@
 /**
- * Traits, their ratings, and what an edit changes in a character's traits (Traits & Trait Sets
- * spec, Decisions ADR-037 and ADR-038). Every function here returns an EngineResult instead of
- * throwing (Decisions ADR-025).
+ * Traits, their ratings, what an edit changes in a character's traits, and whether those changes
+ * fit the game configuration (Traits & Trait Sets spec, Decisions ADR-037 and ADR-038). Every
+ * function here returns an EngineResult instead of throwing (Decisions ADR-025).
  * @module rules/traits
  */
 
 import { fail, ok } from "./result.mjs";
+import { actorKindById, ratingOptionsOf, traitDefById, traitSetById } from "./game-config.mjs";
 import { DIE_SIZES } from "./types.mjs";
 
 /**
@@ -259,4 +260,289 @@ export function diffCharacterTraits(current, proposed) {
     entries,
     removedEntryIds: [...before.keys()].filter(id => !after.has(id))
   });
+}
+
+/** @returns {boolean} whether value is null or an id in the character data's format */
+function isIdOrNull(value) {
+  return (value === null) || isTraitId(value);
+}
+
+/**
+ * Whether changes has the shape diffCharacterTraits returns, as far as validateTraitChanges
+ * reads it.
+ * @param {unknown} changes
+ * @returns {boolean}
+ */
+function traitChangesWellFormed(changes) {
+  if ( !isPlainObject(changes) ) return false;
+  if ( (typeof changes.kindChanged !== "boolean") || !isIdOrNull(changes.kindId) ) return false;
+  if ( !Array.isArray(changes.addedSetIds) || !Array.isArray(changes.entries) ) return false;
+  for ( let i = 0; i < changes.addedSetIds.length; i++ ) {
+    if ( !isTraitId(changes.addedSetIds[i]) ) return false;
+  }
+  for ( let i = 0; i < changes.entries.length; i++ ) {
+    const entry = changes.entries[i];
+    if ( !isPlainObject(entry) || !isTraitId(entry.id) || !isIdOrNull(entry.setId) || !isIdOrNull(entry.defId) ) return false;
+    if ( !Array.isArray(entry.dice) || (typeof entry.entered !== "boolean") ) return false;
+    if ( (typeof entry.diceChanged !== "boolean") || (typeof entry.defIdChanged !== "boolean") ) return false;
+  }
+  return true;
+}
+
+/**
+ * Checks what an edit changes against the current game configuration (ADR-037 point 2): every
+ * new or changed rating, and every new or changed reference. Takes the output of
+ * diffCharacterTraits, so ratings and references the edit didn't touch are never checked again:
+ * a stored rating that no longer fits its set doesn't stop an unrelated edit (point 5), nor does
+ * a stored kind, set or definition the configuration no longer has (point 1).
+ *
+ * The order: first every changed rating's die sizes, because a size that doesn't exist is data
+ * that can't exist (TS-E01); then the shape of each changed rating against its set, in the
+ * diff's order (for a free trait (TS-22), or an entry the edit left in a set the configuration
+ * no longer has, there is no shape to check: ADR-037 leaves such edits at the schema check);
+ * then the references, in the order ADR-037 lists them: a kind the edit sets (clearing it to
+ * none is always allowed), a set key the edit adds or an entry it puts into a set the
+ * configuration doesn't have (a new broken reference, ADR-029 point 2), and a definition id the
+ * edit sets on an entry of a set the configuration has. An open set has no definitions
+ * (ADR-034), so any definition id there is unknown. Whether a set or a free trait belongs to the
+ * actor's kind is a hint for the sheet, never a refusal (ADR-029).
+ * @param {import("./types.mjs").TraitChanges} changes - from diffCharacterTraits
+ * @param {import("./types.mjs").GameConfig} config - a configuration validateGameConfig accepts;
+ *   only its lists are checked here, and a set with malformed shape options gives
+ *   INVALID_RATING_OPTIONS
+ * @returns {import("./types.mjs").EngineResult<{checkedEntryIds: string[]}>} the ids of the
+ *   entries whose rating or definition was checked against the configuration or for die sizes;
+ *   refuses, in this order: INVALID_TRAIT_DATA (changes not shaped like a diff),
+ *   INVALID_GAME_CONFIG (no lists of sets and kinds), INVALID_DIE_SIZE, then the first of
+ *   RATING_DICE_NOT_ALLOWED, RATING_TOO_MANY_DICE, RATING_MIXED_SIZES over the entries, then
+ *   UNKNOWN_ACTOR_KIND, UNKNOWN_TRAIT_SET, UNKNOWN_TRAIT_DEFINITION
+ */
+export function validateTraitChanges(changes, config) {
+  if ( !traitChangesWellFormed(changes) ) return fail("INVALID_TRAIT_DATA");
+  if ( !isPlainObject(config) || !Array.isArray(config.traitSets) || !Array.isArray(config.actorKinds) ) {
+    return fail("INVALID_GAME_CONFIG");
+  }
+  const checked = new Set();
+  const setOf = entry => ((entry.setId === null) ? null : traitSetById(config, entry.setId));
+
+  for ( const entry of changes.entries ) {
+    if ( !entry.diceChanged ) continue;
+    checked.add(entry.id);
+    const sizes = validateRating(entry.dice);
+    if ( !sizes.ok ) return sizes;
+  }
+  for ( const entry of changes.entries ) {
+    const set = setOf(entry);
+    if ( !entry.diceChanged || !set ) continue;
+    const shape = validateRating(entry.dice, ratingOptionsOf(set));
+    if ( !shape.ok ) return shape;
+  }
+
+  if ( changes.kindChanged && (changes.kindId !== null) && !actorKindById(config, changes.kindId) ) {
+    return fail("UNKNOWN_ACTOR_KIND");
+  }
+  if ( changes.addedSetIds.some(setId => !traitSetById(config, setId)) ) return fail("UNKNOWN_TRAIT_SET");
+  if ( changes.entries.some(entry => entry.entered && (entry.setId !== null) && !setOf(entry)) ) {
+    return fail("UNKNOWN_TRAIT_SET");
+  }
+  for ( const entry of changes.entries ) {
+    const set = setOf(entry);
+    if ( !entry.defIdChanged || !set ) continue;
+    checked.add(entry.id);
+    if ( !traitDefById(set, entry.defId) ) return fail("UNKNOWN_TRAIT_DEFINITION");
+  }
+
+  return ok({ checkedEntryIds: changes.entries.map(entry => entry.id).filter(id => checked.has(id)) });
+}
+
+/**
+ * Checks an edit of a character's traits from its stored data to the complete data it would
+ * have afterwards: what changed (diffCharacterTraits), then whether that fits the configuration
+ * (validateTraitChanges). This is the check ADR-037 point 3 puts before every write of our apps
+ * and in the character model's update backstop. Creating an actor, a replacing update and the
+ * system's own migrations count as loading (point 4) and don't come here.
+ * @param {import("./types.mjs").CharacterTraitData} current
+ * @param {import("./types.mjs").CharacterTraitData} proposed
+ * @param {import("./types.mjs").GameConfig} config
+ * @returns {import("./types.mjs").EngineResult<import("./types.mjs").TraitChanges>} the diff;
+ *   refuses with the diff's codes, then validateTraitChanges's
+ */
+export function checkCharacterEdit(current, proposed, config) {
+  const diff = diffCharacterTraits(current, proposed);
+  if ( !diff.ok ) return diff;
+  const checked = validateTraitChanges(diff.value, config);
+  return checked.ok ? diff : checked;
+}
+
+/**
+ * Splits keys written with dots ("traits.abc.entries") into nested objects, one level at a
+ * time, as Foundry's cleaning does before an update reaches the data model. Returns a new object;
+ * a later key for the same path wins, as in Foundry's expansion.
+ * @param {object} object - a plain object
+ * @returns {object}
+ */
+function expandDotted(object) {
+  const expanded = {};
+  for ( const [key, value] of Object.entries(object) ) {
+    const [head, ...rest] = key.split(".");
+    if ( !rest.length ) {
+      expanded[head] = value;
+      continue;
+    }
+    const inner = isPlainObject(expanded[head]) ? expanded[head] : {};
+    expanded[head] = { ...inner, [rest.join(".")]: value };
+  }
+  return expanded;
+}
+
+/**
+ * A deep copy of plain data: objects and arrays are copied, anything else is kept as it is.
+ * @param {unknown} value
+ * @returns {unknown}
+ */
+function copyPlain(value) {
+  if ( Array.isArray(value) ) return value.map(copyPlain);
+  if ( isPlainObject(value) ) return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, copyPlain(v)]));
+  return value;
+}
+
+/**
+ * A copy of a value with every operator inside it applied, as Foundry applies the operators
+ * nested in a forced replacement's value (common/utils/helpers.mjs `applyDataOperators`): a
+ * forced deletion removes its key, a forced replacement gives its value.
+ * @param {unknown} value
+ * @param {(value: unknown) => ({deletion: true}|{replacement: unknown}|null)} operatorOf
+ * @returns {unknown}
+ */
+function withOperatorsApplied(value, operatorOf) {
+  const operator = operatorOf(value);
+  if ( operator && ("replacement" in operator) ) return withOperatorsApplied(operator.replacement, operatorOf);
+  if ( Array.isArray(value) ) return value.map(v => withOperatorsApplied(v, operatorOf));
+  if ( !isPlainObject(value) ) return value;
+  const copy = {};
+  for ( const [key, inner] of Object.entries(value) ) {
+    const innerOperator = operatorOf(inner);
+    if ( innerOperator && ("deletion" in innerOperator) ) continue;
+    copy[key] = withOperatorsApplied(inner, operatorOf);
+  }
+  return copy;
+}
+
+/**
+ * The value a field takes from one update value: a forced deletion leaves it undefined, a
+ * forced replacement sets the given value without merging, anything else is the value itself.
+ * @param {unknown} value
+ * @param {(value: unknown) => ({deletion: true}|{replacement: unknown}|null)} operatorOf
+ * @returns {{set: unknown}|{merge: object}} merge only for a plain object, which the caller merges
+ */
+function readUpdateValue(value, operatorOf) {
+  const operator = operatorOf(value);
+  if ( operator && ("deletion" in operator) ) return { set: undefined };
+  if ( operator && ("replacement" in operator) ) return { set: withOperatorsApplied(operator.replacement, operatorOf) };
+  if ( isPlainObject(value) ) return { merge: expandDotted(value) };
+  return { set: withOperatorsApplied(value, operatorOf) };
+}
+
+/**
+ * Applies an update's system changes to a character's stored trait data and returns the complete
+ * trait data the update would leave, for checkCharacterEdit (ADR-037 point 3). It expects the
+ * changes as Foundry passes them to `_preUpdate`: cleaned, so dotted keys are expanded, legacy
+ * deletion and replacement keys are operators, nulls are reset to their initial values and form
+ * input is cast (client/data/client-backend.mjs `#preUpdateDocumentArray`). Our apps clean their
+ * changes the same way before calling it; raw form data can be refused where Foundry would
+ * accept it. On such changes it follows how Foundry 14.369 applies an ordinary, recursive update
+ * to the character schema (common/data/fields.mjs: SchemaField, TypedObjectField and ArrayField
+ * `_updateDiff`):
+ * - `kindId` and `freeTraits` take the given value; a list is always replaced whole.
+ * - `traits` merges by set key: a key that is forcibly deleted removes the set, a plain object
+ *   merges into the stored set (or starts an empty one), and anything else replaces the set.
+ *   Within a set only `entries` is read, and it is replaced whole, because every edit sends a
+ *   set's whole list.
+ * - A forced replacement sets its value without merging, with the operators inside it applied;
+ *   a forced deletion of a field other than a set key leaves it undefined, which the diff then
+ *   refuses as malformed, as Foundry refuses the missing value.
+ * - A forced replacement of the whole system data is a replacing update, which counts as loading
+ *   (ADR-037 point 4); the result says so with `replaced: true` (see checkCharacterUpdate).
+ * - Keys written with dots are still read as nested keys. Other system fields are ignored.
+ * Foundry's operators are classes this layer can't see, so the caller passes `operatorOf`,
+ * which says whether a value is a forced deletion or replacement; without it every value is
+ * plain data. Replacing updates with `recursive: false` don't come here either.
+ * @param {import("./types.mjs").CharacterTraitData} current - the stored trait data
+ * @param {object|null|undefined} changes - the update's `system` changes; none means no change
+ * @param {{operatorOf?: (value: unknown) => ({deletion: true}|{replacement: unknown}|null)}} [operators]
+ * @returns {import("./types.mjs").EngineResult<import("./types.mjs").CharacterTraitData
+ *   & {replaced?: true}>} a new object that shares nothing with the inputs; refuses with
+ *   INVALID_TRAIT_DATA when the stored data or the changes aren't plain objects, or the whole
+ *   system data is forcibly deleted
+ */
+export function proposedTraitData(current, changes, operators = {}) {
+  const operatorOf = operators?.operatorOf ?? (() => null);
+  if ( !isPlainObject(current) ) return fail("INVALID_TRAIT_DATA");
+  const rootOperator = operatorOf(changes);
+  if ( rootOperator && ("deletion" in rootOperator) ) return fail("INVALID_TRAIT_DATA");
+  if ( rootOperator && ("replacement" in rootOperator) ) {
+    const replacement = withOperatorsApplied(rootOperator.replacement, operatorOf);
+    if ( !isPlainObject(replacement) ) return fail("INVALID_TRAIT_DATA");
+    return ok({ kindId: replacement.kindId, traits: replacement.traits, freeTraits: replacement.freeTraits, replaced: true });
+  }
+  if ( (changes !== undefined) && (changes !== null) && !isPlainObject(changes) ) return fail("INVALID_TRAIT_DATA");
+  const proposed = { kindId: current.kindId, traits: copyPlain(current.traits), freeTraits: copyPlain(current.freeTraits) };
+  const update = changes ? expandDotted(changes) : {};
+
+  for ( const key of ["kindId", "freeTraits"] ) {
+    if ( !Object.hasOwn(update, key) ) continue;
+    const read = readUpdateValue(update[key], operatorOf);
+    proposed[key] = ("set" in read) ? read.set : withOperatorsApplied(read.merge, operatorOf);
+  }
+
+  if ( Object.hasOwn(update, "traits") ) {
+    const read = readUpdateValue(update.traits, operatorOf);
+    if ( "set" in read ) proposed.traits = read.set;
+    else {
+      const traits = isPlainObject(proposed.traits) ? proposed.traits : {};
+      for ( const [setId, value] of Object.entries(read.merge) ) {
+        const operator = operatorOf(value);
+        if ( operator && ("deletion" in operator) ) {
+          delete traits[setId];
+          continue;
+        }
+        const setRead = readUpdateValue(value, operatorOf);
+        if ( "set" in setRead ) {
+          traits[setId] = setRead.set;
+          continue;
+        }
+        const stored = isPlainObject(traits[setId]) ? traits[setId] : { entries: [] };
+        const set = { ...stored };
+        if ( Object.hasOwn(setRead.merge, "entries") ) {
+          const entriesRead = readUpdateValue(setRead.merge.entries, operatorOf);
+          set.entries = ("set" in entriesRead) ? entriesRead.set : withOperatorsApplied(entriesRead.merge, operatorOf);
+        }
+        traits[setId] = set;
+      }
+      proposed.traits = traits;
+    }
+  }
+
+  return ok(proposed);
+}
+
+/**
+ * Checks an update before it is written: the complete trait data it would leave
+ * (proposedTraitData), then that edit (checkCharacterEdit). What the character model's update
+ * backstop calls (ADR-037 point 3). A forced replacement of the whole system data is a replacing
+ * update and counts as loading (point 4): it gets no edit check here, and the result is null.
+ * @param {import("./types.mjs").CharacterTraitData} current - the stored trait data
+ * @param {object|null|undefined} changes - the update's `system` changes, cleaned as
+ *   proposedTraitData expects
+ * @param {import("./types.mjs").GameConfig} config
+ * @param {Parameters<typeof proposedTraitData>[2]} [operators]
+ * @returns {import("./types.mjs").EngineResult<import("./types.mjs").TraitChanges|null>} the
+ *   diff, or null for a replacing update; refuses with proposedTraitData's code, then
+ *   checkCharacterEdit's
+ */
+export function checkCharacterUpdate(current, changes, config, operators = {}) {
+  const proposed = proposedTraitData(current, changes, operators);
+  if ( !proposed.ok ) return proposed;
+  if ( proposed.value.replaced ) return ok(null);
+  return checkCharacterEdit(current, proposed.value, config);
 }
