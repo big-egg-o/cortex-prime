@@ -97,6 +97,12 @@
         "INVALID_HIGH_STAKES": "High stakes can only be switched on or off.",
         "UNKNOWN_DIFFICULTY_LEVEL": "That isn't one of the difficulty levels."
       }
+    },
+    "Settings": {
+      "GameConfig": {
+        "Name": "Game configuration",
+        "Hint": "The trait sets and actor kinds this game uses."
+      }
     }
   },
   "TYPES": {

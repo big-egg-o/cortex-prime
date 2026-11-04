@@ -14,6 +14,7 @@ import { registerChatBatch } from "./chat.mjs";
 import { registerContestModelBatch } from "./contest-model.mjs";
 import { registerDiceBatch } from "./dice.mjs";
 import { registerEffectBatch } from "./effect.mjs";
+import { registerGameConfigBatch } from "./game-config.mjs";
 import { registerMigrationBatch } from "./migration.mjs";
 import { registerRatingFieldBatch } from "./rating-field.mjs";
 import { registerRerollBatch } from "./reroll.mjs";
@@ -35,6 +36,7 @@ export function registerQuenchBatches(quench) {
   registerRatingFieldBatch(quench);
   registerCharacterBatch(quench);
   registerContestModelBatch(quench);
+  registerGameConfigBatch(quench);
 
   quench.registerBatch(
     "cortex-prime.smoke",

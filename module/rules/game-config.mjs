@@ -189,9 +189,10 @@ function checkActorKind(kind, path, setIds, report, claimId) {
  * configuration form, and `code` is the first error. `errors` and `warnings` are separate lists
  * of `{code, path}`; `warnings` is there in both outcomes and never affects `ok`. Guidance (usual
  * range, starting rating) is only checked for being dice, never against a trait's rating, and a
- * set without dice may keep it unused. Fields it doesn't know are kept and features it doesn't
- * know are ignored, so a later version can add some. The checks run on a copy, which is what is
- * returned. Pure: no Foundry, and it never changes its input.
+ * set without dice may keep it unused. Fields it doesn't know are kept in the result and
+ * features it doesn't know are ignored (the stored setting's schema drops unknown keys, so a new
+ * field also needs a schema version). The checks run on a copy, which is what is returned. Pure:
+ * no Foundry, and it never changes its input.
  * @param {unknown} input - the configuration to check
  * @returns {{ok: true, value: import("./types.mjs").GameConfig, errors: [],
  *   warnings: {code: string, path: string}[]}
