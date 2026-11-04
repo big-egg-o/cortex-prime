@@ -364,6 +364,12 @@ export const DIE_SIZES = Object.freeze(/** @type {DieSize[]} */ ([4, 6, 8, 10, 1
  * @property {string} [name]
  * @property {unknown[]} dice - the rating before its die sizes are checked: any array is accepted
  *   here, and a later check refuses values that aren't die sizes
+ * @property {string} [statement] - (MOD) Trait Statements (rule 16)
+ * @property {boolean} [challenged] - the statement is challenged and not yet resolved
+ * @property {DieSize[]} [preChallengeDice] - the rating from before the first unresolved
+ *   challenge (RQ-022)
+ * @property {{reason: "manual"|"statementChallenged"}} [shutDown] - shut down by hand, or by a
+ *   challenge of a d4 trait (rule 15, RQ-021)
  */
 
 /**
