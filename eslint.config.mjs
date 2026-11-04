@@ -28,14 +28,18 @@ export default [
   {
     // Client code: browser + Foundry globals.
     files: ["module/**/*.mjs"],
-    ignores: ["module/rules/**", "module/data/chat/contest-mapping.mjs", "module/data/migration-runner.mjs"],
+    ignores: ["module/rules/**", "module/data/chat/contest-mapping.mjs", "module/data/migration-runner.mjs",
+      "module/config/game-config-draft.mjs"],
     languageOptions: { globals: { ...globals.browser, ...foundryGlobals } }
   },
   {
     // Pure rules, the pure mapping of the contest message and the migration runner: ECMAScript
     // built-ins only. Imports staying inside module/rules/ are checked by
     // tests/unit/rules-boundary.test.mjs.
-    files: ["module/rules/**/*.mjs", "module/data/chat/contest-mapping.mjs", "module/data/migration-runner.mjs"],
+    files: [
+      "module/rules/**/*.mjs", "module/data/chat/contest-mapping.mjs", "module/data/migration-runner.mjs",
+      "module/config/game-config-draft.mjs"
+    ],
     rules: {
       "no-restricted-globals": ["error", ...forbiddenInRules]
     }

@@ -5,6 +5,7 @@
  * @module tests/quench/game-config
  */
 
+import GameConfigApp from "../../module/apps/game-config-app.mjs";
 import GameConfigData from "../../module/data/settings/game-config.mjs";
 import {
   GAME_CONFIG_SETTING, getGameConfig, isGameConfigInvalid, setGameConfig
@@ -116,6 +117,29 @@ export function registerGameConfigBatch(quench) {
           assert.isNotNull(error);
           assert.include(String(error?.message), "UNKNOWN_TRAIT_SET");
           assert.deepEqual(getGameConfig(), previous);
+        });
+      });
+
+      describe("the GM configuration app", () => {
+        it("is the system's settings menu, restricted to GMs", () => {
+          const menu = game.settings.menus.get("cortex-prime.gameConfigMenu");
+          assert.equal(menu.type, GameConfigApp);
+          assert.isTrue(menu.restricted);
+        });
+
+        it("renders one fieldset per trait set and per actor kind, with named inputs", async () => {
+          const app = new GameConfigApp();
+          await app.render({ force: true });
+          try {
+            const config = getGameConfig();
+            assert.equal(app.element.querySelectorAll("fieldset.cp-config-set").length, config.traitSets.length);
+            assert.equal(app.element.querySelectorAll("fieldset.cp-config-kind").length, config.actorKinds.length);
+            assert.isNotNull(app.element.querySelector('input[name="traitSets.0.name"]'));
+            assert.isNotNull(app.element.querySelector(`input[name="actorKinds.0.sets.${config.traitSets[0].id}"]`));
+          }
+          finally {
+            await app.close();
+          }
         });
       });
     },
