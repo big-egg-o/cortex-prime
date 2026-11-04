@@ -8,6 +8,7 @@ import {
   addTestRoll, applyTestHeroicSteps, autoApplyContestHeroicSteps, autoApplyTestHeroicSteps, chooseTestOverflow, closeTest,
   contestRollFromTotal, createTest, setContestHighStakes, setTestHighStakes, testResult
 } from "../../module/rules/contest.mjs";
+import { checkStartRequest, dispatchContestRequest } from "../../module/rules/contest-request.mjs";
 import { DIFFICULTY_SOURCE_KIND, difficultyEntry, difficultyLevelOfPool } from "../../module/rules/outcome.mjs";
 
 /** @param {*} value @returns {*} the same value, frozen all the way down */
@@ -418,5 +419,42 @@ describe("the Step 4.4 engine functions never mutate their inputs", () => {
   it("difficultyLevelOfPool works from a frozen pool", () => {
     const pool = deepFreeze(buildPool(difficultyEntry("hard", { kind: DIFFICULTY_SOURCE_KIND, label: "Hard" }).value));
     expect(difficultyLevelOfPool(pool)).toEqual({ ok: true, value: "hard" });
+  });
+
+  it("dispatchContestRequest works from a frozen sender, request, contest record and roll card", () => {
+    const pool = buildPool([
+      { size: 10, source: source("Skill") },
+      { size: 8, source: source("Attribute") },
+      { size: 6, source: source("Asset") }
+    ]);
+    const rolled = applyResults(pool, [7, 5, 3]);
+    const resolution = resolve(rolled, {
+      totalIds: [rolled[0].id, rolled[1].id], effectDieIds: [rolled[2].id], extraResultsPaid: 0, extraEffectDicePaid: 0
+    });
+    const input = deepFreeze({
+      sender: { userId: "playerOne0000001", isGM: false },
+      request: {
+        action: "add-roll", messageId: "contestCard00001", revision: 3, payload: { poolRollId: "rollCard00000001" }
+      },
+      contest: {
+        type: "contest", revision: 3, state: createContest().value,
+        sides: [{ key: "initiator", userId: "playerOne0000001" }, { key: "opposition", userId: null }]
+      },
+      poolRoll: { authorId: "playerOne0000001", rolled, resolution }
+    });
+
+    const written = dispatchContestRequest(input);
+    expect(written.value.state).not.toBe(input.contest.state);
+    expect(written.value.state.rolls.map(r => [r.side, r.total, r.messageRef]))
+      .toEqual([["initiator", 12, "rollCard00000001"]]);
+    expect(input.contest.state.rolls).toEqual([]);
+  });
+
+  it("checkStartRequest works from a frozen request", () => {
+    const input = deepFreeze({
+      sender: { userId: "playerOne0000001", isGM: false },
+      request: { type: "test", sides: [{ key: "roller", userId: "playerOne0000001" }, { key: "setter", userId: null }] }
+    });
+    expect(checkStartRequest(input)).toEqual({ ok: true, value: null });
   });
 });

@@ -58,6 +58,45 @@
     },
     "Keybindings": {
       "OpenPoolBuilder": "Open the Pool Builder"
+    },
+    "Contest": {
+      "Errors": {
+        "GM_REQUIRED": "A GM has to be connected for tests and contests.",
+        "QUERY_NOT_PERMITTED": "Your role lacks the \"Query Users\" permission that tests and contests need. The GM can grant it under Configure User Permissions.",
+        "REQUEST_FAILED": "The GM's client didn't answer. Try again in a moment.",
+        "WRITE_FAILED": "The card couldn't be updated. The GM's browser console has the details.",
+        "MALFORMED_REQUEST": "The request was incomplete or garbled and was refused.",
+        "CONTEST_NOT_FOUND": "This test or contest no longer exists.",
+        "UNSUPPORTED_ACTION": "That action, or that kind of test or contest, isn't supported.",
+        "GM_ONLY": "Only a GM can do that.",
+        "NOT_YOUR_SIDE": "You can't act for that side.",
+        "SIDE_REQUIRED": "Pick the side you are acting for.",
+        "DECLINE_AFTER_ROLL": "The opposition can decline only before its first roll. After that it can give in instead.",
+        "STALE_REVISION": "The card changed before your action arrived. Check it and try again.",
+        "POOL_ROLL_NOT_FOUND": "That roll card no longer exists.",
+        "NOT_YOUR_ROLL": "Only the roll's owner or a GM can hand that roll in.",
+        "POOL_ROLL_NOT_CONFIRMED": "Confirm the roll before handing it in.",
+        "ROLL_ALREADY_ADDED": "That roll is already on this card.",
+        "INVALID_TOTAL": "A total has to be a whole number of 0 or more.",
+        "INVALID_SIDE": "That side doesn't fit this test or contest.",
+        "INVALID_DIE_SIZE": "Effect dice have to be a d4, d6, d8, d10 or d12.",
+        "DUPLICATE_EFFECT_DIE": "The same effect die is named twice.",
+        "EFFECT_DIE_NOT_FOUND": "That effect die isn't on the roll.",
+        "CONTEST_OVERFLOW_CHOICE_IN_EXCHANGE": "The choice for this roll's effect die past d12 was made on its roll card, but it belongs on the test or contest card.",
+        "CONTEST_NOT_YOUR_TURN": "It's the other side's turn.",
+        "CONTEST_NOT_STARTED": "Nobody has rolled yet, so there's nothing to give in to.",
+        "CONTEST_RESOLVED": "The outcome is already settled.",
+        "CONTEST_NOT_RESOLVED": "The outcome isn't settled yet.",
+        "CONTEST_CLOSED": "This card is closed.",
+        "HEROIC_NOT_EARNED": "No heroic steps were earned.",
+        "HEROIC_ALREADY_APPLIED": "The heroic steps are already on an effect die.",
+        "HEROIC_PENDING": "Put the heroic steps on an effect die first.",
+        "OVERFLOW_PENDING": "Choose what happens with the effect die past d12 first.",
+        "OVERFLOW_NOT_PENDING": "No effect die past d12 is waiting for a choice.",
+        "INVALID_OVERFLOW_CHOICE": "That choice isn't available, or it doesn't say which effect die past d12 it is for.",
+        "INVALID_HIGH_STAKES": "High stakes can only be switched on or off.",
+        "UNKNOWN_DIFFICULTY_LEVEL": "That isn't one of the difficulty levels."
+      }
     }
   },
   "TYPES": {
