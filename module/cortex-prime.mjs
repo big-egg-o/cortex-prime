@@ -11,6 +11,7 @@ import PoolRollData from "./data/chat/pool-roll.mjs";
 import { onRenderPoolRollMessage, preloadPoolRollCardTemplate } from "./dice/pool-roll-card.mjs";
 import { togglePoolBuilder } from "./apps/pool-builder.mjs";
 import { registerSettings } from "./config/settings.mjs";
+import GameConfigApp from "./apps/game-config-app.mjs";
 
 /** The package id, as declared in system.json. */
 export const SYSTEM_ID = "cortex-prime";
@@ -22,6 +23,14 @@ Hooks.once("init", () => {
   CONFIG.ChatMessage.dataModels.poolRoll = PoolRollData;
   CONFIG.ChatMessage.dataModels.contest = ContestData;
   registerSettings();
+  game.settings.registerMenu(SYSTEM_ID, "gameConfigMenu", {
+    name: "CORTEX.Config.MenuName",
+    label: "CORTEX.Config.MenuLabel",
+    hint: "CORTEX.Config.MenuHint",
+    icon: "fa-solid fa-sliders",
+    type: GameConfigApp,
+    restricted: true
+  });
   Hooks.on("renderChatMessageHTML", onRenderPoolRollMessage);
   preloadPoolRollCardTemplate(); // fire-and-forget: ready well before the first roll in practice
 

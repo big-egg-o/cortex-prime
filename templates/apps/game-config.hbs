@@ -1,0 +1,131 @@
+<div class="cp-config-body scrollable">
+  <p class="hint">{{ localize "CORTEX.Config.Intro" }}</p>
+  {{#each generalErrors}}<p class="notification error">{{ localize (concat "CORTEX.Config.Errors." this) }}</p>{{/each}}
+  {{#if warnings.length}}
+  <div class="cp-config-warnings">
+    {{#each warnings}}<p class="notification warning">{{ localize (concat "CORTEX.Config.Warnings." this) }}</p>{{/each}}
+  </div>
+  {{/if}}
+
+  <h3>{{ localize "CORTEX.Config.TraitSets" }}</h3>
+  {{#each sets}}
+  <fieldset class="cp-config-set" data-set-id="{{ this.id }}">
+    <legend class="control">
+      <span>{{ this.name }}</span>
+      <button type="button" class="ui-control icon" data-action="moveSet" data-delta="-1" data-tooltip
+        aria-label="{{ localize "CORTEX.Config.MoveUp" }}"><i class="fa-solid fa-angle-up" inert></i></button>
+      <button type="button" class="ui-control icon" data-action="moveSet" data-delta="1" data-tooltip
+        aria-label="{{ localize "CORTEX.Config.MoveDown" }}"><i class="fa-solid fa-angle-down" inert></i></button>
+      <button type="button" class="ui-control icon" data-action="deleteSet" data-tooltip
+        aria-label="{{ localize "CORTEX.Config.DeleteSet" }}"><i class="fa-solid fa-trash" inert></i></button>
+    </legend>
+    {{#each this.errors}}<p class="notification error">{{ localize (concat "CORTEX.Config.Errors." this) }}</p>{{/each}}
+    <div class="form-group">
+      <label>{{ localize "CORTEX.Config.Name" }}</label>
+      <div class="form-fields"><input type="text" name="{{ this.path }}.name" value="{{ this.name }}"></div>
+    </div>
+    <div class="form-group">
+      <label>{{ localize "CORTEX.Config.RoleLabel" }}</label>
+      <div class="form-fields">
+        <select name="{{ this.path }}.role">
+          {{#each @root.roles}}<option value="{{ this.value }}" {{#if (eq this.value ../role)}}selected{{/if}}>{{ localize this.label }}</option>{{/each}}
+        </select>
+        <select name="{{ this.path }}.list">
+          {{#each @root.lists}}<option value="{{ this.value }}" {{#if (eq this.value ../list)}}selected{{/if}}>{{ localize this.label }}</option>{{/each}}
+        </select>
+      </div>
+    </div>
+    <div class="form-group">
+      <label>{{ localize "CORTEX.Config.Dice" }}</label>
+      <div class="form-fields">
+        <label class="checkbox"><input type="checkbox" name="{{ this.path }}.hasDice" {{checked this.hasDice}}>{{ localize "CORTEX.Config.HasDice" }}</label>
+        <label class="checkbox"><input type="checkbox" name="{{ this.path }}.multiDice" {{checked this.multiDice}}>{{ localize "CORTEX.Config.MultiDice" }}</label>
+        <label class="checkbox"><input type="checkbox" name="{{ this.path }}.sameSizeDice" {{checked this.sameSizeDice}}>{{ localize "CORTEX.Config.SameSizeDice" }}</label>
+      </div>
+    </div>
+    <div class="form-group">
+      <label>{{ localize "CORTEX.Config.Guidance" }}</label>
+      <div class="form-fields">
+        <select name="{{ this.path }}.usualMin" aria-label="{{ localize "CORTEX.Config.UsualMin" }}">
+          <option value="">{{ localize "CORTEX.Config.None" }}</option>
+          {{#each this.sizes}}<option value="{{ this.value }}" {{#if this.min}}selected{{/if}}>{{ this.label }}</option>{{/each}}
+        </select>
+        <select name="{{ this.path }}.usualMax" aria-label="{{ localize "CORTEX.Config.UsualMax" }}">
+          <option value="">{{ localize "CORTEX.Config.None" }}</option>
+          {{#each this.sizes}}<option value="{{ this.value }}" {{#if this.max}}selected{{/if}}>{{ this.label }}</option>{{/each}}
+        </select>
+        <select name="{{ this.path }}.startingRating" aria-label="{{ localize "CORTEX.Config.StartingRating" }}">
+          <option value="">{{ localize "CORTEX.Config.None" }}</option>
+          {{#each this.sizes}}<option value="{{ this.value }}" {{#if this.start}}selected{{/if}}>{{ this.label }}</option>{{/each}}
+        </select>
+        <select name="{{ this.path }}.fallbackDie" aria-label="{{ localize "CORTEX.Config.FallbackDie" }}">
+          <option value="">{{ localize "CORTEX.Config.NoFallback" }}</option>
+          <option value="4" {{#if this.fallbackD4}}selected{{/if}}>d4</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-group">
+      <label>{{ localize "CORTEX.Config.ExtraTraitsLabel" }}</label>
+      <div class="form-fields">
+        <select name="{{ this.path }}.extraTraits">
+          {{#each @root.extraTraitRules}}<option value="{{ this.value }}" {{#if (eq this.value ../extraTraits)}}selected{{/if}}>{{ localize this.label }}</option>{{/each}}
+        </select>
+      </div>
+    </div>
+    <div class="form-group stacked">
+      <label>{{ localize "CORTEX.Config.Features" }}</label>
+      <div class="form-fields">
+        {{#each this.features}}
+        <label class="checkbox"><input type="checkbox" name="{{ ../path }}.features.{{ this.key }}" {{checked this.on}}>{{ localize this.label }}</label>
+        {{/each}}
+      </div>
+    </div>
+    {{#if this.fixed}}
+    <div class="cp-config-traits">
+      {{#each this.traits}}
+      <div class="form-group" data-trait-id="{{ this.id }}">
+        <div class="form-fields">
+          <input type="text" name="{{ this.path }}.name" value="{{ this.name }}" aria-label="{{ localize "CORTEX.Config.Name" }}">
+          <input type="text" name="{{ this.path }}.description" value="{{ this.description }}"
+            placeholder="{{ localize "CORTEX.Config.Description" }}" aria-label="{{ localize "CORTEX.Config.Description" }}">
+          <button type="button" class="ui-control icon" data-action="moveTrait" data-delta="-1" data-tooltip
+            aria-label="{{ localize "CORTEX.Config.MoveUp" }}"><i class="fa-solid fa-angle-up" inert></i></button>
+          <button type="button" class="ui-control icon" data-action="deleteTrait" data-tooltip
+            aria-label="{{ localize "CORTEX.Config.DeleteTrait" }}"><i class="fa-solid fa-xmark" inert></i></button>
+        </div>
+        {{#each this.errors}}<p class="hint error">{{ localize (concat "CORTEX.Config.Errors." this) }}</p>{{/each}}
+      </div>
+      {{/each}}
+      <button type="button" data-action="addTrait"><i class="fa-solid fa-plus" inert></i><span>{{ localize "CORTEX.Config.AddTrait" }}</span></button>
+    </div>
+    {{/if}}
+  </fieldset>
+  {{/each}}
+  <button type="button" data-action="addSet"><i class="fa-solid fa-plus" inert></i><span>{{ localize "CORTEX.Config.AddSet" }}</span></button>
+
+  <h3>{{ localize "CORTEX.Config.ActorKinds" }}</h3>
+  {{#each kinds}}
+  <fieldset class="cp-config-kind" data-kind-id="{{ this.id }}">
+    <legend class="control">
+      <span>{{ this.name }}</span>
+      <button type="button" class="ui-control icon" data-action="deleteKind" data-tooltip
+        aria-label="{{ localize "CORTEX.Config.DeleteKind" }}"><i class="fa-solid fa-trash" inert></i></button>
+    </legend>
+    {{#each this.errors}}<p class="notification error">{{ localize (concat "CORTEX.Config.Errors." this) }}</p>{{/each}}
+    <div class="form-group">
+      <label>{{ localize "CORTEX.Config.Name" }}</label>
+      <div class="form-fields"><input type="text" name="{{ this.path }}.name" value="{{ this.name }}"></div>
+    </div>
+    <div class="form-group stacked">
+      <label>{{ localize "CORTEX.Config.KindSets" }}</label>
+      <div class="form-fields">
+        {{#each this.sets}}
+        <label class="checkbox"><input type="checkbox" name="{{ ../path }}.sets.{{ this.id }}" {{checked this.on}}>{{ this.name }}</label>
+        {{/each}}
+        <label class="checkbox"><input type="checkbox" name="{{ this.path }}.freeTraits" {{checked this.freeTraits}}>{{ localize "CORTEX.Config.FreeTraits" }}</label>
+      </div>
+    </div>
+  </fieldset>
+  {{/each}}
+  <button type="button" data-action="addKind"><i class="fa-solid fa-plus" inert></i><span>{{ localize "CORTEX.Config.AddKind" }}</span></button>
+</div>

@@ -1,15 +1,61 @@
 /**
  * Quench batch "cortex-prime.game-config": the game configuration world setting (Decisions
- * ADR-030, ADR-036, ADR-041, ADR-042). Run as a Gamemaster; the batch puts the stored
- * configuration back as it found it.
+ * ADR-030, ADR-036, ADR-041, ADR-042), and the GM configuration app that edits it. Run as a
+ * Gamemaster; the batch puts the stored configuration back as it found it.
  * @module tests/quench/game-config
  */
 
+import GameConfigApp from "../../module/apps/game-config-app.mjs";
 import GameConfigData from "../../module/data/settings/game-config.mjs";
 import {
   GAME_CONFIG_SETTING, getGameConfig, isGameConfigInvalid, setGameConfig
 } from "../../module/config/settings.mjs";
 import { defaultGameConfig, validateGameConfig } from "../../module/rules/index.mjs";
+
+/**
+ * Waits until a check passes, for what the app does after an event it doesn't await.
+ * @param {() => boolean} check
+ * @param {number} [timeout] - milliseconds
+ */
+async function waitFor(check, timeout = 2000) {
+  const start = Date.now();
+  while ( !check() ) {
+    if ( (Date.now() - start) > timeout ) throw new Error("timed out waiting for the configuration app");
+    await new Promise(resolve => { setTimeout(resolve, 20); });
+  }
+}
+
+/** @returns {string[]} the warnings the app shows, apart from its errors */
+function warningsShown(app) {
+  return [...app.element.querySelectorAll(".cp-config-warnings .notification.warning")].map(p => p.textContent.trim());
+}
+
+/** @returns {string[]} the errors the app shows, anywhere in the form */
+function errorsShown(app) {
+  return [...app.element.querySelectorAll(".error")].map(p => p.textContent.trim());
+}
+
+/** @returns {string[]} the errors the app shows inside one trait set's fieldset */
+function setErrorsShown(app, setId) {
+  return [...app.element.querySelectorAll(`fieldset[data-set-id="${setId}"] .error`)].map(p => p.textContent.trim());
+}
+
+/** Changes one field as the GM does; the app reads every change into its draft. */
+function changeField(app, name, value) {
+  const field = app.element.querySelector(`[name="${name}"]`);
+  field.value = value;
+  field.dispatchEvent(new Event("change", { bubbles: true }));
+}
+
+/** @returns {Promise<void>} the app's Save action, run as its button runs it */
+function save(app) {
+  return app.options.actions.save.call(app, new PointerEvent("click"), app.element.querySelector('[data-action="save"]'));
+}
+
+/** @returns {unknown} one of the app's actions, run on the given button as a click runs it */
+function runAction(app, button) {
+  return app.options.actions[button.dataset.action].call(app, new PointerEvent("click"), button);
+}
 
 /**
  * @param {object} quench  The Quench API object passed to the `quenchReady` hook.
@@ -116,6 +162,125 @@ export function registerGameConfigBatch(quench) {
           assert.isNotNull(error);
           assert.include(String(error?.message), "UNKNOWN_TRAIT_SET");
           assert.deepEqual(getGameConfig(), previous);
+        });
+      });
+
+      describe("the GM configuration app", () => {
+        it("is the system's settings menu, restricted to GMs", () => {
+          const menu = game.settings.menus.get("cortex-prime.gameConfigMenu");
+          assert.equal(menu.type, GameConfigApp);
+          assert.isTrue(menu.restricted);
+        });
+
+        it("renders one fieldset per trait set and per actor kind, with named inputs", async () => {
+          const app = new GameConfigApp();
+          await app.render({ force: true });
+          try {
+            const config = getGameConfig();
+            assert.equal(app.element.querySelectorAll("fieldset.cp-config-set").length, config.traitSets.length);
+            assert.equal(app.element.querySelectorAll("fieldset.cp-config-kind").length, config.actorKinds.length);
+            assert.isNotNull(app.element.querySelector('input[name="traitSets.0.name"]'));
+            assert.isNotNull(app.element.querySelector(`input[name="actorKinds.0.sets.${config.traitSets[0].id}"]`));
+          }
+          finally {
+            await app.close();
+          }
+        });
+
+        it("shows the draft's warnings apart from its errors as soon as a change brings one (ADR-041 point 4)", async () => {
+          await setGameConfig(defaultGameConfig());
+          const app = new GameConfigApp();
+          await app.render({ force: true });
+          try {
+            assert.deepEqual(warningsShown(app), []);
+            changeField(app, "traitSets.0.role", "other");
+            await waitFor(() => warningsShown(app).length > 0);
+            assert.deepEqual(warningsShown(app), [game.i18n.localize("CORTEX.Config.Warnings.DISTINCTIONS_SET_MISSING")]);
+            assert.deepEqual(errorsShown(app), []);
+          }
+          finally {
+            await app.close();
+          }
+        });
+
+        it("saves a draft that only has warnings, and keeps showing them (ADR-041 point 4)", async () => {
+          await setGameConfig(defaultGameConfig());
+          const app = new GameConfigApp();
+          await app.render({ force: true });
+          try {
+            changeField(app, "traitSets.0.role", "other");
+            await waitFor(() => warningsShown(app).length > 0);
+            await save(app);
+            assert.equal(getGameConfig().traitSets[0].role, "other");
+            assert.isFalse(isGameConfigInvalid());
+            await app.render(); // queued behind the render Save started, so the checks read its result
+            assert.deepEqual(warningsShown(app), [game.i18n.localize("CORTEX.Config.Warnings.DISTINCTIONS_SET_MISSING")]);
+            assert.deepEqual(errorsShown(app), []);
+          }
+          finally {
+            await app.close();
+          }
+        });
+
+        it("refuses a draft with an error, marking it in its set apart from the warnings", async () => {
+          await setGameConfig(defaultGameConfig());
+          const previous = getGameConfig();
+          const app = new GameConfigApp();
+          await app.render({ force: true });
+          try {
+            changeField(app, "traitSets.0.role", "other");
+            await waitFor(() => warningsShown(app).length > 0);
+            changeField(app, "traitSets.1.name", "");
+            await save(app);
+            await app.render();
+            assert.deepEqual(setErrorsShown(app, previous.traitSets[1].id), [game.i18n.localize("CORTEX.Config.Errors.INVALID_TRAIT_SET")]);
+            assert.lengthOf(errorsShown(app), 1);
+            assert.deepEqual(warningsShown(app), [game.i18n.localize("CORTEX.Config.Warnings.DISTINCTIONS_SET_MISSING")]);
+            assert.deepEqual(getGameConfig(), previous);
+          }
+          finally {
+            await app.close();
+          }
+        });
+
+        it("keeps an error on the entry that has it after a move, and clears it once fixed", async () => {
+          await setGameConfig(defaultGameConfig());
+          const [first, second] = getGameConfig().traitSets;
+          const app = new GameConfigApp();
+          await app.render({ force: true });
+          try {
+            changeField(app, "traitSets.1.name", "");
+            await save(app);
+            await app.render();
+            assert.lengthOf(setErrorsShown(app, second.id), 1);
+            runAction(app, app.element.querySelector(`fieldset[data-set-id="${second.id}"] [data-action="moveSet"][data-delta="-1"]`));
+            await app.render();
+            assert.equal(app.element.querySelector("fieldset.cp-config-set").dataset.setId, second.id);
+            assert.lengthOf(setErrorsShown(app, second.id), 1);
+            assert.deepEqual(setErrorsShown(app, first.id), []);
+            changeField(app, "traitSets.0.name", "Renamed");
+            await waitFor(() => errorsShown(app).length === 0);
+          }
+          finally {
+            await app.close();
+          }
+        });
+
+        it("shows a set's trait list as soon as the set is switched to a fixed list", async () => {
+          await setGameConfig(defaultGameConfig());
+          const open = getGameConfig().traitSets[0];
+          assert.equal(open.list, "open");
+          const app = new GameConfigApp();
+          await app.render({ force: true });
+          try {
+            const addTrait = () => app.element.querySelector(`fieldset[data-set-id="${open.id}"] [data-action="addTrait"]`);
+            assert.isNull(addTrait());
+            changeField(app, "traitSets.0.list", "fixed");
+            await waitFor(() => addTrait() !== null);
+          }
+          finally {
+            await app.close();
+          }
         });
       });
     },

@@ -118,6 +118,89 @@
         "INVALID_RATING_OPTIONS": "A trait set in the game configuration has invalid dice options.",
         "INVALID_GAME_CONFIG": "The game configuration can't be read."
       }
+    },
+    "Config": {
+      "Title": "Game configuration",
+      "MenuName": "Game configuration",
+      "MenuLabel": "Configure trait sets and actor kinds",
+      "MenuHint": "The trait sets this game uses and the actor kinds that bundle them. Changing them never rewrites actors.",
+      "Intro": "Changes are kept here until you save. Saving never rewrites actors: values that no longer fit are kept and shown on their sheets.",
+      "TraitSets": "Trait sets",
+      "ActorKinds": "Actor kinds",
+      "Name": "Name",
+      "Description": "Description (optional)",
+      "RoleLabel": "Role and list",
+      "Dice": "Dice",
+      "HasDice": "Traits have dice",
+      "MultiDice": "Several dice allowed",
+      "SameSizeDice": "Dice of one size",
+      "Guidance": "Usual range, start, fallback",
+      "UsualMin": "Usual minimum",
+      "UsualMax": "Usual maximum",
+      "StartingRating": "Starting rating",
+      "FallbackDie": "Fallback die",
+      "None": "None",
+      "NoFallback": "No fallback",
+      "ExtraTraitsLabel": "Further traits from this set",
+      "Features": "Features",
+      "KindSets": "Trait sets of this kind",
+      "FreeTraits": "Free traits (outside any set)",
+      "AddSet": "Add trait set",
+      "DeleteSet": "Delete trait set",
+      "AddTrait": "Add trait",
+      "DeleteTrait": "Delete trait",
+      "AddKind": "Add actor kind",
+      "DeleteKind": "Delete actor kind",
+      "MoveUp": "Move up",
+      "MoveDown": "Move down",
+      "NewSet": "New trait set",
+      "NewTrait": "New trait",
+      "NewKind": "New actor kind",
+      "ResetDefaults": "Start again from the defaults",
+      "ResetTitle": "Start again from the defaults?",
+      "ResetConfirm": "The draft is replaced by the default configuration. Nothing is saved until you save.",
+      "Save": "Save",
+      "Saved": "Game configuration saved.",
+      "NotSaved": "Not saved: fix the problems marked in the form.",
+      "Role": {
+        "distinctions": "Distinctions (or their replacement)",
+        "prime": "Prime set",
+        "other": "Other"
+      },
+      "List": {
+        "fixed": "Fixed list (defined here)",
+        "open": "Open list (each actor adds its own)"
+      },
+      "ExtraTraits": {
+        "pp": "Cost a plot point each",
+        "none": "Not allowed (warned about)"
+      },
+      "Feature": {
+        "description": "Description line",
+        "sfx": "SFX",
+        "statements": "Trait statements",
+        "tags": "Tags",
+        "subTraits": "Sub-traits",
+        "hinder": "Hinder",
+        "setSfx": "Set SFX",
+        "shutDown": "Can be shut down"
+      },
+      "Errors": {
+        "INVALID_GAME_CONFIG": "The configuration can't be read.",
+        "SCHEMA_VERSION_TOO_NEW": "This configuration was saved by a newer version of the system.",
+        "INVALID_TRAIT_SET": "This trait set has a missing or invalid value.",
+        "INVALID_TRAIT_DEFINITION": "This trait needs a name and an id.",
+        "INVALID_ACTOR_KIND": "This actor kind has a missing or invalid value.",
+        "INVALID_DIE_SIZE": "That isn't a die size: use d4, d6, d8, d10 or d12.",
+        "DUPLICATE_CONFIG_ID": "Two entries share one id.",
+        "UNKNOWN_TRAIT_SET": "This actor kind names a trait set that doesn't exist.",
+        "GM_ONLY": "Only a GM can change the game configuration.",
+        "WRITE_FAILED": "The game configuration could not be saved; see the console."
+      },
+      "Warnings": {
+        "DISTINCTIONS_SET_MISSING": "No trait set has the distinctions role. You can still save. Without distinctions, most pools lose a die; Handbook p. 66 suggests making up for it, for example with a further prime set or with other traits that add dice.",
+        "PRIME_SETS_TOO_FEW": "Fewer than two trait sets have the prime role. You can still save. The Handbook advises at least two prime sets, since they give most rolls their basic dice (pp. 26, 47)."
+      }
     }
   },
   "TYPES": {
