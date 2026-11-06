@@ -2,8 +2,10 @@
  * The game configuration as a world setting's data model (Decisions ADR-030): trait sets and
  * actor kinds, one schema-validated DataModel with a schema version and migrations. The schema
  * mirrors the GameConfig shape in module/rules/types.mjs; what a valid configuration is (unique
- * ids, references that resolve, a distinctions set and two prime sets) is decided by the pure
- * validateGameConfig, which validateJoint runs. Nothing here decides an outcome.
+ * ids, references that resolve) is decided by the pure validateGameConfig, which validateJoint
+ * runs. Its warnings (no distinctions set, fewer than two prime sets) never make a configuration
+ * invalid, so such a configuration saves and loads like any other (ADR-041 point 5). Nothing
+ * here decides an outcome.
  * @module data/settings/game-config
  */
 
@@ -126,7 +128,8 @@ export default class GameConfigData extends foundry.abstract.DataModel {
 
   /**
    * The checks that span fields: the pure validateGameConfig, on the cleaned source. Throws a
-   * plain Error naming every problem with its path. A stored configuration that fails loads as
+   * plain Error naming every error with its path; warnings are ignored here, because they never
+   * make a configuration invalid (ADR-041 point 5). A stored configuration that fails loads as
    * stored with `invalid` set (see fromSource), so the GM's app can show its problems, and
    * `game.settings.set` refuses it, because settings assign DataModel values strictly
    * (client/helpers/client-settings.mjs, `#cleanJSON`).

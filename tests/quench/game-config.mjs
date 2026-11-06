@@ -1,12 +1,14 @@
 /**
  * Quench batch "cortex-prime.game-config": the game configuration world setting (Decisions
- * ADR-030, ADR-036). Run as a Gamemaster; the batch puts the stored configuration back as it found
- * it.
+ * ADR-030, ADR-036, ADR-041, ADR-042). Run as a Gamemaster; the batch puts the stored
+ * configuration back as it found it.
  * @module tests/quench/game-config
  */
 
 import GameConfigData from "../../module/data/settings/game-config.mjs";
-import { GAME_CONFIG_SETTING, getGameConfig, setGameConfig } from "../../module/config/settings.mjs";
+import {
+  GAME_CONFIG_SETTING, getGameConfig, isGameConfigInvalid, setGameConfig
+} from "../../module/config/settings.mjs";
 import { defaultGameConfig, validateGameConfig } from "../../module/rules/index.mjs";
 
 /**
@@ -62,7 +64,24 @@ export function registerGameConfigBatch(quench) {
           config.traitSets[0].name = "Quench distinctions";
           const result = await setGameConfig(config);
           assert.isTrue(result.ok);
+          assert.deepEqual(result.errors, []);
+          assert.deepEqual(result.warnings, []);
           assert.equal(getGameConfig().traitSets[0].name, "Quench distinctions");
+        });
+
+        it("saves and loads a configuration with no prime sets, reporting its warning (ADR-041 point 5)", async () => {
+          const config = defaultGameConfig();
+          for ( const set of config.traitSets ) if ( set.role === "prime" ) set.role = "other";
+          const warning = { code: "PRIME_SETS_TOO_FEW", path: "traitSets" };
+          assert.isFalse(GameConfigData.fromSource(foundry.utils.deepClone(config)).invalid);
+          const result = await setGameConfig(config);
+          assert.isTrue(result.ok, JSON.stringify(result.errors));
+          assert.deepEqual(result.errors, []);
+          assert.deepEqual(result.warnings, [warning]);
+          assert.isFalse(isGameConfigInvalid());
+          const reloaded = getGameConfig();
+          assert.deepEqual(reloaded.traitSets.map(s => s.role), config.traitSets.map(s => s.role));
+          assert.deepEqual(validateGameConfig(reloaded).warnings, [warning]);
         });
 
         it("refuses an invalid configuration before writing, with every problem", async () => {
@@ -73,16 +92,30 @@ export function registerGameConfigBatch(quench) {
           const result = await setGameConfig(config);
           assert.isFalse(result.ok);
           assert.deepEqual(result.errors.map(e => e.code), ["INVALID_DIE_SIZE", "UNKNOWN_TRAIT_SET"]);
+          assert.deepEqual(result.warnings, []);
           assert.deepEqual(getGameConfig(), previous);
+        });
+
+        it("returns the warnings with a refusal too (ADR-042)", async () => {
+          const config = defaultGameConfig();
+          config.traitSets[0].role = "other";
+          config.actorKinds[0].traitSetIds.push("missingSet000000");
+          const result = await setGameConfig(config);
+          assert.isFalse(result.ok);
+          assert.deepEqual(result.errors.map(e => e.code), ["UNKNOWN_TRAIT_SET"]);
+          assert.deepEqual(result.warnings, [{ code: "DISTINCTIONS_SET_MISSING", path: "traitSets" }]);
         });
 
         it("documents Foundry's behaviour: a direct settings write of an invalid configuration throws", async () => {
           const config = defaultGameConfig();
-          config.traitSets = config.traitSets.filter(s => s.role !== "prime");
-          let threw = false;
+          config.actorKinds[0].traitSetIds.push("missingSet000000");
+          const previous = getGameConfig();
+          let error = null;
           try { await game.settings.set("cortex-prime", GAME_CONFIG_SETTING, config); }
-          catch { threw = true; }
-          assert.isTrue(threw);
+          catch( err ) { error = err; }
+          assert.isNotNull(error);
+          assert.include(String(error?.message), "UNKNOWN_TRAIT_SET");
+          assert.deepEqual(getGameConfig(), previous);
         });
       });
     },

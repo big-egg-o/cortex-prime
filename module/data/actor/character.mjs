@@ -88,11 +88,13 @@ export default class CharacterData extends foundry.abstract.TypeDataModel {
    * delta don't come here (point 7). Only an operation whose action is "update" is checked;
    * what counts as loading gets no check (point 4): a replacing update (`recursive: false`, or a
    * forced replacement of the whole system data, which is what Foundry turns `recursive: false`
-   * into) and the restore of an unlinked token's delta, which Foundry runs as a pre-update with
-   * the base actor's data from a delete (client/documents/actor-delta.mjs `_preDelete`). Stored
-   * data that is already malformed is left to Foundry's own checks, so a GM can still repair it
-   * (`game.actors.getInvalid`); only new problems in a change are refused. Changes made later by
-   * other modules' `preUpdateActor` hooks are not seen here (point 7).
+   * into and which counts as replacing under ADR-043, so checkCharacterUpdate passes it; a forced
+   * replacement of only part of the system data is an edit and is checked) and the restore of an
+   * unlinked token's delta, which Foundry runs as a pre-update with the base actor's data from a
+   * delete (client/documents/actor-delta.mjs `_preDelete`). Stored data that is already malformed
+   * is left to Foundry's own checks, so a GM can still repair it (`game.actors.getInvalid`); only
+   * new problems in a change are refused. Changes made later by other modules' `preUpdateActor`
+   * hooks are not seen here (point 7).
    * @override
    * @param {object} changes - the cleaned changes to the actor
    * @param {object} options - the update operation's options

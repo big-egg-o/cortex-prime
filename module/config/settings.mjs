@@ -64,15 +64,19 @@ export function getGameConfig() {
 
 /**
  * Stores a new game configuration after the pure check, so the GM's form gets every problem
- * with its path instead of a thrown error. Refuses a user who isn't a GM (GM_ONLY), and reports
- * a write Foundry refuses (before the game is ready, without permission, or on the server) as
- * WRITE_FAILED, with the error in the console.
+ * with its path instead of a thrown error. A configuration with warnings only is stored like any
+ * other, and the warnings come back with the result (ADR-041 points 4 and 5). Refuses a user who
+ * isn't a GM (GM_ONLY, before any check, so with no warnings), and reports a write Foundry
+ * refuses (before the game is ready, without permission, or on the server) as WRITE_FAILED, with
+ * the error in the console. The result has the shape of validateGameConfig's (ADR-042).
  * @param {import("../rules/types.mjs").GameConfig} config
- * @returns {Promise<{ok: true, value: import("../rules/types.mjs").GameConfig}
- *   | {ok: false, code: string, errors: {code: string, path: string}[]}>}
+ * @returns {Promise<{ok: true, value: import("../rules/types.mjs").GameConfig, errors: [],
+ *   warnings: {code: string, path: string}[]}
+ *   | {ok: false, code: string, errors: {code: string, path: string}[],
+ *   warnings: {code: string, path: string}[]}>}
  */
 export async function setGameConfig(config) {
-  const refuse = code => ({ ok: false, code, errors: [{ code, path: "" }] });
+  const refuse = (code, warnings = []) => ({ ok: false, code, errors: [{ code, path: "" }], warnings });
   if ( !game.user.isGM ) return refuse("GM_ONLY");
   const checked = validateGameConfig(config);
   if ( !checked.ok ) return checked;
@@ -81,7 +85,7 @@ export async function setGameConfig(config) {
   }
   catch( err ) {
     console.error(err);
-    return refuse("WRITE_FAILED");
+    return refuse("WRITE_FAILED", checked.warnings);
   }
-  return { ok: true, value: getGameConfig() };
+  return { ok: true, value: getGameConfig(), errors: [], warnings: checked.warnings };
 }
