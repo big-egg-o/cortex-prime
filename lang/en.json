@@ -97,6 +97,27 @@
         "INVALID_HIGH_STAKES": "High stakes can only be switched on or off.",
         "UNKNOWN_DIFFICULTY_LEVEL": "That isn't one of the difficulty levels."
       }
+    },
+    "Settings": {
+      "GameConfig": {
+        "Name": "Game configuration",
+        "Hint": "The trait sets and actor kinds this game uses."
+      }
+    },
+    "Character": {
+      "Errors": {
+        "INVALID_DIE_SIZE": "That rating holds a die size that doesn't exist; ratings use d4, d6, d8, d10 and d12.",
+        "RATING_DICE_NOT_ALLOWED": "This trait set has no dice, so its traits can't be rated.",
+        "RATING_TOO_MANY_DICE": "This trait set allows one die per trait.",
+        "RATING_MIXED_SIZES": "This trait set needs all of a rating's dice to be the same size.",
+        "UNKNOWN_ACTOR_KIND": "That actor kind isn't in the game configuration.",
+        "UNKNOWN_TRAIT_SET": "That trait set isn't in the game configuration.",
+        "UNKNOWN_TRAIT_DEFINITION": "That trait isn't defined in its trait set.",
+        "DUPLICATE_TRAIT_ID": "Two traits would share one id.",
+        "INVALID_TRAIT_DATA": "The trait data of this change can't be read.",
+        "INVALID_RATING_OPTIONS": "A trait set in the game configuration has invalid dice options.",
+        "INVALID_GAME_CONFIG": "The game configuration can't be read."
+      }
     }
   },
   "TYPES": {

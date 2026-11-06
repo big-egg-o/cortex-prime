@@ -2,13 +2,22 @@
  * Quench batch "cortex-prime.character": the "character" Actor type and its first schema slice
  * (Decisions ADR-031 to ADR-034, ADR-037). Every actor it creates carries a test flag and is
  * deleted after each test; actors left behind by an interrupted run are deleted before the batch.
- * There is no game configuration yet, so every kind, set and definition id here matches nothing.
- * No edit-time check exists yet (the ADR-037 backstop is a later step): the invalid-update test
- * records Foundry's own behaviour, which drops the rating silently.
+ * The batch stores the ADR-036 defaults as the world's game configuration while it runs and puts
+ * the stored one back afterwards. The sample data's kind, set and definition ids match nothing in
+ * it; the "edit-time checks" tests use the defaults' ids (ADR-037 backstop).
  * @module tests/quench/character
  */
 
 import CharacterData, { CHARACTER_SCHEMA_VERSION } from "../../module/data/actor/character.mjs";
+import { GAME_CONFIG_SETTING, getGameConfig } from "../../module/config/settings.mjs";
+import { defaultGameConfig } from "../../module/rules/index.mjs";
+
+// Ids from the ADR-036 defaults, which the batch stores as the world's configuration while it runs.
+const PC_KIND = "cpKindPlayerChar";
+const DISTINCTIONS = "cpSetDistinction";
+const SCENE_DISTINCTIONS = "cpSetSceneDistin";
+const SKILLS = "cpSetSkills00000";
+const FIGHT = "cpSkillFight0000";
 
 const FLAG_SCOPE = "cortex-prime";
 const FLAG_KEY = "quenchCharacter";
@@ -87,9 +96,16 @@ function sampleSystem() {
 export function registerCharacterBatch(quench) {
   quench.registerBatch(
     "cortex-prime.character",
-    ({ describe, it, assert, before, afterEach }) => {
-
-      before(deleteTestActors);
+    ({ describe, it, assert, before, after, afterEach }) => {
+      let storedConfig;
+      before(async () => {
+        storedConfig = getGameConfig();
+        await deleteTestActors();
+        await game.settings.set("cortex-prime", GAME_CONFIG_SETTING, defaultGameConfig());
+      });
+      after(async () => {
+        if ( storedConfig ) await game.settings.set("cortex-prime", GAME_CONFIG_SETTING, storedConfig);
+      });
       afterEach(deleteTestActors);
 
       describe("character actor type", () => {
@@ -166,7 +182,7 @@ export function registerCharacterBatch(quench) {
         it("keeps entry ids and defIds when a fixed entry's name snapshot is rewritten", async () => {
           // This proves only that rewriting the name snapshot an entry keeps leaves its ids and rating
           // alone. An actual definition rename in the game configuration (TS-E04) is not tested yet,
-          // because the game configuration doesn't exist yet.
+          // because this test uses ids the configuration doesn't have.
           const { system, setA } = sampleSystem();
           const actor = await createCharacter(foundry.utils.deepClone(system));
           const renamed = system.traits[setA].entries.map(e => ({ ...e, name: `${e.name} (renamed)` }));
@@ -178,7 +194,10 @@ export function registerCharacterBatch(quench) {
         });
 
         it("replacing one set's entries keeps the other sets, the kind and the free traits", async () => {
-          const { system, setA, setB } = sampleSystem();
+          const { system, setA } = sampleSystem();
+          // A set the configuration has, so the new entry passes the edit check (ADR-037 point 2).
+          const setB = SCENE_DISTINCTIONS;
+          system.traits[setB] = { entries: [{ id: newId(), defId: null, name: "Cult Survivor", dice: [8] }] };
           const actor = await createCharacter(foundry.utils.deepClone(system));
           const replacement = [{ id: newId(), defId: null, name: "Panicked Crowd", dice: [6, 6] }];
           await actor.update({ [`system.traits.${setB}.entries`]: replacement });
@@ -215,18 +234,17 @@ export function registerCharacterBatch(quench) {
           assert.equal(game.actors.size, before);
         });
 
-        it("drops an update with [7] without an error (no edit-time check exists yet)", async () => {
+        it("refuses an update with [7] visibly, and cancels the update as a whole (ADR-037 point 3)", async () => {
           const { system, setA } = sampleSystem();
           const actor = await createCharacter(foundry.utils.deepClone(system));
           const bad = system.traits[setA].entries.map((e, i) => (i === 0 ? { ...e, dice: [7] } : e));
 
-          // Only the rating changes: Foundry finds no valid change and skips the update.
           assert.isUndefined(await actor.update({ [`system.traits.${setA}.entries`]: bad }));
           assert.deepEqual(storedSystem(actor).traits[setA], system.traits[setA]);
 
-          // Together with a valid change: that change is saved, the rating is not.
+          // Together with a valid change: the backstop's refusal cancels both (ADR-037 consequences).
           await actor.update({ name: "[Quench] character renamed", [`system.traits.${setA}.entries`]: bad });
-          assert.equal(game.actors.get(actor.id).name, "[Quench] character renamed");
+          assert.equal(game.actors.get(actor.id).name, "[Quench] character");
           assert.deepEqual(storedSystem(actor).traits[setA], system.traits[setA]);
         });
 
@@ -247,6 +265,94 @@ export function registerCharacterBatch(quench) {
           assert.deepEqual(Object.keys(stored.traits), [setId]);
           assert.deepEqual(stored.traits[setId], { entries: [entry] });
           assert.notProperty(stored, "notInSchema");
+        });
+      });
+
+      describe("edit-time checks (ADR-037)", () => {
+        /** A PC of the default configuration with one distinction and Fight d6. */
+        const pcSystem = () => ({
+          kindId: PC_KIND,
+          traits: {
+            [DISTINCTIONS]: { entries: [{ id: newId(), defId: null, name: "Seasoned Smuggler", dice: [8] }] },
+            [SKILLS]: { entries: [{ id: newId(), defId: FIGHT, name: "Fight", dice: [6] }] }
+          },
+          freeTraits: []
+        });
+
+        it("accepts an edit that fits the configuration", async () => {
+          const system = pcSystem();
+          const actor = await createCharacter(foundry.utils.deepClone(system));
+          const entries = [{ ...system.traits[SKILLS].entries[0], dice: [8] }];
+          await actor.update({ [`system.traits.${SKILLS}.entries`]: entries });
+          assert.deepEqual(storedSystem(actor).traits[SKILLS].entries[0].dice, [8]);
+        });
+
+        it("refuses a second die in a one-die set, an unknown kind and an unknown definition", async () => {
+          const system = pcSystem();
+          const actor = await createCharacter(foundry.utils.deepClone(system));
+          const twoDice = [{ ...system.traits[DISTINCTIONS].entries[0], dice: [6, 6] }];
+          assert.isUndefined(await actor.update({ [`system.traits.${DISTINCTIONS}.entries`]: twoDice }));
+          assert.isUndefined(await actor.update({ "system.kindId": newId() }));
+          const unknownDef = [{ ...system.traits[SKILLS].entries[0], defId: newId() }];
+          assert.isUndefined(await actor.update({ [`system.traits.${SKILLS}.entries`]: unknownDef }));
+          assert.deepEqual(storedSystem(actor).traits, system.traits);
+          assert.equal(storedSystem(actor).kindId, PC_KIND);
+        });
+
+        it("TS-07 stores [6, 6] in the scene distinctions set", async () => {
+          const actor = await createCharacter({ traits: { [SCENE_DISTINCTIONS]: { entries: [] } } });
+          const entries = [{ id: newId(), defId: null, name: "Panicked Crowd", dice: [6, 6] }];
+          await actor.update({ [`system.traits.${SCENE_DISTINCTIONS}.entries`]: entries });
+          assert.deepEqual(storedSystem(actor).traits[SCENE_DISTINCTIONS].entries[0].dice, [6, 6]);
+        });
+
+        it("lets an unrelated edit through on an actor holding a conflicting rating (point 5)", async () => {
+          const system = pcSystem();
+          system.traits[DISTINCTIONS].entries[0].dice = [6, 6]; // created that way: creation is loading
+          const actor = await createCharacter(foundry.utils.deepClone(system));
+          const entries = [{ ...system.traits[SKILLS].entries[0], dice: [10] }];
+          await actor.update({ name: "[Quench] still editable", [`system.traits.${SKILLS}.entries`]: entries });
+          assert.equal(game.actors.get(actor.id).name, "[Quench] still editable");
+          assert.deepEqual(storedSystem(actor).traits[DISTINCTIONS].entries[0].dice, [6, 6]);
+        });
+
+        it("imports conflicting data from JSON, a replacing update, without the edit check (point 4)", async () => {
+          const system = pcSystem();
+          system.traits[DISTINCTIONS].entries[0].dice = [6, 6];
+          system.kindId = newId();
+          const actor = await createCharacter(pcSystem());
+          const json = JSON.stringify({ ...actor.toObject(), system });
+          await actor.importFromJSON(json);
+          assert.equal(storedSystem(actor).kindId, system.kindId);
+          assert.deepEqual(storedSystem(actor).traits[DISTINCTIONS].entries[0].dice, [6, 6]);
+        });
+
+        it("refuses the same edits on an unlinked token's actor, and restoring its delta still works", async () => {
+          const system = pcSystem();
+          system.traits[DISTINCTIONS].entries[0].dice = [6, 6]; // a conflict on the base actor
+          const actor = await createCharacter(foundry.utils.deepClone(system));
+          await actor.update({ "prototypeToken.actorLink": false });
+          const scene = await getDocumentClass("Scene").create({ name: "[Quench] character tokens" });
+          try {
+            const tokenData = (await actor.getTokenDocument({ x: 0, y: 0 })).toObject();
+            const [token] = await scene.createEmbeddedDocuments("Token", [tokenData]);
+            // An unknown definition passes the schema, so only the backstop can refuse it; the name
+            // change sent with it must be cancelled too.
+            const bad = [{ ...system.traits[SKILLS].entries[0], defId: newId() }];
+            await token.actor.update({ name: "[Quench] token renamed", [`system.traits.${SKILLS}.entries`]: bad });
+            assert.notEqual(token.actor.name, "[Quench] token renamed");
+            assert.equal(token.actor.system.toObject().traits[SKILLS].entries[0].defId, FIGHT);
+            // The delta repairs the conflicting distinction; restoring it brings the base's [6, 6]
+            // back, which the restore's pre-update must not refuse.
+            const repaired = [{ ...system.traits[DISTINCTIONS].entries[0], dice: [8] }];
+            await token.actor.update({ [`system.traits.${DISTINCTIONS}.entries`]: repaired });
+            assert.deepEqual(token.actor.system.toObject().traits[DISTINCTIONS].entries[0].dice, [8]);
+            await token.delta.restore();
+            assert.deepEqual(token.actor.system.toObject().traits[DISTINCTIONS].entries[0].dice, [6, 6]);
+          }
+          finally {
+            await scene.delete();
+          }
         });
       });
     },
