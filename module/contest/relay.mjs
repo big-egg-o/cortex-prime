@@ -90,12 +90,15 @@ export function handleContestQuery(request, { user }) {
 
 /**
  * The record of a contest message that the pure checks read (contest-request.mjs ContestRecord),
- * or null when the id names no contest message.
+ * or null when the id names no contest message a GM wrote. Only the GM's client writes contest
+ * messages, as a GM (ADR-027, Step 4.4 proposal review), so one a player wrote is ignored: its
+ * author could have changed it directly, past every check.
  * @param {ChatMessage|undefined} message
  * @returns {{record: object, system: object}|null}
  */
 function contestRecordOf(message) {
   if ( message?.type !== "contest" ) return null;
+  if ( message.author?.isGM !== true ) return null;
   const system = message.system.toObject();
   const state = engineStateOf(system.flow);
   if ( !state.ok ) return null;

@@ -28,15 +28,20 @@ export function registerContestRelayBatch(quench) {
         if ( ids.length ) await ChatMessage.implementation.deleteDocuments(ids);
       });
 
-      /** A contest between p1 (initiator) and the GM's side, created by this GM. */
-      async function contest() {
+      /**
+       * A contest between p1 (initiator) and the GM's side, created by this GM, or with another
+       * user as its author when one is given.
+       */
+      async function contest(author) {
         const state = createContest().value;
         const sides = [
           { key: "initiator", userId: p1.id, actorUuid: null, label: "P1" },
           { key: "opposition", userId: null, actorUuid: null, label: "GM" }
         ];
         const system = initialSystem({ type: "contest", state, startedBy: game.user.id, sides }).value;
-        const message = await ChatMessage.implementation.create({ type: "contest", system });
+        const data = { type: "contest", system };
+        if ( author ) data.author = author.id;
+        const message = await ChatMessage.implementation.create(data);
         tracked.push(message);
         return message;
       }
@@ -97,6 +102,17 @@ export function registerContestRelayBatch(quench) {
         const byGM = await sendContestRequest({ action: "set-high-stakes", messageId: message.id, revision: 0, payload: { highStakes: true } });
         assert.isTrue(byGM.ok, byGM.code);
         assert.isTrue(message.system.flow.highStakes);
+      });
+
+      it("ignores a contest message a player wrote, which only a GM may author (ADR-027)", async function() {
+        needPlayers(this);
+        const message = await contest(p1);
+        assert.equal(message.author, p1);
+        const request = { action: "add-roll", messageId: message.id, revision: 0, payload: { total: 11 } };
+        assert.deepEqual(await handleContestQuery(request, { user: p1 }), { ok: false, code: "CONTEST_NOT_FOUND" });
+        assert.deepEqual(await sendContestRequest({ ...request, payload: { total: 9 } }), { ok: false, code: "CONTEST_NOT_FOUND" });
+        assert.equal(message.system.revision, 0);
+        assert.lengthOf(message.system.flow.rolls, 0);
       });
 
       it("answers a request for a message that isn't a contest", async () => {
