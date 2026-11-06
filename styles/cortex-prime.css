@@ -112,6 +112,19 @@
 }
 
 /* ---------------------------------------- */
+/*  game-config (ApplicationV2 window)      */
+/* ---------------------------------------- */
+
+/* The body scrolls so the footer's Save button stays in view. */
+.cortex-prime.game-config .window-content .cp-config-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 0.75rem;
+  min-height: 0;
+}
+
+/* ---------------------------------------- */
 /*  pool-builder (ApplicationV2 window)     */
 /* ---------------------------------------- */
 

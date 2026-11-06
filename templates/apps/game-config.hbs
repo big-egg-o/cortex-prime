@@ -1,4 +1,4 @@
-<div class="cp-config-body">
+<div class="cp-config-body scrollable">
   <p class="hint">{{ localize "CORTEX.Config.Intro" }}</p>
   {{#each generalErrors}}<p class="notification error">{{ localize (concat "CORTEX.Config.Errors." this) }}</p>{{/each}}
 
@@ -124,7 +124,3 @@
   {{/each}}
   <button type="button" data-action="addKind"><i class="fa-solid fa-plus" inert></i><span>{{ localize "CORTEX.Config.AddKind" }}</span></button>
 </div>
-<footer class="form-footer">
-  <button type="button" data-action="resetDefaults"><i class="fa-solid fa-rotate-left" inert></i><span>{{ localize "CORTEX.Config.ResetDefaults" }}</span></button>
-  <button type="button" data-action="save" {{#unless isGM}}disabled{{/unless}}><i class="fa-solid fa-floppy-disk" inert></i><span>{{ localize "CORTEX.Config.Save" }}</span></button>
-</footer>

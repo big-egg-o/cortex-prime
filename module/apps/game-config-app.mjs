@@ -53,7 +53,8 @@ export default class GameConfigApp extends HandlebarsApplicationMixin(Applicatio
 
   /** @override */
   static PARTS = {
-    body: { template: TEMPLATE, scrollable: [""] }
+    body: { template: TEMPLATE, scrollable: [""] },
+    footer: { template: "templates/generic/form-footer.hbs" }
   };
 
   /** The draft being edited; read from the world setting when the app opens. */
@@ -68,7 +69,11 @@ export default class GameConfigApp extends HandlebarsApplicationMixin(Applicatio
     const draft = this.#draft;
     const errors = this.#errors;
     const sizes = DIE_SIZES.map(size => ({ value: size, label: `d${size}` }));
-    context.isGM = game.user.isGM;
+    context.buttons = [
+      { type: "button", action: "resetDefaults", icon: "fa-solid fa-rotate-left", label: "CORTEX.Config.ResetDefaults" },
+      { type: "button", action: "save", icon: "fa-solid fa-floppy-disk", label: "CORTEX.Config.Save",
+        disabled: !game.user.isGM }
+    ];
     context.roles = TRAIT_SET_ROLES.map(value => ({ value, label: `CORTEX.Config.Role.${value}` }));
     context.lists = TRAIT_SET_LISTS.map(value => ({ value, label: `CORTEX.Config.List.${value}` }));
     context.extraTraitRules = EXTRA_TRAIT_RULES.map(value => ({ value, label: `CORTEX.Config.ExtraTraits.${value}` }));
