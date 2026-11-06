@@ -28,7 +28,7 @@ export const TRAIT_SET_FEATURES = Object.freeze([
   "description", "sfx", "statements", "tags", "subTraits", "hinder", "setSfx", "shutDown"
 ]);
 
-/** The fewest sets in the prime role a game has (rule 7; Handbook p. 26, p. 47). */
+/** The fewest sets in the prime role the Handbook advises (rule 7; Handbook p. 26, p. 47; ADR-041). */
 const MIN_PRIME_SETS = 2;
 
 const ID_PATTERN = /^[a-zA-Z0-9]{16}$/;
@@ -172,34 +172,40 @@ function checkActorKind(kind, path, setIds, report, claimId) {
 }
 
 /**
- * Checks a game configuration (ADR-030). Refused is data that can't work: a malformed shape,
- * an id that isn't 16 letters or digits or is used twice anywhere in the configuration, a value
+ * Checks a game configuration (ADR-030). Errors are data that can't work: a malformed shape, an
+ * id that isn't 16 letters or digits or is used twice anywhere in the configuration, a value
  * outside its choices, a die size that doesn't exist (TS-E01), a usual range whose minimum is
  * above its maximum, and an actor kind that names a set the configuration doesn't have (a broken
- * reference, ADR-029 point 2; removeTraitSet takes a removed set out of the kinds as well). Last,
- * the configuration must have a set in the distinctions role and at least two in the prime role
- * (rule 7, rule 10; Handbook p. 26, p. 47). A set that takes the place of distinctions as the
- * game's equivalent descriptive set (p. 26) has the distinctions role too.
+ * reference, ADR-029 point 2; removeTraitSet takes a removed set out of the kinds as well).
  *
- * The result is an EngineResult whose code is the first problem; like validateSelection it also
- * lists every problem in `errors`, for the GM's configuration form (the spec's `{ ok, errors }`;
- * empty on success). Guidance (usual range, starting rating) is only checked for being dice,
- * never against a trait's rating, and a set without dice may keep it unused. Fields it doesn't
- * know are kept and features it doesn't know are ignored, so a later version can add some. The
- * checks run on a copy, which is what is returned. Pure: no Foundry, and it never changes its
- * input.
+ * The Handbook's advice on which sets a game has is guidance, shown and not enforced (ADR-041):
+ * no set in the distinctions role warns DISTINCTIONS_SET_MISSING (Statements as Distinction
+ * Alternates (MOD), p. 66, is one design without such a set), and fewer than two sets in the
+ * prime role warns PRIME_SETS_TOO_FEW (rule 7; Handbook p. 26, p. 47). A set that takes the
+ * place of distinctions as the game's equivalent descriptive set (p. 26) has the distinctions
+ * role too. Every set with a role counts, even one that has errors of its own.
+ *
+ * Uses the ADR-042 variant of the EngineResult (ADR-025): it lists every problem for the GM's
+ * configuration form, and `code` is the first error. `errors` and `warnings` are separate lists
+ * of `{code, path}`; `warnings` is there in both outcomes and never affects `ok`. Guidance (usual
+ * range, starting rating) is only checked for being dice, never against a trait's rating, and a
+ * set without dice may keep it unused. Fields it doesn't know are kept and features it doesn't
+ * know are ignored, so a later version can add some. The checks run on a copy, which is what is
+ * returned. Pure: no Foundry, and it never changes its input.
  * @param {unknown} input - the configuration to check
- * @returns {{ok: true, value: import("./types.mjs").GameConfig, errors: []}
- *   | {ok: false, code: string, errors: {code: string, path: string}[]}} paths name the field,
- *   e.g. "traitSets.2.usualMin". Codes: INVALID_GAME_CONFIG (the top level isn't an object with
- *   a whole-number schemaVersion from 1 and lists of traitSets and actorKinds) and
+ * @returns {{ok: true, value: import("./types.mjs").GameConfig, errors: [],
+ *   warnings: {code: string, path: string}[]}
+ *   | {ok: false, code: string, errors: {code: string, path: string}[],
+ *   warnings: {code: string, path: string}[]}} paths name the field, e.g.
+ *   "traitSets.2.usualMin". Errors: INVALID_GAME_CONFIG (the top level isn't an object with a
+ *   whole-number schemaVersion from 1 and lists of traitSets and actorKinds) and
  *   SCHEMA_VERSION_TOO_NEW (a schemaVersion above GAME_CONFIG_SCHEMA_VERSION), each reported
- *   alone; otherwise INVALID_TRAIT_SET, INVALID_TRAIT_DEFINITION, INVALID_ACTOR_KIND,
- *   INVALID_DIE_SIZE, DUPLICATE_CONFIG_ID, UNKNOWN_TRAIT_SET, then DISTINCTIONS_SET_MISSING and
- *   PRIME_SETS_TOO_FEW
+ *   alone and with no warnings; otherwise INVALID_TRAIT_SET, INVALID_TRAIT_DEFINITION,
+ *   INVALID_ACTOR_KIND, INVALID_DIE_SIZE, DUPLICATE_CONFIG_ID and UNKNOWN_TRAIT_SET. Warnings, in
+ *   this order: DISTINCTIONS_SET_MISSING, PRIME_SETS_TOO_FEW
  */
 export function validateGameConfig(input) {
-  const alone = (code, path) => ({ ok: false, code, errors: [{ code, path }] });
+  const alone = (code, path) => ({ ok: false, code, errors: [{ code, path }], warnings: [] });
   if ( !isPlainObject(input) ) return alone("INVALID_GAME_CONFIG", "");
   const config = copyPlain(input);
   if ( !Number.isInteger(config.schemaVersion) || (config.schemaVersion < 1) ) {
@@ -222,12 +228,13 @@ export function validateGameConfig(input) {
   const setIds = new Set(config.traitSets.filter(set => isPlainObject(set) && isId(set.id)).map(set => set.id));
   config.actorKinds.forEach((kind, i) => checkActorKind(kind, `actorKinds.${i}`, setIds, report, claimId));
 
+  const warnings = [];
   const roleCount = role => config.traitSets.filter(set => isPlainObject(set) && (set.role === role)).length;
-  if ( roleCount("distinctions") === 0 ) report("DISTINCTIONS_SET_MISSING", "traitSets");
-  if ( roleCount("prime") < MIN_PRIME_SETS ) report("PRIME_SETS_TOO_FEW", "traitSets");
+  if ( roleCount("distinctions") === 0 ) warnings.push({ code: "DISTINCTIONS_SET_MISSING", path: "traitSets" });
+  if ( roleCount("prime") < MIN_PRIME_SETS ) warnings.push({ code: "PRIME_SETS_TOO_FEW", path: "traitSets" });
 
-  if ( errors.length ) return { ok: false, code: errors[0].code, errors };
-  return { ok: true, value: config, errors: [] };
+  if ( errors.length ) return { ok: false, code: errors[0].code, errors, warnings };
+  return { ok: true, value: config, errors: [], warnings };
 }
 
 /**
@@ -304,28 +311,31 @@ function features(...on) {
 }
 
 /**
- * The configuration a new world starts with (ADR-036): distinctions, plus attributes and skills
- * as the two prime sets, the pairing the Handbook's examples use (p. 26). The trait names are
- * short single words picked for this system, several of them the same as the Handbook's own
- * examples, and there are no descriptions. Ids are fixed, so every world's defaults share them.
+ * The configuration a new world starts with (ADR-036 as amended by ADR-040): distinctions, plus
+ * attributes and skills as the two prime sets, the pairing the Handbook's examples use (p. 26).
+ * Trait names are plain single words of our own choosing (ADR-040 point 3): a name may be a word
+ * the Handbook also uses, but no Handbook list is reproduced as a whole and no Handbook
+ * description is used; the definitions have no descriptions. Ids are fixed, so every world's
+ * defaults share them.
  *
  * - Distinctions: an open list, one die each, d8 to start (rule 10, p. 50), with Hinder and
  *   SFX (rule 11, p. 50, p. 61) and a short descriptive line (rule 13).
- * - Attributes: Physical, Mental and Social, the three broad areas the attributes section names
- *   (pp. 48-49); d8 to start, d6 to d10 as guidance (pp. 48-49); a d4 fallback, as for any prime
- *   set with no rating noted (p. 47).
+ * - Attributes: Physical, Mental and Social; d8 to start, d6 to d10 as guidance (pp. 48-49); a
+ *   d4 fallback, as for any prime set with no rating noted (p. 47).
  * - Skills: twelve skills; d4 to start, d4 to d12 as guidance, and a d4 fallback, since everyone
  *   has at least d4 in each skill (p. 58).
- * - Scene distinctions: a location's distinctions, in their own open set that allows several
- *   dice, so a scene distinction an SFX splits into two dice can be stored (TS-07; p. 116;
- *   ADR-037 consequences). Hinder is on, as for any distinction (p. 116). Its role is "other":
- *   it belongs to locations and doesn't take the place of the characters' distinctions.
+ * - Scene distinctions: a location's distinctions, in their own open set (RQ-031) that allows
+ *   several dice, so a scene distinction an SFX splits into two dice can be stored (TS-07;
+ *   p. 116; ADR-037 consequences). Hinder and SFX are on, as for any distinction (p. 116). Its
+ *   role is "other": it belongs to locations and doesn't take the place of the characters'
+ *   distinctions.
  * - Mob trait: an open set whose ratings are several dice of one size, so a mixed rating is
  *   refused when edited (rule 22, p. 117; TS-E02).
  * - Kinds: PC; major GMC, which uses the PC's sets (p. 114); minor GMC, free traits only
  *   (p. 115); mob, with the mob trait and free traits for what its members share (p. 117);
  *   location, with scene distinctions and free traits (p. 116). Extras and bosses can use the
- *   minor GMC kind (pp. 115, 118) until a GM adds kinds.
+ *   minor GMC kind (pp. 115, 118) until a GM adds kinds; free traits belong to no set, so they
+ *   can hold several dice, as a boss's trait does (p. 118).
  *
  * Every set allows further traits for a plot point (rule 6) and offers the shut-down flag
  * (rule 15). Rating guidance is a hint on the sheet, never a refusal (rule 9).

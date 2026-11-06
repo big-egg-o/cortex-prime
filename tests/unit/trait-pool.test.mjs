@@ -9,6 +9,8 @@ const SKILLS = "cpSetSkills00000";
 const PC = "cpKindPlayerChar";
 const MINOR = "cpKindMinorGmc00";
 const ACTOR = "actor00000000001";
+const OTHER_ACTOR = "actor00000000002";
+const LOCATION = "location00000001";
 
 /** A set like the defaults' with the given fields changed. */
 function setWith(id, fields) {
@@ -131,10 +133,34 @@ describe("traitPoolEntries (rules 11, 16)", () => {
     expect(buildPool(result.value).map(d => d.size)).toEqual([4]);
   });
 
-  it("PROVISIONAL (Hinder on a rating other than one d8): one d4 and one PP (rule 11's M5 question)", () => {
-    expect(traitPoolEntries(trait([6, 6]), { hinder: true }).value.map(e => [e.size, e.ppGained])).toEqual([[4, 1]]);
-    expect(traitPoolEntries(trait([12]), { hinder: true }).value.map(e => [e.size, e.ppGained])).toEqual([[4, 1]]);
-    expect(traitPoolEntries(trait([4]), { hinder: true }).value.map(e => [e.size, e.ppGained])).toEqual([[4, 1]]);
+  it("RQ-029 Hinder turns any one die from d6 to d12 into one d4 and gains 1 PP", () => {
+    for ( const size of [6, 8, 10, 12] ) {
+      expect(traitPoolEntries(trait([size]), { hinder: true }).value)
+        .toEqual([{ size: 4, source: expect.objectContaining({ kind: "trait" }), ppGained: 1 }]);
+    }
+  });
+
+  it("RQ-029 Hinder turns a split rating such as d6 d6 into one d4 and gains 1 PP", () => {
+    for ( const dice of [[6, 6], [6, 8], [4, 4], [6, 6, 6, 6]] ) {
+      expect(traitPoolEntries(trait(dice), { hinder: true }).value)
+        .toEqual([{ size: 4, source: expect.objectContaining({ kind: "trait" }), ppGained: 1 }]);
+    }
+  });
+
+  it("RQ-029 Hinder on a trait rated d4 keeps the d4, gains no PP and gives the hint HINDER_ALREADY_D4", () => {
+    expect(traitPoolEntries(trait([4]), { hinder: true }).value)
+      .toEqual([{ size: 4, source: expect.objectContaining({ kind: "trait" }), ppGained: 0, hint: "HINDER_ALREADY_D4" }]);
+    expect(traitPoolEntries(trait([4], { isFallback: true }), { hinder: true }).value).toEqual([{
+      size: 4, source: expect.objectContaining({ kind: "trait" }), ppGained: 0, hint: "HINDER_ALREADY_D4", isFallback: true
+    }]);
+  });
+
+  it("RQ-029 Hinder changes only the roll, never the stored rating", () => {
+    const dice = Object.freeze([10]);
+    const input = Object.freeze(trait(dice));
+    expect(traitPoolEntries(input, { hinder: true }).value.map(e => e.size)).toEqual([4]);
+    expect(input.dice).toBe(dice);
+    expect(dice).toEqual([10]);
   });
 
   it("TS-03 a fallback die is marked", () => {
@@ -162,7 +188,7 @@ describe("traitPoolEntries (rules 11, 16)", () => {
     expect(traitPoolEntries(trait([6, 8]), { challenge: true }).value.map(e => e.size)).toEqual([6, 6, 6, 8, 8, 8]);
   });
 
-  it("refuses Hinder together with a challenged statement for now: no rule combines them (parked question)", () => {
+  it("refuses Hinder together with a challenged statement until RQ-032 is decided", () => {
     expect(traitPoolEntries(trait([8]), { hinder: true, challenge: true })).toEqual(refused("TRAIT_OPTIONS_CONFLICT"));
   });
 
@@ -194,7 +220,7 @@ describe("traitPoolEntries (rules 11, 16)", () => {
   });
 });
 
-describe("poolTraitCost (rules 6, 7, 15; RQ-019, RQ-020, ADR-029)", () => {
+describe("poolTraitCost (rules 6, 7, 15; RQ-019, RQ-020, RQ-030, RQ-031, ADR-029)", () => {
   const distinction = pick(DISTINCTIONS, "dist000000000001");
   const physical = pick(ATTRIBUTES, "attr000000000001");
   const fight = pick(SKILLS, "fight00000000001");
@@ -203,35 +229,49 @@ describe("poolTraitCost (rules 6, 7, 15; RQ-019, RQ-020, ADR-029)", () => {
 
   it("TS-08 one trait from each set costs nothing and warns of nothing", () => {
     expect(poolTraitCost([distinction, physical, fight], defaultGameConfig(), PC))
-      .toEqual({ ok: true, value: { ppCost: 0, extraTraits: [], warnings: [] } });
+      .toEqual({ ok: true, value: { ppCost: 0, extraTraits: [], unpricedTraits: [], warnings: [] } });
   });
 
   it("TS-09 a second skill costs 1 PP", () => {
     expect(poolTraitCost([distinction, physical, fight, shoot], defaultGameConfig(), PC).value)
-      .toEqual({ ppCost: 1, extraTraits: [{ setId: SKILLS, count: 1 }], warnings: [] });
+      .toEqual({ ppCost: 1, extraTraits: [{ setId: SKILLS, count: 1 }], unpricedTraits: [], warnings: [] });
   });
 
   it("TS-09b three skills cost 2 PP (RQ-019)", () => {
     expect(poolTraitCost([distinction, physical, fight, shoot, throwing], defaultGameConfig(), PC).value)
-      .toEqual({ ppCost: 2, extraTraits: [{ setId: SKILLS, count: 2 }], warnings: [] });
+      .toEqual({ ppCost: 2, extraTraits: [{ setId: SKILLS, count: 2 }], unpricedTraits: [], warnings: [] });
   });
 
-  it("TS-10 a set whose game allows no extra traits warns and refuses nothing; PROVISIONAL: still priced at 1 PP", () => {
+  it("TS-10 a set whose game allows no extra traits warns and refuses nothing; the extra trait has no price (RQ-030)", () => {
     const config = defaultGameConfig();
     traitSetById(config, SKILLS).extraTraits = "none";
     expect(poolTraitCost([fight, shoot], config, MINOR)).toEqual({
       ok: true,
       value: {
-        ppCost: 1,
-        extraTraits: [{ setId: SKILLS, count: 1 }],
+        ppCost: 0,
+        extraTraits: [],
+        unpricedTraits: [{ setId: SKILLS, count: 1 }],
         warnings: [{ code: "EXTRA_TRAIT_NOT_ALLOWED", setId: SKILLS }]
       }
     });
   });
 
+  it("RQ-030 counts every unpriced trait by set and still prices extra traits of the other sets", () => {
+    const config = defaultGameConfig();
+    traitSetById(config, SKILLS).extraTraits = "none";
+    const second = pick(DISTINCTIONS, "dist000000000002");
+    expect(poolTraitCost([distinction, second, physical, fight, shoot, throwing], config, PC).value).toEqual({
+      ppCost: 1,
+      extraTraits: [{ setId: DISTINCTIONS, count: 1 }],
+      unpricedTraits: [{ setId: SKILLS, count: 2 }],
+      warnings: [{ code: "EXTRA_TRAIT_NOT_ALLOWED", setId: SKILLS }]
+    });
+  });
+
   it("TS-11 one power from each of two power sets costs nothing", () => {
     const powers = [pick("cpSetPowersFire0", "fire000000000001"), pick("cpSetPowersFlyin", "flight0000000001")];
-    expect(poolTraitCost(powers, configWithPowers(), MINOR).value).toEqual({ ppCost: 0, extraTraits: [], warnings: [] });
+    expect(poolTraitCost(powers, configWithPowers(), MINOR).value)
+      .toEqual({ ppCost: 0, extraTraits: [], unpricedTraits: [], warnings: [] });
   });
 
   it("TS-12 powers from a shut-down set warn once and are still counted", () => {
@@ -240,6 +280,7 @@ describe("poolTraitCost (rules 6, 7, 15; RQ-019, RQ-020, ADR-029)", () => {
     expect(poolTraitCost([power, second], configWithPowers(), MINOR).value).toEqual({
       ppCost: 1,
       extraTraits: [{ setId: "cpSetPowersFire0", count: 1 }],
+      unpricedTraits: [],
       warnings: [{ code: "TRAIT_SET_SHUT_DOWN", setId: "cpSetPowersFire0" }]
     });
   });
@@ -280,7 +321,8 @@ describe("poolTraitCost (rules 6, 7, 15; RQ-019, RQ-020, ADR-029)", () => {
 
   it("TS-22 free traits belong to no set, so there is no one-per-set cost between them", () => {
     const free = ["lawman0000000001", "outofshape000001", "shotgun000000001"].map(id => pick(null, id));
-    expect(poolTraitCost(free, defaultGameConfig(), MINOR).value).toEqual({ ppCost: 0, extraTraits: [], warnings: [] });
+    expect(poolTraitCost(free, defaultGameConfig(), MINOR).value)
+      .toEqual({ ppCost: 0, extraTraits: [], unpricedTraits: [], warnings: [] });
   });
 
   it("TS-E05 the same trait twice is not a second trait from its set", () => {
@@ -292,7 +334,7 @@ describe("poolTraitCost (rules 6, 7, 15; RQ-019, RQ-020, ADR-029)", () => {
     const second = pick(DISTINCTIONS, "dist000000000002");
     expect(poolTraitCost([hindered, physical, fight], defaultGameConfig(), PC).value.ppCost).toBe(0);
     expect(poolTraitCost([hindered, second, physical, fight], defaultGameConfig(), PC).value)
-      .toEqual({ ppCost: 1, extraTraits: [{ setId: DISTINCTIONS, count: 1 }], warnings: [] });
+      .toEqual({ ppCost: 1, extraTraits: [{ setId: DISTINCTIONS, count: 1 }], unpricedTraits: [], warnings: [] });
   });
 
   it("warns TRAIT_ORPHANED for traits of a set the configuration no longer has, and doesn't count them (ADR-037 point 6)", () => {
@@ -300,6 +342,7 @@ describe("poolTraitCost (rules 6, 7, 15; RQ-019, RQ-020, ADR-029)", () => {
     expect(poolTraitCost(orphans, defaultGameConfig(), MINOR).value).toEqual({
       ppCost: 0,
       extraTraits: [],
+      unpricedTraits: [],
       warnings: [
         { code: "TRAIT_ORPHANED", setId: "goneSet000000001", traitId: "old0000000000001" },
         { code: "TRAIT_ORPHANED", setId: "goneSet000000001", traitId: "old0000000000002" }
@@ -307,11 +350,42 @@ describe("poolTraitCost (rules 6, 7, 15; RQ-019, RQ-020, ADR-029)", () => {
     });
   });
 
-  it("PROVISIONAL (shared traits): counts by set id alone, so a scene distinction next to a character's distinction is free", () => {
-    const scene = pick("cpSetSceneDistin", "crowd00000000001");
-    const another = pick("cpSetSceneDistin", "market0000000001");
-    expect(poolTraitCost([distinction, scene, physical, fight], defaultGameConfig(), PC).value.ppCost).toBe(0);
-    expect(poolTraitCost([distinction, scene, another, physical, fight], defaultGameConfig(), PC).value.ppCost).toBe(1);
+  it("RQ-031 counts by set: one scene distinction beside a character's own distinction is free, a second costs 1 PP", () => {
+    const scene = pick("cpSetSceneDistin", "crowd00000000001", { actorId: LOCATION });
+    const another = pick("cpSetSceneDistin", "market0000000001", { actorId: LOCATION });
+    const own = { ...distinction, actorId: ACTOR };
+    expect(poolTraitCost([own, scene, physical, fight], defaultGameConfig(), PC).value.ppCost).toBe(0);
+    expect(poolTraitCost([own, scene, another, physical, fight], defaultGameConfig(), PC).value).toEqual({
+      ppCost: 1, extraTraits: [{ setId: "cpSetSceneDistin", count: 1 }], unpricedTraits: [], warnings: []
+    });
+  });
+
+  it("RQ-031 counts traits of two actors that share a trait id as two traits", () => {
+    const mine = pick(SKILLS, "fight00000000001", { actorId: ACTOR });
+    const theirs = pick(SKILLS, "fight00000000001", { actorId: OTHER_ACTOR });
+    expect(poolTraitCost([mine, theirs], defaultGameConfig(), MINOR).value)
+      .toEqual({ ppCost: 1, extraTraits: [{ setId: SKILLS, count: 1 }], unpricedTraits: [], warnings: [] });
+    expect(poolTraitCost([mine, { ...mine }], defaultGameConfig(), MINOR).value.ppCost).toBe(0);
+  });
+
+  it("RQ-031 never charges free traits, whichever actor they come from", () => {
+    const own = pick(null, "shotgun000000001", { actorId: ACTOR });
+    const location = ["fog0000000000001", "rubble0000000001"].map(id => pick(null, id, { actorId: LOCATION }));
+    expect(poolTraitCost([distinction, physical, fight, own, ...location], defaultGameConfig(), PC).value)
+      .toEqual({ ppCost: 0, extraTraits: [], unpricedTraits: [], warnings: [] });
+  });
+
+  it("RQ-031 warns for each actor's shut-down or orphaned trait, naming the actor, when two share a trait id", () => {
+    const mine = pick(SKILLS, "fight00000000001", { actorId: ACTOR, traitShutDown: true });
+    const theirs = pick(SKILLS, "fight00000000001", { actorId: OTHER_ACTOR, traitShutDown: true });
+    const goneMine = pick("goneSet000000001", "old0000000000001", { actorId: ACTOR });
+    const goneTheirs = pick("goneSet000000001", "old0000000000001", { actorId: OTHER_ACTOR });
+    expect(poolTraitCost([mine, theirs, mine, goneMine, goneTheirs], defaultGameConfig(), MINOR).value.warnings).toEqual([
+      { code: "TRAIT_SHUT_DOWN", setId: SKILLS, actorId: ACTOR, traitId: "fight00000000001" },
+      { code: "TRAIT_SHUT_DOWN", setId: SKILLS, actorId: OTHER_ACTOR, traitId: "fight00000000001" },
+      { code: "TRAIT_ORPHANED", setId: "goneSet000000001", actorId: ACTOR, traitId: "old0000000000001" },
+      { code: "TRAIT_ORPHANED", setId: "goneSet000000001", actorId: OTHER_ACTOR, traitId: "old0000000000001" }
+    ]);
   });
 
   it("orders warnings: shut-down set and trait by pool order, then extra traits, then missing prime sets", () => {
@@ -335,6 +409,7 @@ describe("poolTraitCost (rules 6, 7, 15; RQ-019, RQ-020, ADR-029)", () => {
     expect(poolTraitCost(null, defaultGameConfig(), PC)).toEqual(refused("INVALID_TRAIT_DATA"));
     expect(poolTraitCost([{ setId: 5, traitId: "x" }], defaultGameConfig(), PC)).toEqual(refused("INVALID_TRAIT_DATA"));
     expect(poolTraitCost([{ ...fight, setShutDown: "false" }], defaultGameConfig(), PC)).toEqual(refused("INVALID_TRAIT_DATA"));
+    expect(poolTraitCost([{ ...fight, actorId: 7 }], defaultGameConfig(), PC)).toEqual(refused("INVALID_TRAIT_DATA"));
     expect(poolTraitCost([fight], { traitSets: [null], actorKinds: [] }, PC).ok).toBe(true);
     expect(poolTraitCost([fight], {}, PC)).toEqual(refused("INVALID_GAME_CONFIG"));
   });

@@ -56,11 +56,11 @@ function codes(result) {
   return result.errors.map(e => e.code);
 }
 
-describe("validateGameConfig (ADR-030)", () => {
+describe("validateGameConfig (ADR-030, ADR-041, ADR-042)", () => {
   it("accepts a configuration with distinctions and two prime sets, returning a copy", () => {
     const config = smallConfig();
     const result = validateGameConfig(config);
-    expect(result).toEqual({ ok: true, value: config, errors: [] });
+    expect(result).toEqual({ ok: true, value: config, errors: [], warnings: [] });
     expect(result.value).not.toBe(config);
     expect(result.value.traitSets[1].traits).not.toBe(config.traitSets[1].traits);
   });
@@ -71,6 +71,7 @@ describe("validateGameConfig (ADR-030)", () => {
       expect(result.ok).toBe(false);
       expect(result.code).toBe("INVALID_GAME_CONFIG");
       expect(result.errors).toEqual([{ code: "INVALID_GAME_CONFIG", path: "" }]);
+      expect(result.warnings).toEqual([]);
     }
   });
 
@@ -83,7 +84,9 @@ describe("validateGameConfig (ADR-030)", () => {
 
   it("refuses a schema version above the one this code knows, and stops there", () => {
     expect(validateGameConfig({ ...smallConfig(), schemaVersion: GAME_CONFIG_SCHEMA_VERSION + 1 }))
-      .toEqual({ ok: false, code: "SCHEMA_VERSION_TOO_NEW", errors: [{ code: "SCHEMA_VERSION_TOO_NEW", path: "schemaVersion" }] });
+      .toEqual({
+        ok: false, code: "SCHEMA_VERSION_TOO_NEW", errors: [{ code: "SCHEMA_VERSION_TOO_NEW", path: "schemaVersion" }], warnings: []
+      });
   });
 
   it("refuses trait sets or actor kinds that aren't lists", () => {
@@ -168,13 +171,14 @@ describe("validateGameConfig (ADR-030)", () => {
     config.traitSets[0].role = "prime set";
     config.traitSets[1].list = "closed";
     config.traitSets[2].extraTraits = "free";
-    expect(validateGameConfig(config).errors).toEqual([
+    const result = validateGameConfig(config);
+    expect(result.errors).toEqual([
       { code: "INVALID_TRAIT_SET", path: "traitSets.0.role" },
       { code: "INVALID_TRAIT_SET", path: "traitSets.1.list" },
-      { code: "INVALID_TRAIT_SET", path: "traitSets.2.extraTraits" },
-      // with its role gone, no set fills the distinctions role
-      { code: "DISTINCTIONS_SET_MISSING", path: "traitSets" }
+      { code: "INVALID_TRAIT_SET", path: "traitSets.2.extraTraits" }
     ]);
+    // with its role gone, no set fills the distinctions role
+    expect(result.warnings).toEqual([{ code: "DISTINCTIONS_SET_MISSING", path: "traitSets" }]);
   });
 
   it("refuses a fixed set without a list of definitions, and an open set with definitions (ADR-034)", () => {
@@ -346,23 +350,56 @@ describe("validateGameConfig (ADR-030)", () => {
     expect(validateGameConfig({ ...smallConfig(), actorKinds: [] }).ok).toBe(true);
   });
 
-  it("refuses a configuration with fewer than two prime sets (rule 7, Handbook p. 26, p. 47)", () => {
+  it("accepts a configuration with fewer than two prime sets, with a warning (ADR-041 point 2; Handbook p. 26, p. 47)", () => {
     const config = smallConfig();
     config.traitSets[2].role = "other";
-    expect(validateGameConfig(config).errors).toEqual([{ code: "PRIME_SETS_TOO_FEW", path: "traitSets" }]);
+    expect(validateGameConfig(config)).toEqual({
+      ok: true, value: config, errors: [], warnings: [{ code: "PRIME_SETS_TOO_FEW", path: "traitSets" }]
+    });
   });
 
-  it("refuses a configuration with no set in the distinctions role (rule 10, Handbook p. 26)", () => {
+  it("accepts a configuration with no set in the distinctions role, with a warning (ADR-041 point 1; Handbook p. 66)", () => {
     const config = smallConfig();
     config.traitSets[0].role = "other";
-    expect(validateGameConfig(config).errors).toEqual([{ code: "DISTINCTIONS_SET_MISSING", path: "traitSets" }]);
+    expect(validateGameConfig(config)).toEqual({
+      ok: true, value: config, errors: [], warnings: [{ code: "DISTINCTIONS_SET_MISSING", path: "traitSets" }]
+    });
   });
 
-  it("checks the structure after every other error", () => {
+  it("accepts a configuration with no sets at all, warning of both (ADR-041)", () => {
+    const config = { ...smallConfig(), traitSets: [], actorKinds: [] };
+    expect(validateGameConfig(config)).toEqual({
+      ok: true,
+      value: config,
+      errors: [],
+      warnings: [{ code: "DISTINCTIONS_SET_MISSING", path: "traitSets" }, { code: "PRIME_SETS_TOO_FEW", path: "traitSets" }]
+    });
+  });
+
+  it("lists warnings beside errors, which alone decide the result (ADR-042)", () => {
     const config = smallConfig();
     config.traitSets = [];
     config.actorKinds[0].traitSetIds = ["distinctions0000"];
-    expect(codes(validateGameConfig(config))).toEqual(["UNKNOWN_TRAIT_SET", "DISTINCTIONS_SET_MISSING", "PRIME_SETS_TOO_FEW"]);
+    const result = validateGameConfig(config);
+    expect(result).toEqual({
+      ok: false,
+      code: "UNKNOWN_TRAIT_SET",
+      errors: [{ code: "UNKNOWN_TRAIT_SET", path: "actorKinds.0.traitSetIds.0" }],
+      warnings: [{ code: "DISTINCTIONS_SET_MISSING", path: "traitSets" }, { code: "PRIME_SETS_TOO_FEW", path: "traitSets" }]
+    });
+    expect(codes(result)).toEqual(["UNKNOWN_TRAIT_SET"]);
+  });
+
+  it("counts a set with errors of its own towards the role guidance", () => {
+    const config = smallConfig();
+    config.traitSets[1].name = "";
+    expect(validateGameConfig(config)).toMatchObject({ ok: false, warnings: [] });
+  });
+
+  it("has no warnings when it stops before the sets", () => {
+    for ( const bad of [{ ...smallConfig(), schemaVersion: 0 }, { ...smallConfig(), traitSets: {} }] ) {
+      expect(validateGameConfig(bad)).toMatchObject({ ok: false, warnings: [] });
+    }
   });
 
   it("works from frozen input and never changes it", () => {
@@ -373,11 +410,11 @@ describe("validateGameConfig (ADR-030)", () => {
   });
 });
 
-describe("defaultGameConfig (ADR-036)", () => {
-  it("is a valid configuration at the current schema version", () => {
+describe("defaultGameConfig (ADR-036, ADR-040)", () => {
+  it("is a valid configuration at the current schema version, without warnings", () => {
     const config = defaultGameConfig();
     expect(config.schemaVersion).toBe(GAME_CONFIG_SCHEMA_VERSION);
-    expect(validateGameConfig(config)).toEqual({ ok: true, value: config, errors: [] });
+    expect(validateGameConfig(config)).toEqual({ ok: true, value: config, errors: [], warnings: [] });
   });
 
   it("returns a new, independent object every time", () => {
@@ -443,7 +480,7 @@ describe("defaultGameConfig (ADR-036)", () => {
     const config = defaultGameConfig();
     const set = traitSetById(config, "cpSetSceneDistin");
     expect(set).toMatchObject({ role: "other", list: "open", hasDice: true, multiDice: true });
-    expect(set.features.hinder).toBe(true);
+    expect(set.features).toMatchObject({ hinder: true, sfx: true });
     expect(validateRating([6, 6], ratingOptionsOf(set))).toEqual({ ok: true, value: [6, 6] });
     expect(validateRating([6, 6], ratingOptionsOf(traitSetById(config, "cpSetDistinction"))).ok).toBe(false);
   });
@@ -464,6 +501,13 @@ describe("defaultGameConfig (ADR-036)", () => {
     expect(kinds.cpKindLocation00).toMatchObject({ traitSetIds: ["cpSetSceneDistin"], freeTraits: true });
     expect(kinds.cpKindMob0000000).toMatchObject({ traitSetIds: ["cpSetMobTrait000"], freeTraits: true });
     expect(kinds.cpKindPlayerChar.freeTraits).toBe(false);
+  });
+
+  it("lets every set take further traits for a PP and offer the shut-down flag (ADR-040 point 1)", () => {
+    for ( const set of defaultGameConfig().traitSets ) {
+      expect(set.extraTraits).toBe("pp");
+      expect(set.features.shutDown).toBe(true);
+    }
   });
 });
 

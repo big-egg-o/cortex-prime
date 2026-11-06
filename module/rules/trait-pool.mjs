@@ -1,8 +1,8 @@
 /**
  * From a character's traits to pool dice: the dice a trait gives, the pool entries it adds, and
  * what the traits chosen for one pool cost and warn of (Traits & Trait Sets spec, rules 1-3, 6-8,
- * 11, 12, 15, 16 and 22; Decisions ADR-029, ADR-035 and ADR-037). Every function returns an
- * EngineResult (ADR-025) and never changes its inputs.
+ * 11, 12, 15, 16 and 22; Rules Questions RQ-029 to RQ-031; Decisions ADR-029, ADR-035 and
+ * ADR-037). Every function returns an EngineResult (ADR-025) and never changes its inputs.
  * @module rules/trait-pool
  */
 
@@ -59,19 +59,20 @@ export function effectiveRating(set, traitDef, entry) {
 }
 
 /**
- * Hinder's dice: a distinction is used at d4 instead of its d8 (rule 11; Handbook p. 50, p. 61;
- * scene distinctions too, p. 116), so Prime Core's single d8 becomes one d4. For any other
- * rating the books give no outcome: a distinction rated other than d8 is Rating Distinctions
- * (MOD), which the spec leaves to M5 (rule 11), and a scene distinction an SFX split into
- * several dice isn't covered. PROVISIONAL: every rating becomes one d4, the rule's outcome for
- * the one case it covers (Codex p. 41 also speaks of swapping the distinction's die for a d4).
- * Hinder gains one plot point per use whatever this returns. Kept in one place so another
- * reading changes only this.
- * @param {import("./types.mjs").DieSize[]} _dice - the rating
- * @returns {import("./types.mjs").DieSize[]}
+ * What Hinder does to a rating, for the current roll only (rule 11; RQ-029, reading B). Prime
+ * Core uses a distinction at d4 instead of its d8 and gains a plot point (Handbook p. 50, p. 61;
+ * scene distinctions too, p. 116). Under RQ-029 Hinder works on the trait, not on each die: any
+ * rating with a die above d4, or with several dice (a split scene distinction such as d6 d6,
+ * p. 116), is replaced by one d4 and gains 1 PP; a distinction rated other than d8 is Rating
+ * Distinctions (MOD), p. 50, and Codex p. 41 swaps the distinction's own die for a d4. A trait
+ * already rated d4 keeps its d4 and gains nothing, with the hint HINDER_ALREADY_D4: a project
+ * decision, since Hinder trades a real disadvantage for the plot point (p. 62; compare p. 28).
+ * @param {import("./types.mjs").DieSize[]} dice - the rating, with at least one die
+ * @returns {import("./types.mjs").DieSize[]|null} the dice for the roll, which gain 1 PP; null
+ *   for a trait already rated d4, which Hinder leaves as it is
  */
-function hinderedDice(_dice) {
-  return [4];
+function hinderedDice(dice) {
+  return ((dice.length === 1) && (dice[0] === 4)) ? null : [4];
 }
 
 /**
@@ -90,20 +91,23 @@ function poolTraitWellFormed(trait) {
 
 /**
  * The pool entries one trait adds, in the shape buildPool takes: one entry per die, each with
- * its own copy of the trait as source (kind "trait"). With Hinder the trait gives hinderedDice
- * and its first entry reports `ppGained: 1`, the one plot point a use of Hinder gains (TS-02);
- * who gains it (the roller, or the bank for a GMC) and paying it out are Plot Points bookkeeping
- * (ADR-014, ADR-029 point 3). A challenged statement (MOD Trait Statements) gives each die three
- * times for this roll (rule 16, TS-14, TS-16; the spec's implementation notes for several dice).
- * A fallback die is marked `isFallback` (TS-03). Hinder and a challenge together are refused for
- * now: no rule says how they combine, and no default set offers both (parked, see the run log).
- * Whether the trait's set offers Hinder or statements is the caller's check; buildPool ignores
- * the extra marks, so a caller that needs them keeps the entries.
+ * its own copy of the trait as source (kind "trait"). With Hinder (RQ-029) the trait gives one
+ * d4 and its first entry reports `ppGained: 1`, the one plot point a use of Hinder gains (TS-02);
+ * a trait already rated d4 gives its d4 as usual, and its first entry reports `ppGained: 0` and
+ * `hint: "HINDER_ALREADY_D4"`. Who gains the plot point (the roller, or the bank for a GMC) and
+ * paying it out are Plot Points bookkeeping (ADR-014, ADR-029 point 3). Hinder changes the roll
+ * only: the trait's stored rating stays as it is. A challenged statement (MOD Trait Statements)
+ * gives each die three times for this roll (rule 16, TS-14, TS-16; the spec's implementation
+ * notes for several dice). A fallback die is marked `isFallback` (TS-03). Hinder and a challenge
+ * together are refused until RQ-032 is decided. Whether the trait's set offers Hinder or
+ * statements is the caller's check; buildPool ignores the extra marks, so a caller that needs
+ * them keeps the entries.
  * @param {{dice: import("./types.mjs").DieSize[], label: string, actorId?: string,
  *   traitId?: string, isFallback?: boolean}} trait - dice from effectiveRating
  * @param {{hinder?: boolean, challenge?: boolean}} [options]
  * @returns {import("./types.mjs").EngineResult<{size: import("./types.mjs").DieSize,
- *   source: import("./types.mjs").DieSource, ppGained?: number, isFallback?: true}[]>} refuses,
+ *   source: import("./types.mjs").DieSource, ppGained?: number, hint?: string,
+ *   isFallback?: true}[]>} refuses,
  *   in this order: INVALID_TRAIT_DATA (no label, or ids or marks of the wrong type),
  *   INVALID_TRAIT_OPTIONS (options that aren't an object of booleans), TRAIT_OPTIONS_CONFLICT
  *   (Hinder and a challenge), INVALID_DIE_SIZE, TRAIT_UNRATED (no dice)
@@ -125,15 +129,18 @@ export function traitPoolEntries(trait, options = {}) {
     s.label = trait.label;
     return s;
   };
-  if ( hinder ) {
-    return ok(hinderedDice(rating.value).map((size, i) => (i === 0 ? { size, source: source(), ppGained: 1 } : { size, source: source() })));
+  const hindered = hinder ? hinderedDice(rating.value) : null;
+  if ( hindered ) {
+    return ok(hindered.map((size, i) => (i === 0 ? { size, source: source(), ppGained: 1 } : { size, source: source() })));
   }
   const dice = challenge ? rating.value.flatMap(size => [size, size, size]) : rating.value;
-  return ok(dice.map(size => {
+  const entries = dice.map(size => {
     const entry = { size, source: source() };
     if ( trait.isFallback ) entry.isFallback = true;
     return entry;
-  }));
+  });
+  if ( hinder ) Object.assign(entries[0], { ppGained: 0, hint: "HINDER_ALREADY_D4" });
+  return ok(entries);
 }
 
 /**
@@ -147,45 +154,68 @@ function poolTraitsWellFormed(traits) {
     const trait = traits[i];
     if ( !isPlainObject(trait) || (typeof trait.traitId !== "string") ) return false;
     if ( (trait.setId !== null) && (typeof trait.setId !== "string") ) return false;
+    if ( (trait.actorId !== undefined) && (typeof trait.actorId !== "string") ) return false;
     if ( ![trait.setShutDown, trait.traitShutDown, trait.hinder].every(isOptionalBoolean) ) return false;
   }
   return true;
 }
 
 /**
+ * A warning about one trait: its set when it has one, its actor when given, and its id.
+ * @param {string} code
+ * @param {{setId: string|null, traitId: string, actorId?: string}} trait
+ * @returns {{code: string, setId?: string, actorId?: string, traitId: string}}
+ */
+function traitWarning(code, { setId, actorId, traitId }) {
+  const warning = { code };
+  if ( setId !== null ) warning.setId = setId;
+  if ( actorId !== undefined ) warning.actorId = actorId;
+  warning.traitId = traitId;
+  return warning;
+}
+
+/**
  * What the traits chosen for one pool cost and warn of (rules 6, 7 and 15). The first trait from
  * each set is free; each further one costs 1 PP, with no limit on how many (RQ-019; Handbook
- * p. 26, p. 28). Traits are counted, not dice, and the same trait twice is one trait (TS-E05).
- * A distinction used with Hinder still counts as the set's one distinction (TS-E06), so the
- * `hinder` mark is accepted but changes nothing here. Free traits belong to no set and cost
- * nothing between them (TS-22). Each set is its own count, so two power sets give one free power
- * each (TS-11). Counting is by set id alone, whichever actor a trait comes from: with the
- * defaults, a location's scene distinctions are their own set, so one used next to a
- * character's own distinction is free and a second costs 1 PP. PROVISIONAL: the books don't say
- * how a shared trait such as a scene distinction counts (p. 116; Plot Points review E8).
+ * p. 26, p. 28). The player or GM building the pool pays (p. 28; RQ-031), whoever's traits they
+ * use; this only computes the cost. Traits are counted, not dice, and the same trait twice is one
+ * trait (TS-E05). A distinction used with Hinder still counts as the set's one distinction
+ * (TS-E06), so the `hinder` mark is accepted but changes nothing here. Each set is its own count,
+ * so two power sets give one free power each (TS-11).
+ *
+ * Counting follows RQ-031: by set id first, whichever actor a trait comes from, so with the
+ * defaults a location's scene distinctions are their own set, and one used next to a
+ * character's own distinction is free while a second costs 1 PP. Within a set a trait is its
+ * actor id and its trait id together, so traits of two actors that share an id are two traits
+ * (a trait without an actor id counts as one actor's). Free traits belong to no set and are
+ * never charged, whichever actor they come from (TS-22).
  *
  * Nothing is refused for rules reasons (ADR-029): the warnings tell the table the pool is
  * nonstandard and the dice stay in it. A further trait from a set whose game doesn't allow one
- * (rule 6) warns EXTRA_TRAIT_NOT_ALLOWED and is priced like any other, at 1 PP (PROVISIONAL: the
- * books give no other price, and a warning doesn't make the selection free); nothing is deducted
- * anyway (ADR-029 point 3). A shut-down set or trait warns TRAIT_SET_SHUT_DOWN or TRAIT_SHUT_DOWN
- * (rule 15). A trait of a set the configuration no longer has is orphaned (ADR-037 point 6, as
- * TS-E03 does for deleted definitions): it warns TRAIT_ORPHANED and isn't counted. For a kind
- * that uses prime sets, every prime set of the kind with no trait in the pool warns
- * PRIME_SET_MISSING (RQ-020 reading C, as amended by ADR-029); a missing distinction never does,
- * and a kind without prime sets, or no kind, never does (TS-17b).
- * @param {{setId: string|null, traitId: string, setShutDown?: boolean,
+ * (rule 6) warns EXTRA_TRAIT_NOT_ALLOWED and has no defined price (RQ-030): it is neither free
+ * nor 1 PP, so it is left out of ppCost and extraTraits and counted in unpricedTraits instead,
+ * for the table to decide. Nothing is deducted in any case (ADR-029 point 3). A shut-down set or
+ * trait warns TRAIT_SET_SHUT_DOWN or TRAIT_SHUT_DOWN (rule 15). A trait of a set the
+ * configuration no longer has is orphaned (ADR-037 point 6, as TS-E03 does for deleted
+ * definitions): it warns TRAIT_ORPHANED and isn't counted. For a kind that uses prime sets,
+ * every prime set of the kind with no trait in the pool warns PRIME_SET_MISSING (RQ-020
+ * reading C, as amended by ADR-029); a missing distinction never does, and a kind without prime
+ * sets, or no kind, never does (TS-17b).
+ * @param {{setId: string|null, traitId: string, actorId?: string, setShutDown?: boolean,
  *   traitShutDown?: boolean, hinder?: boolean}[]} traits - the traits of the pool, with the
- *   shut-down flags of the actor's data
+ *   actor each comes from and the shut-down flags of that actor's data
  * @param {import("./types.mjs").GameConfig} config
  * @param {string|null} kindId - the rolling actor's kind
  * @returns {import("./types.mjs").EngineResult<{ppCost: number, extraTraits: {setId: string,
- *   count: number}[], warnings: {code: string, setId?: string, traitId?: string}[]}>} ppCost is
- *   the sum of the extraTraits counts; extra traits by set, in the order the sets first appear
- *   in the pool. Warnings: per trait in pool order, TRAIT_ORPHANED, TRAIT_SET_SHUT_DOWN (each set
- *   once) and TRAIT_SHUT_DOWN (each trait of a set once); then EXTRA_TRAIT_NOT_ALLOWED by set in
- *   pool order; then PRIME_SET_MISSING in the kind's order. Refuses with INVALID_TRAIT_DATA
- *   (including a flag that isn't a boolean) or INVALID_GAME_CONFIG
+ *   count: number}[], unpricedTraits: {setId: string, count: number}[], warnings: {code: string,
+ *   setId?: string, actorId?: string, traitId?: string}[]}>} ppCost is the sum of the
+ *   extraTraits counts; extraTraits and unpricedTraits list sets in the order they first appear
+ *   in the pool, each set in at most one of them. Warnings: per trait in pool order,
+ *   TRAIT_ORPHANED and TRAIT_SHUT_DOWN (each trait once, naming its actor when it has one) and
+ *   TRAIT_SET_SHUT_DOWN (each set once, naming no actor); then EXTRA_TRAIT_NOT_ALLOWED by set in
+ *   pool order; then
+ *   PRIME_SET_MISSING in the kind's order. Refuses with INVALID_TRAIT_DATA (including a flag that
+ *   isn't a boolean, or an actor id that isn't text) or INVALID_GAME_CONFIG
  */
 export function poolTraitCost(traits, config, kindId) {
   if ( !poolTraitsWellFormed(traits) ) return fail("INVALID_TRAIT_DATA");
@@ -202,30 +232,32 @@ export function poolTraitCost(traits, config, kindId) {
     warnings.push(warning);
   };
   for ( const trait of traits ) {
-    const { setId, traitId } = trait;
+    const { setId } = trait;
+    const traitKey = JSON.stringify([setId, trait.actorId ?? null, trait.traitId]);
     if ( (setId !== null) && !traitSetById(config, setId) ) {
-      warnOnce(`orphan:${setId}:${traitId}`, { code: "TRAIT_ORPHANED", setId, traitId });
+      warnOnce(`orphan:${traitKey}`, traitWarning("TRAIT_ORPHANED", trait));
       continue;
     }
     if ( trait.setShutDown && (setId !== null) ) warnOnce(`set:${setId}`, { code: "TRAIT_SET_SHUT_DOWN", setId });
-    if ( trait.traitShutDown ) {
-      warnOnce(`trait:${setId}:${traitId}`, (setId === null)
-        ? { code: "TRAIT_SHUT_DOWN", traitId }
-        : { code: "TRAIT_SHUT_DOWN", setId, traitId });
-    }
+    if ( trait.traitShutDown ) warnOnce(`trait:${traitKey}`, traitWarning("TRAIT_SHUT_DOWN", trait));
     if ( setId === null ) continue;
     if ( !traitsBySet.has(setId) ) traitsBySet.set(setId, new Set());
-    traitsBySet.get(setId).add(traitId);
+    traitsBySet.get(setId).add(traitKey);
   }
 
   let ppCost = 0;
   const extraTraits = [];
-  for ( const [setId, ids] of traitsBySet ) {
-    const count = ids.size - 1;
+  const unpricedTraits = [];
+  for ( const [setId, keys] of traitsBySet ) {
+    const count = keys.size - 1;
     if ( count === 0 ) continue;
+    if ( traitSetById(config, setId).extraTraits === "none" ) {
+      unpricedTraits.push({ setId, count });
+      warnings.push({ code: "EXTRA_TRAIT_NOT_ALLOWED", setId });
+      continue;
+    }
     extraTraits.push({ setId, count });
     ppCost += count;
-    if ( traitSetById(config, setId).extraTraits === "none" ) warnings.push({ code: "EXTRA_TRAIT_NOT_ALLOWED", setId });
   }
 
   const kind = actorKindById(config, kindId);
@@ -235,5 +267,5 @@ export function poolTraitCost(traits, config, kindId) {
     }
   }
 
-  return ok({ ppCost, extraTraits, warnings });
+  return ok({ ppCost, extraTraits, unpricedTraits, warnings });
 }

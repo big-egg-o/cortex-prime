@@ -332,7 +332,8 @@ export const DIE_SIZES = Object.freeze(/** @type {DieSize[]} */ ([4, 6, 8, 10, 1
  * @property {DieSize|null} startingRating - the rating a new trait starts with
  * @property {4|null} fallbackDie - the die a trait with no rating counts as, or none (rule 8)
  * @property {"pp"|"none"} extraTraits - a further trait from the set costs a PP, or the game's
- *   rules don't allow one, which is a warning and the die stays in the pool (rule 6, TS-10)
+ *   rules don't allow one, which is a warning, has no defined price and leaves the die in the
+ *   pool (rule 6, TS-10, RQ-030)
  * @property {{description: boolean, sfx: boolean, statements: boolean, tags: boolean,
  *   subTraits: boolean, hinder: boolean, setSfx: boolean, shutDown: boolean}} features
  */

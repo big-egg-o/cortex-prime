@@ -51,7 +51,7 @@ describe("challengeStatement (MOD Trait Statements, rule 16)", () => {
     expect(challengeStatement(trait).value.shutDown).toEqual({ reason: "manual" });
   });
 
-  it("refuses a trait with no rating, a rating of several dice (parked) and a die size that doesn't exist", () => {
+  it("refuses a trait with no rating, a rating of several dice (until RQ-033 is decided) and a die size that doesn't exist", () => {
     expect(challengeStatement(social({ dice: [] }))).toEqual(refused("TRAIT_UNRATED"));
     expect(challengeStatement(social({ dice: [6, 6] }))).toEqual(refused("STATEMENT_RATING_NOT_ONE_DIE"));
     expect(challengeStatement(social({ dice: [7] }))).toEqual(refused("INVALID_DIE_SIZE"));
@@ -124,7 +124,7 @@ describe("resolveChallengedStatement (rule 16)", () => {
     expect(resolveChallengedStatement(trait, { rewritten: true }).value.shutDown).toEqual({ reason: "manual" });
   });
 
-  it("keeps a manual shut-down on a d4 through the challenge and either resolution (parked question)", () => {
+  it("keeps a manual shut-down on a d4 through the challenge and either resolution", () => {
     const trait = challengeStatement(social({ dice: [4], shutDown: { reason: "manual" } })).value;
     expect(trait.shutDown).toEqual({ reason: "manual" });
     expect(resolveChallengedStatement(trait, { rewritten: false }).value).toEqual(social({ dice: [4], shutDown: { reason: "manual" } }));
