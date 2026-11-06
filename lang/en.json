@@ -194,10 +194,12 @@
         "INVALID_DIE_SIZE": "That isn't a die size: use d4, d6, d8, d10 or d12.",
         "DUPLICATE_CONFIG_ID": "Two entries share one id.",
         "UNKNOWN_TRAIT_SET": "This actor kind names a trait set that doesn't exist.",
-        "DISTINCTIONS_SET_MISSING": "A game needs a trait set in the distinctions role.",
-        "PRIME_SETS_TOO_FEW": "A game needs at least two prime sets.",
         "GM_ONLY": "Only a GM can change the game configuration.",
         "WRITE_FAILED": "The game configuration could not be saved; see the console."
+      },
+      "Warnings": {
+        "DISTINCTIONS_SET_MISSING": "No trait set has the distinctions role. You can still save. Without distinctions, most pools lose a die; Handbook p. 66 suggests making up for it, for example with a further prime set or with other traits that add dice.",
+        "PRIME_SETS_TOO_FEW": "Fewer than two trait sets have the prime role. You can still save. The Handbook advises at least two prime sets, since they give most rolls their basic dice (pp. 26, 47)."
       }
     }
   },

@@ -8,7 +8,7 @@
  * @module config/game-config-draft
  */
 
-import { TRAIT_SET_FEATURES, removeTraitSet } from "../rules/game-config.mjs";
+import { TRAIT_SET_FEATURES, removeTraitSet, validateGameConfig } from "../rules/game-config.mjs";
 import { DIE_SIZES } from "../rules/types.mjs";
 
 /** @returns {boolean} whether value is a plain object, not an array, class instance or null */
@@ -258,4 +258,41 @@ export function errorsByPath(errors) {
   const byPath = {};
   for ( const { code, path } of errors ?? [] ) (byPath[path] ??= []).push(code);
   return byPath;
+}
+
+/**
+ * The warnings of a draft, which the app shows whenever it renders, apart from the errors of the
+ * last save (ADR-041 point 4). They come from validateGameConfig and never stop a save: they are
+ * the Handbook's guidance on which sets a game has, not refusals.
+ * @param {unknown} draft
+ * @returns {string[]} the warning codes in validateGameConfig's order; none for a draft it can't
+ *   read far enough to check
+ */
+export function draftWarnings(draft) {
+  return validateGameConfig(draft).warnings.map(warning => warning.code);
+}
+
+/**
+ * The current draft's errors by path (errorsByPath). The app shows them once a save has failed
+ * and builds them again on every render, so an error stays on the entry that has it when entries
+ * move or are removed, and goes away once it is fixed.
+ * @param {unknown} draft
+ * @returns {Record<string, string[]>} codes by path; none for a draft without errors
+ */
+export function draftErrors(draft) {
+  return errorsByPath(validateGameConfig(draft).errors);
+}
+
+/**
+ * What the app's template shows of a draft beyond the values its inputs already hold: the
+ * warnings, the errors while they are shown, and whether each set has a fixed or an open list.
+ * The app renders again after a form change only when this changes, so what it shows stays
+ * current without interrupting typing.
+ * @param {unknown} draft
+ * @param {{showErrors: boolean}} options - whether the app is showing errors (after a failed save)
+ * @returns {string}
+ */
+export function draftRenderKey(draft, { showErrors }) {
+  const lists = Array.isArray(draft?.traitSets) ? draft.traitSets.map(set => set?.list) : [];
+  return JSON.stringify([draftWarnings(draft), showErrors ? draftErrors(draft) : {}, lists]);
 }

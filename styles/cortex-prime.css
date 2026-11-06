@@ -129,6 +129,13 @@
   gap: 0.5rem;
 }
 
+/* The draft's warnings, shown above the sets and apart from any errors. */
+.cortex-prime.game-config .window-content .cp-config-warnings {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
 /* ---------------------------------------- */
 /*  pool-builder (ApplicationV2 window)     */
 /* ---------------------------------------- */

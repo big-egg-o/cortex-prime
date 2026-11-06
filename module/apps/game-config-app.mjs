@@ -3,13 +3,15 @@
  * saves it to the world setting. Opened from the system's settings menu; only a GM can save,
  * because only a GM may write a world setting. Every edit goes through the pure helpers in
  * module/config/game-config-draft.mjs, and saving through setGameConfig, which runs the pure
- * validateGameConfig and shows every problem next to its field instead of saving.
+ * validateGameConfig and shows every error next to its field instead of saving. The draft's
+ * warnings (the Handbook's guidance on which sets a game has) are shown apart from the errors
+ * whenever the app renders, and never stop a save (ADR-041 point 4).
  * @module apps/game-config-app
  */
 
 import {
   addActorKind, addTraitDef, addTraitSet, applyConfigForm, deleteActorKind, deleteTraitDef, deleteTraitSet,
-  errorsByPath, moveTraitDef, moveTraitSet
+  draftErrors, draftRenderKey, draftWarnings, moveTraitDef, moveTraitSet
 } from "../config/game-config-draft.mjs";
 import { getGameConfig, setGameConfig } from "../config/settings.mjs";
 import {
@@ -60,14 +62,18 @@ export default class GameConfigApp extends HandlebarsApplicationMixin(Applicatio
   /** The draft being edited; read from the world setting when the app opens. */
   #draft = getGameConfig();
 
-  /** The problems of the last save attempt, by field path. */
-  #errors = {};
+  /**
+   * Whether the draft's errors are shown: from a save that found errors until a save succeeds or
+   * the draft is reset. While they are shown they are built from the current draft on every
+   * render, so they stay on the entry that has them and go once fixed.
+   */
+  #showErrors = false;
 
   /** @override */
   async _prepareContext(options) {
     const context = await super._prepareContext(options);
     const draft = this.#draft;
-    const errors = this.#errors;
+    const errors = this.#showErrors ? draftErrors(draft) : {};
     const sizes = DIE_SIZES.map(size => ({ value: size, label: `d${size}` }));
     context.buttons = [
       { type: "button", action: "resetDefaults", icon: "fa-solid fa-rotate-left", label: "CORTEX.Config.ResetDefaults" },
@@ -78,6 +84,7 @@ export default class GameConfigApp extends HandlebarsApplicationMixin(Applicatio
     context.lists = TRAIT_SET_LISTS.map(value => ({ value, label: `CORTEX.Config.List.${value}` }));
     context.extraTraitRules = EXTRA_TRAIT_RULES.map(value => ({ value, label: `CORTEX.Config.ExtraTraits.${value}` }));
     context.generalErrors = errors.traitSets ?? [];
+    context.warnings = draftWarnings(draft);
     context.sets = draft.traitSets.map((set, i) => ({
       ...set,
       index: i,
@@ -103,14 +110,20 @@ export default class GameConfigApp extends HandlebarsApplicationMixin(Applicatio
   }
 
   /**
-   * Reads every form change into the draft; nothing is saved until Save.
+   * Reads every form change into the draft; nothing is saved until Save. A change that alters
+   * what the template shows beyond the inputs' own values (the warnings, the errors while shown,
+   * a set's fixed or open list) renders the app again, so it is always current; other changes
+   * don't, so typing isn't interrupted.
    * @this {GameConfigApp}
    * @param {SubmitEvent|Event} _event
    * @param {HTMLFormElement} _form
    * @param {foundry.applications.ux.FormDataExtended} formData
    */
   static async #onChangeForm(_event, _form, formData) {
+    const options = { showErrors: this.#showErrors };
+    const before = draftRenderKey(this.#draft, options);
     this.#draft = applyConfigForm(this.#draft, foundry.utils.expandObject(formData.object));
+    if ( draftRenderKey(this.#draft, options) !== before ) this.render();
   }
 
   /** @returns {string} the trait set id of the clicked row */
@@ -175,27 +188,28 @@ export default class GameConfigApp extends HandlebarsApplicationMixin(Applicatio
     });
     if ( !confirmed ) return;
     this.#draft = defaultGameConfig();
-    this.#errors = {};
+    this.#showErrors = false;
     this.render();
   }
 
   /**
-   * Saves the draft when the pure check passes; otherwise shows every problem next to its field.
-   * Actors are never rewritten by a configuration change (ADR-037 point 5).
+   * Saves the draft when the pure check finds no error; otherwise shows every error next to its
+   * field. A draft with warnings only is saved (ADR-041 point 4). Actors are never rewritten by a
+   * configuration change (ADR-037 point 5).
    * @this {GameConfigApp}
    */
   static async #onSave() {
     if ( !game.user.isGM ) return;
     const checked = validateGameConfig(this.#draft);
     if ( !checked.ok ) {
-      this.#errors = errorsByPath(checked.errors);
+      this.#showErrors = true;
       ui.notifications.warn("CORTEX.Config.NotSaved", { localize: true });
       this.render();
       return;
     }
     const result = await setGameConfig(this.#draft);
-    this.#errors = result.ok ? {} : errorsByPath(result.errors);
     if ( result.ok ) {
+      this.#showErrors = false;
       this.#draft = result.value;
       ui.notifications.info("CORTEX.Config.Saved", { localize: true });
     }

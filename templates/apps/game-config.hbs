@@ -1,6 +1,11 @@
 <div class="cp-config-body scrollable">
   <p class="hint">{{ localize "CORTEX.Config.Intro" }}</p>
   {{#each generalErrors}}<p class="notification error">{{ localize (concat "CORTEX.Config.Errors." this) }}</p>{{/each}}
+  {{#if warnings.length}}
+  <div class="cp-config-warnings">
+    {{#each warnings}}<p class="notification warning">{{ localize (concat "CORTEX.Config.Warnings." this) }}</p>{{/each}}
+  </div>
+  {{/if}}
 
   <h3>{{ localize "CORTEX.Config.TraitSets" }}</h3>
   {{#each sets}}
