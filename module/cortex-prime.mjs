@@ -11,6 +11,7 @@ import PoolRollData from "./data/chat/pool-roll.mjs";
 import { onRenderPoolRollMessage, preloadPoolRollCardTemplate } from "./dice/pool-roll-card.mjs";
 import { togglePoolBuilder } from "./apps/pool-builder.mjs";
 import { registerSettings } from "./config/settings.mjs";
+import { registerContestQuery } from "./contest/relay.mjs";
 import GameConfigApp from "./apps/game-config-app.mjs";
 
 /** The package id, as declared in system.json. */
@@ -23,6 +24,7 @@ Hooks.once("init", () => {
   CONFIG.ChatMessage.dataModels.poolRoll = PoolRollData;
   CONFIG.ChatMessage.dataModels.contest = ContestData;
   registerSettings();
+  registerContestQuery();
   game.settings.registerMenu(SYSTEM_ID, "gameConfigMenu", {
     name: "CORTEX.Config.MenuName",
     label: "CORTEX.Config.MenuLabel",
