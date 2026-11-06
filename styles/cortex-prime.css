@@ -124,6 +124,11 @@
   min-height: 0;
 }
 
+.cortex-prime.game-config .window-content fieldset.cp-config-set > legend,
+.cortex-prime.game-config .window-content fieldset.cp-config-kind > legend {
+  gap: 0.5rem;
+}
+
 /* ---------------------------------------- */
 /*  pool-builder (ApplicationV2 window)     */
 /* ---------------------------------------- */
