@@ -148,7 +148,10 @@ const GM_ONLY_ACTIONS = Object.freeze(["set-high-stakes", "close"]);
 /** Actions that belong to the winner's side, or to a test's roller (ADR-027). */
 const WINNER_ACTIONS = Object.freeze(["apply-heroic-steps", "choose-overflow", "use-against-loser"]);
 
-/** The side that declines: only the opposition can (rules 2 and 14; giveIn in contest.mjs). */
+/**
+ * The side that declines: only the opposition can (rules 2 and 14; Handbook p. 18, p. 19; giveIn in
+ * contest.mjs).
+ */
 const DECLINING_SIDE = CONTEST_SIDES[1];
 
 /** A test's rolling side, whose user makes the test's end choices (ADR-027, Step 4.4 proposal review). */
@@ -341,8 +344,9 @@ function notSendersRoll(sender, poolRoll) {
 /**
  * The action's own checks, after the revision and before the engine: a closed test or contest
  * refuses every action (ADR-027); a decline is refused once the opposition has rolled, since it can
- * then only give in (giveIn records a decline only before the opposition's first roll); and a roll
- * card must be confirmed and not be part of this test or contest already (one card is one roll).
+ * then only give in (rules 14 and 16, Handbook p. 19; giveIn records a decline only before the
+ * opposition's first roll); and a roll card must be confirmed and not be part of this test or
+ * contest already (one card is one roll).
  * @param {ContestRecord} contest
  * @param {ContestRequest} request
  * @param {object} payload
@@ -493,11 +497,12 @@ function startSideWellFormed(side) {
 /**
  * Checks who may start a test or contest with which sides (ADR-027, Step 4.4 proposal review): a GM
  * may start any; a player only one started for their own side, read strictly as the side that
- * starts it: the initiator's user for a contest (rule 14), the roller's user for a test. A player
- * starts with high stakes off, since high stakes is the GM's flag (ADR-022). The sides must be
- * exactly the flow type's sides (CONTEST_SIDES or TEST_SIDES), as the contest message's model
- * requires in M3. Only the type, the sides and high stakes are checked here; the rest of a start
- * (the difficulty and its card, the actors, the speaker) is the start dialog's (Step 4.4 S3).
+ * starts it: the initiator's user for a contest (rule 14, Handbook p. 19), the roller's user for a
+ * test. A player starts with high stakes off, since high stakes is the GM's flag (ADR-022). The
+ * sides must be exactly the flow type's sides (CONTEST_SIDES or TEST_SIDES), as the contest
+ * message's model requires in M3. Only the type, the sides and high stakes are checked here; the
+ * rest of a start (the difficulty and its card, the actors, the speaker) is the start dialog's
+ * (Step 4.4 S3).
  * @param {{sender: RequestSender, request: {type: string, sides: RequestSide[], highStakes?: boolean}}} input
  * @returns {EngineResult<null>} null when the start may go ahead; refuses, checked in this order:
  *   MALFORMED_REQUEST (not a plain object, a type that isn't a string, sides that aren't a list of
