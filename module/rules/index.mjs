@@ -20,13 +20,14 @@ export {
   closeTest, compareEffectDie, contestConsequence, contestRollFromResolution, contestRollFromTotal, createContest,
   createTest, decidingRolls, giveIn, setContestHighStakes, setTestHighStakes, testResult
 } from "./contest.mjs";
+export { REQUEST_ACTIONS, checkContestRequest, checkStartRequest, dispatchContestRequest } from "./contest-request.mjs";
 export {
   OVERFLOW_PENDING, applyOverflowChoice, applyRerolls, applyResults, evaluate, largestEligible, rerollableIds,
   resolve, stepEffectDie, suggestSelection, twoHighest, unrolledEffectDie, validateSelection
 } from "./roll.mjs";
 export {
   EXTRA_TRAIT_RULES, GAME_CONFIG_SCHEMA_VERSION, TRAIT_SET_FEATURES, TRAIT_SET_LISTS, TRAIT_SET_ROLES, actorKindById,
-  defaultGameConfig, kindUsesPrimeSets, ratingOptionsOf, traitDefById, traitSetById, validateGameConfig
+  defaultGameConfig, kindUsesPrimeSets, ratingOptionsOf, removeTraitSet, traitDefById, traitSetById, validateGameConfig
 } from "./game-config.mjs";
 export { ratingGuidance } from "./sheet-hints.mjs";
 export {
