@@ -30,7 +30,7 @@ import { ratingField } from "../fields/rating-field.mjs";
 import StrictBooleanField from "../fields/strict-boolean-field.mjs";
 import { getGameConfig } from "../../config/settings.mjs";
 import { SHUT_DOWN_REASONS } from "../../rules/statements.mjs";
-import { checkCharacterUpdate, diffCharacterTraits } from "../../rules/traits.mjs";
+import { checkCharacterUpdate, diffCharacterTraits, validateEntryFields } from "../../rules/traits.mjs";
 
 const { ArrayField, NumberField, SchemaField, StringField, TypedObjectField } = foundry.data.fields;
 const { isValidId } = foundry.data.validators;
@@ -155,7 +155,7 @@ export default class CharacterData extends foundry.abstract.TypeDataModel {
     if ( (options.recursive === false) || (options.action !== "update") ) return;
     if ( !("system" in changes) ) return;
     const current = this.toObject();
-    if ( !diffCharacterTraits(current, current).ok ) return;
+    if ( !diffCharacterTraits(current, current).ok || !validateEntryFields(current, current).ok ) return;
     const result = checkCharacterUpdate(current, changes.system, getGameConfig(), {
       operatorOf: CharacterData.operatorOf
     });

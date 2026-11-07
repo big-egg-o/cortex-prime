@@ -11,13 +11,12 @@
 
 import { stepDie } from "./dice.mjs";
 import { fail, ok } from "./result.mjs";
-import { validateRating } from "./traits.mjs";
+import { statementFieldsProblem, validateRating } from "./traits.mjs";
+import { STATEMENT_SHUT_DOWN_REASON } from "./types.mjs";
 
-/** The shut-down reason a challenge sets on a d4 trait (spec data shapes). */
-export const STATEMENT_SHUT_DOWN_REASON = "statementChallenged";
-
-/** The shut-down reasons a trait entry can store (spec data shapes). */
-export const SHUT_DOWN_REASONS = Object.freeze(["manual", STATEMENT_SHUT_DOWN_REASON]);
+// The shut-down reasons live with the other shared constants, so the edit checks in traits.mjs
+// read the same list; they stay exported from here as before.
+export { SHUT_DOWN_REASONS, STATEMENT_SHUT_DOWN_REASON } from "./types.mjs";
 
 /** @returns {boolean} whether value is a plain object, not an array, class instance or null */
 function isPlainObject(value) {
@@ -38,7 +37,8 @@ function copyPlain(value) {
 }
 
 /**
- * The first problem with the fields these functions read: the rating; `challenged`, which is a
+ * The first problem with the fields these functions read: the rating, then the statement fields
+ * as the edit checks read them (statementFieldsProblem in traits.mjs): `challenged`, which is a
  * boolean when present; a challenged trait's `preChallengeDice`, which must be a rating with
  * dice; and `shutDown`, which is absent or `{reason}` with one of SHUT_DOWN_REASONS. An
  * unchallenged trait's `preChallengeDice` is left unread, because a challenge replaces it.
@@ -49,16 +49,7 @@ function statementTraitProblem(trait) {
   if ( !isPlainObject(trait) ) return "INVALID_TRAIT_DATA";
   const rating = validateRating(trait.dice);
   if ( !rating.ok ) return rating.code;
-  if ( (trait.challenged !== undefined) && (typeof trait.challenged !== "boolean") ) return "INVALID_TRAIT_DATA";
-  if ( trait.challenged ) {
-    if ( !Array.isArray(trait.preChallengeDice) ) return "INVALID_TRAIT_DATA";
-    const saved = validateRating(trait.preChallengeDice);
-    if ( !saved.ok ) return saved.code;
-    if ( saved.value.length === 0 ) return "INVALID_TRAIT_DATA";
-  }
-  if ( (trait.shutDown !== undefined)
-    && !(isPlainObject(trait.shutDown) && SHUT_DOWN_REASONS.includes(trait.shutDown.reason)) ) return "INVALID_TRAIT_DATA";
-  return null;
+  return statementFieldsProblem(trait);
 }
 
 /**

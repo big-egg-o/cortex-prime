@@ -21,6 +21,15 @@
 export const DIE_SIZES = Object.freeze(/** @type {DieSize[]} */ ([4, 6, 8, 10, 12]));
 
 /**
+ * The shut-down reason a statement challenge sets on a d4 trait (Traits & Trait Sets data
+ * shapes; RQ-021). Exported from module/rules/statements.mjs too.
+ */
+export const STATEMENT_SHUT_DOWN_REASON = "statementChallenged";
+
+/** The shut-down reasons a trait entry can store (Traits & Trait Sets data shapes; rule 15). */
+export const SHUT_DOWN_REASONS = Object.freeze(["manual", STATEMENT_SHUT_DOWN_REASON]);
+
+/**
  * Where a pool die came from: a trait, an asset, an SFX, a complication, a doom die, a custom
  * die added by hand, and so on. Only ever referenced by a PoolDie, never mutated through one
  * (overflow and doubled dice carry their origin die's source, but stepping or doubling a pool

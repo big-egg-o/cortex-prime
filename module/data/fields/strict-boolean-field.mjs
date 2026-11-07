@@ -8,7 +8,9 @@
  * BooleanField#_validateType refuses it, as the pure rules functions refuse it
  * (INVALID_TRAIT_DATA in module/rules/statements.mjs). `null` and `undefined` still take the
  * field's initial value, as for any field. Forms send real booleans for checkboxes, so sheets are
- * unaffected.
+ * unaffected. A value inside a list that Foundry refuses on an update is dropped without an error
+ * (ArrayField#_updateDiff); the character's edit check refuses malformed statement fields visibly
+ * first. Active Effect changes, which are text, are still converted as BooleanField does.
  * @module data/fields/strict-boolean-field
  */
 
@@ -22,5 +24,18 @@ export default class StrictBooleanField extends foundry.data.fields.BooleanField
    */
   _cast(value) {
     return value;
+  }
+
+  /**
+   * Converts an Active Effect's change value as BooleanField does: those values are text, such as
+   * "true" (common/data/fields.mjs `DataField#_castChangeDelta`).
+   * @override
+   * @param {unknown} delta
+   * @param {object} [replacementData]
+   * @returns {boolean}
+   */
+  _castChangeDelta(delta, replacementData = {}) {
+    if ( typeof delta === "string" ) delta = this._replaceDataRefs(delta, replacementData);
+    return super._cast(delta);
   }
 }

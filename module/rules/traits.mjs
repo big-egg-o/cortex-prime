@@ -7,7 +7,7 @@
 
 import { fail, ok } from "./result.mjs";
 import { actorKindById, ratingOptionsOf, traitDefById, traitSetById } from "./game-config.mjs";
-import { DIE_SIZES } from "./types.mjs";
+import { DIE_SIZES, SHUT_DOWN_REASONS } from "./types.mjs";
 
 /**
  * Checks a trait's rating: a list of die sizes (ADR-033), several for mobs, bosses, resources
@@ -370,40 +370,94 @@ function subTraitsWellFormed(sub) {
 }
 
 /**
- * Checks the die sizes of the ratings a set entry holds besides its own dice, where an edit sets
- * them: a challenged entry's `preChallengeDice`, its rating from before the first unresolved
- * challenge (rule 16, RQ-022), and the rating of each sub-trait, a trait attached to the entry
- * (rule 19). A die size that doesn't exist is refused (TS-E01), as for any rating, because
- * Foundry drops a list holding one without an error. A rating counts as set by the edit unless an
- * entry with the same id in the same set already holds it (for a sub-trait: a sub-trait with the
- * same id and the same dice as a multiset), so a rating the edit leaves as stored is never checked
- * again (ADR-037 point 2), and one that moves with its entry to another set is.
+ * The first problem with the statement fields of a trait entry, as the statement functions read
+ * them (rule 16; module/rules/statements.mjs): `challenged` is a boolean when present; a
+ * challenged entry's `preChallengeDice` is a rating with at least one die, its rating from before
+ * the first unresolved challenge (RQ-022); `shutDown` is absent or `{reason}` with one of
+ * SHUT_DOWN_REASONS. An unchallenged entry's `preChallengeDice` is left unread, because a challenge
+ * replaces it. The entry's own rating isn't read.
+ * @param {object} entry - a plain object
+ * @returns {string|null} INVALID_TRAIT_DATA or INVALID_DIE_SIZE, or null when the fields are well
+ *   formed
+ */
+export function statementFieldsProblem(entry) {
+  if ( (entry.challenged !== undefined) && (typeof entry.challenged !== "boolean") ) return "INVALID_TRAIT_DATA";
+  if ( entry.challenged ) {
+    if ( !Array.isArray(entry.preChallengeDice) ) return "INVALID_TRAIT_DATA";
+    const saved = validateRating(entry.preChallengeDice);
+    if ( !saved.ok ) return saved.code;
+    if ( saved.value.length === 0 ) return "INVALID_TRAIT_DATA";
+  }
+  if ( (entry.shutDown !== undefined)
+    && !(isPlainObject(entry.shutDown) && SHUT_DOWN_REASONS.includes(entry.shutDown.reason)) ) return "INVALID_TRAIT_DATA";
+  return null;
+}
+
+/** @returns {boolean} whether two values are both absent, or both ratings with the same dice */
+function sameOptionalDice(a, b) {
+  if ( (a === undefined) || (b === undefined) ) return a === b;
+  return Array.isArray(a) && Array.isArray(b) && sameDice(a, b);
+}
+
+/** @returns {boolean} whether two entries agree on their statement fields as statementFieldsProblem reads them */
+function sameStatementFields(a, b) {
+  return (a.challenged === b.challenged) && sameOptionalDice(a.preChallengeDice, b.preChallengeDice)
+    && ((a.shutDown === undefined) === (b.shutDown === undefined)) && (a.shutDown?.reason === b.shutDown?.reason);
+}
+
+/** @returns {object[]} a stored entry's sub-traits that can be compared: objects in a list */
+function readableSubTraits(entry) {
+  return Array.isArray(entry.sub) ? entry.sub.filter(isPlainObject) : [];
+}
+
+/**
+ * Checks the fields of the set entries an edit sets, beyond their own rating, definition and
+ * name (which diffCharacterTraits and validateTraitChanges check):
+ * - the statement fields (rule 16; statementFieldsProblem), so that a challenge the statement
+ *   functions couldn't resolve, such as `challenged` without a saved rating, is refused visibly
+ *   instead of being stored, and a malformed value Foundry would drop without an error is
+ *   refused visibly (ADR-037 point 3);
+ * - the die sizes of the other ratings an entry holds: `preChallengeDice` (RQ-022) and each
+ *   sub-trait's rating (rule 19). A die size that doesn't exist is refused (TS-E01), as for any
+ *   rating, because Foundry drops a list holding one without an error.
+ * A field counts as set by the edit unless an entry with the same id in the same set already
+ * holds the same value (for a sub-trait: a sub-trait with the same id and the same dice as a
+ * multiset), so what the edit leaves as stored is never checked again (ADR-037 point 2), and what
+ * moves with its entry to another set is. Only the proposed data's shape is checked; the stored
+ * data is read only to find what stayed the same, so a stored problem never stops an edit that
+ * repairs it.
  *
  * Only die sizes are checked, never a set's shape. `preChallengeDice` is a past rating, which may
  * no longer fit its set after a configuration change and is kept all the same (ADR-037 point 5).
  * Which shape a sub-trait's rating must fit is not settled, so it gets the die-size check only,
  * as ADR-037 does with other edits it leaves open, and ADR-029 point 2 refuses only data that
- * can't exist. Free traits have neither field and aren't read. Pure; never changes its inputs.
+ * can't exist. SFX, tags and descriptions are plain text that Foundry's schema checks. Free traits
+ * have none of these fields and aren't read. Pure; never changes its inputs.
  * @param {import("./types.mjs").CharacterTraitData} current - the stored data before the edit
- * @param {import("./types.mjs").CharacterTraitData} proposed - the complete data after the edit
+ * @param {import("./types.mjs").CharacterTraitData} proposed - the trait data after the edit
  * @returns {import("./types.mjs").EngineResult<{checked: {setId: string, entryId: string,
- *   subId: string|null, field: "preChallengeDice"|"sub"}[]}>} the ratings checked, in proposed
- *   order (sets in key order, entries in array order, an entry's preChallengeDice before its
- *   sub-traits); refuses, in this order: INVALID_TRAIT_DATA (either state isn't shaped like trait
- *   data, or an entry's sub-traits aren't a list of objects with ids), INVALID_DIE_SIZE
+ *   subId: string|null, field: "preChallengeDice"|"sub"}[]}>} the ratings whose die sizes were
+ *   checked, in proposed order (sets in key order, entries in array order, an entry's
+ *   preChallengeDice before its sub-traits); refuses, in this order: INVALID_TRAIT_DATA (either
+ *   state isn't shaped like trait data, an entry's sub-traits aren't a list of objects with ids,
+ *   or an entry's statement fields are malformed), INVALID_DIE_SIZE
  */
-export function validateEntryRatings(current, proposed) {
+export function validateEntryFields(current, proposed) {
   if ( !traitDataWellFormed(current) || !traitDataWellFormed(proposed) ) return fail("INVALID_TRAIT_DATA");
-  for ( const state of [current, proposed] ) {
-    for ( const set of Object.values(state.traits) ) {
-      if ( !set.entries.every(entry => subTraitsWellFormed(entry.sub)) ) return fail("INVALID_TRAIT_DATA");
+  const earlierOf = (setId, entry) => (current.traits[setId]?.entries ?? []).filter(e => e.id === entry.id);
+
+  for ( const [setId, set] of Object.entries(proposed.traits) ) {
+    for ( const entry of set.entries ) {
+      if ( !subTraitsWellFormed(entry.sub) ) return fail("INVALID_TRAIT_DATA");
+      if ( earlierOf(setId, entry).some(e => sameStatementFields(e, entry)) ) continue;
+      if ( statementFieldsProblem(entry) === "INVALID_TRAIT_DATA" ) return fail("INVALID_TRAIT_DATA");
     }
   }
 
   const checked = [];
   for ( const [setId, set] of Object.entries(proposed.traits) ) {
     for ( const entry of set.entries ) {
-      const earlier = (current.traits[setId]?.entries ?? []).filter(e => e.id === entry.id);
+      const earlier = earlierOf(setId, entry);
       if ( entry.preChallengeDice !== undefined ) {
         const kept = earlier.some(e => Array.isArray(e.preChallengeDice) && Array.isArray(entry.preChallengeDice)
           && sameDice(e.preChallengeDice, entry.preChallengeDice));
@@ -414,7 +468,7 @@ export function validateEntryRatings(current, proposed) {
         }
       }
       for ( const sub of entry.sub ?? [] ) {
-        const kept = earlier.some(e => (e.sub ?? []).some(s => (s.id === sub.id) && Array.isArray(s.dice)
+        const kept = earlier.some(e => readableSubTraits(e).some(s => (s.id === sub.id) && Array.isArray(s.dice)
           && Array.isArray(sub.dice) && sameDice(s.dice, sub.dice)));
         if ( kept ) continue;
         const sizes = validateRating(sub.dice);
@@ -427,25 +481,25 @@ export function validateEntryRatings(current, proposed) {
 }
 
 /**
- * Checks an edit of a character's traits from its stored data to the complete data it would
- * have afterwards: what changed (diffCharacterTraits), the die sizes of the entries' other
- * ratings the edit sets (validateEntryRatings), then whether the changes fit the configuration
- * (validateTraitChanges). Die sizes come before set shapes, as in validateTraitChanges. This is
- * the check ADR-037 point 3 puts before every write of our apps and in the character model's
- * update backstop. Creating an actor, a replacing update and the system's own migrations count
- * as loading (point 4) and don't come here. Statement and SFX text, tags, descriptions and
- * shut-down flags are not checked against the configuration (ADR-029).
+ * Checks an edit of a character's traits from its stored data to the data it would have
+ * afterwards: what changed (diffCharacterTraits), the entries' other fields the edit sets
+ * (validateEntryFields), then whether the changes fit the configuration (validateTraitChanges).
+ * Die sizes come before set shapes, as in validateTraitChanges. This is the check ADR-037 point 3
+ * puts before every write of our apps and in the character model's update backstop. Creating an
+ * actor, a replacing update and the system's own migrations count as loading (point 4) and don't
+ * come here. Statement and SFX text, tags, descriptions and shut-down flags are not checked
+ * against the configuration (ADR-029).
  * @param {import("./types.mjs").CharacterTraitData} current
  * @param {import("./types.mjs").CharacterTraitData} proposed
  * @param {import("./types.mjs").GameConfig} config
  * @returns {import("./types.mjs").EngineResult<import("./types.mjs").TraitChanges>} the diff;
- *   refuses with the diff's codes, then validateEntryRatings's, then validateTraitChanges's
+ *   refuses with the diff's codes, then validateEntryFields's, then validateTraitChanges's
  */
 export function checkCharacterEdit(current, proposed, config) {
   const diff = diffCharacterTraits(current, proposed);
   if ( !diff.ok ) return diff;
-  const ratings = validateEntryRatings(current, proposed);
-  if ( !ratings.ok ) return ratings;
+  const fields = validateEntryFields(current, proposed);
+  if ( !fields.ok ) return fields;
   const checked = validateTraitChanges(diff.value, config);
   return checked.ok ? diff : checked;
 }
@@ -520,8 +574,9 @@ function readUpdateValue(value, operatorOf) {
 }
 
 /**
- * Applies an update's system changes to a character's stored trait data and returns the complete
- * trait data the update would leave, for checkCharacterEdit (ADR-037 point 3). It expects the
+ * Applies an update's system changes to a character's stored trait data and returns the trait
+ * data the update would leave, as far as the edit checks read it (kind, entries, free traits; a
+ * set's other fields are kept as stored), for checkCharacterEdit (ADR-037 point 3). It expects the
  * changes as Foundry passes them to `_preUpdate`: cleaned, so dotted keys are expanded, legacy
  * deletion and replacement keys are operators, nulls are reset to their initial values and form
  * input is cast (client/data/client-backend.mjs `#preUpdateDocumentArray`). Our apps clean their

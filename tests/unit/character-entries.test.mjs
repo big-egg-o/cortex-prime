@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { defaultGameConfig } from "../../module/rules/game-config.mjs";
-import { checkCharacterEdit, checkCharacterUpdate, validateEntryRatings } from "../../module/rules/traits.mjs";
+import { checkCharacterEdit, checkCharacterUpdate, validateEntryFields } from "../../module/rules/traits.mjs";
 import * as rules from "../../module/rules/index.mjs";
 import { challengeStatement, editStatement, resolveChallengedStatement } from "../../module/rules/statements.mjs";
 
@@ -50,25 +50,59 @@ const social = state => state.traits[ATTRIBUTES].entries[0];
 const shoot = state => state.traits[SKILLS].entries[0];
 const refused = code => ({ ok: false, code });
 
-describe("validateEntryRatings (ADR-037 point 2 for the entry's other ratings)", () => {
+describe("validateEntryFields (ADR-037 point 2 for the entry's other fields)", () => {
   it("is exported from the rules index", () => {
-    expect(rules.validateEntryRatings).toBe(validateEntryRatings);
+    expect(rules.validateEntryFields).toBe(validateEntryFields);
   });
 
   it("TS-E01 refuses a d7 in a preChallengeDice the edit sets", () => {
     const proposed = edited(c => Object.assign(social(c), { challenged: true, preChallengeDice: [7] }));
-    expect(validateEntryRatings(pc(), proposed)).toEqual(refused("INVALID_DIE_SIZE"));
+    expect(validateEntryFields(pc(), proposed)).toEqual(refused("INVALID_DIE_SIZE"));
   });
 
   it("TS-E01 refuses a d7 or a d14 in a sub-trait's rating the edit sets", () => {
-    expect(validateEntryRatings(pc(), edited(c => { shoot(c).sub[0].dice = [7]; }))).toEqual(refused("INVALID_DIE_SIZE"));
+    expect(validateEntryFields(pc(), edited(c => { shoot(c).sub[0].dice = [7]; }))).toEqual(refused("INVALID_DIE_SIZE"));
     const added = edited(c => { shoot(c).sub.push({ id: S2, name: "Bows", dice: [6, 14] }); });
-    expect(validateEntryRatings(pc(), added)).toEqual(refused("INVALID_DIE_SIZE"));
+    expect(validateEntryFields(pc(), added)).toEqual(refused("INVALID_DIE_SIZE"));
   });
 
-  it("TS-E01 refuses a rating that isn't a list instead of coercing it", () => {
-    const proposed = edited(c => Object.assign(social(c), { challenged: true, preChallengeDice: "8" }));
-    expect(validateEntryRatings(pc(), proposed)).toEqual(refused("INVALID_DIE_SIZE"));
+  it("ADR-037 point 2 refuses a saved rating that isn't a list instead of coercing it", () => {
+    const unchallenged = edited(c => Object.assign(social(c), { preChallengeDice: "8" }));
+    expect(validateEntryFields(pc(), unchallenged)).toEqual(refused("INVALID_DIE_SIZE"));
+    // A challenged entry's saved rating is read as statements.mjs reads it.
+    const challenged = edited(c => Object.assign(social(c), { challenged: true, preChallengeDice: "8" }));
+    expect(validateEntryFields(pc(), challenged)).toEqual(refused("INVALID_TRAIT_DATA"));
+  });
+
+  it("RQ-022 refuses a challenge the edit sets without a saved rating, or with an empty one", () => {
+    // statements.mjs couldn't resolve such a challenge, and resolving is the only way to clear it.
+    for ( const fields of [{ challenged: true }, { challenged: true, preChallengeDice: [] }] ) {
+      const proposed = edited(c => Object.assign(social(c), fields));
+      expect(validateEntryFields(pc(), proposed), JSON.stringify(fields)).toEqual(refused("INVALID_TRAIT_DATA"));
+    }
+  });
+
+  it("rule 16 and RQ-021 refuse a non-boolean challenged and an unknown shut-down reason the edit sets", () => {
+    const cases = [{ challenged: "yes" }, { shutDown: { reason: "forgotten" } }, { shutDown: {} }, { shutDown: "manual" }];
+    for ( const fields of cases ) {
+      const proposed = edited(c => Object.assign(social(c), fields));
+      expect(validateEntryFields(pc(), proposed), JSON.stringify(fields)).toEqual(refused("INVALID_TRAIT_DATA"));
+    }
+  });
+
+  it("ADR-037 point 2 lets an unrelated edit through on a stored challenge without a saved rating, and clearing it", () => {
+    const stored = edited(c => { social(c).challenged = true; });
+    const unrelated = edited(c => { c.traits[DISTINCTIONS].entries[0].description = "Knows most ports"; }, stored);
+    expect(validateEntryFields(stored, unrelated)).toMatchObject({ ok: true });
+    const cleared = edited(c => { delete social(c).challenged; }, stored);
+    expect(validateEntryFields(stored, cleared)).toMatchObject({ ok: true });
+  });
+
+  it("ADR-037 point 3 refuses stored data with a malformed sub-trait list, so the backstop steps aside, and lets the repair through", () => {
+    const stored = edited(c => { shoot(c).sub = [{ id: "short", name: "Guns", dice: [6] }]; });
+    expect(validateEntryFields(stored, stored)).toEqual(refused("INVALID_TRAIT_DATA"));
+    const repaired = edited(c => { shoot(c).sub = [{ id: S1, name: "Guns", dice: [6] }]; }, stored);
+    expect(validateEntryFields(stored, repaired)).toMatchObject({ ok: true });
   });
 
   it("ADR-037 point 2 doesn't check again a preChallengeDice or sub-trait rating the edit leaves as stored", () => {
@@ -78,7 +112,7 @@ describe("validateEntryRatings (ADR-037 point 2 for the entry's other ratings)",
       shoot(c).sub[0].dice = [7];
     });
     const proposed = edited(c => { social(c).statement = "I keep my word, mostly"; }, stored);
-    expect(validateEntryRatings(stored, proposed)).toEqual({ ok: true, value: { checked: [] } });
+    expect(validateEntryFields(stored, proposed)).toEqual({ ok: true, value: { checked: [] } });
   });
 
   it("ADR-037 point 2 checks a sub-trait's rating again when the entry moves to another set", () => {
@@ -86,19 +120,19 @@ describe("validateEntryRatings (ADR-037 point 2 for the entry's other ratings)",
       const [entry] = c.traits[SKILLS].entries.splice(0, 1);
       c.traits[DISTINCTIONS].entries.push({ ...entry, defId: null });
     });
-    expect(validateEntryRatings(pc(), proposed)).toEqual({
+    expect(validateEntryFields(pc(), proposed)).toEqual({
       ok: true, value: { checked: [{ setId: DISTINCTIONS, entryId: E3, subId: S1, field: "sub" }] }
     });
   });
 
   it("RQ-022 b and TS-14b: a saved preChallengeDice of [8] passes, and what was checked is listed", () => {
     const proposed = edited(c => Object.assign(social(c), { dice: [4], challenged: true, preChallengeDice: [8] }));
-    expect(validateEntryRatings(pc(), proposed)).toEqual({
+    expect(validateEntryFields(pc(), proposed)).toEqual({
       ok: true, value: { checked: [{ setId: ATTRIBUTES, entryId: E2, subId: null, field: "preChallengeDice" }] }
     });
   });
 
-  it("TS-19 to TS-21 (MOD Specialties): sub-traits rated [6], [10] and [6, 6] pass", () => {
+  it("rule 19: sub-traits rated [6], [10] and [6, 6] (the ratings of TS-19 to TS-21) pass the die-size check", () => {
     const proposed = edited(c => {
       shoot(c).sub = [
         { id: S1, name: "Guns", dice: [6] },
@@ -106,7 +140,7 @@ describe("validateEntryRatings (ADR-037 point 2 for the entry's other ratings)",
         { id: "subtrait00000003", name: "Rifles", dice: [6, 6] }
       ];
     });
-    const result = validateEntryRatings(pc(), proposed);
+    const result = validateEntryFields(pc(), proposed);
     expect(result.ok).toBe(true);
     expect(result.value.checked.map(c => c.subId)).toEqual([S2, "subtrait00000003"]);
   });
@@ -115,21 +149,21 @@ describe("validateEntryRatings (ADR-037 point 2 for the entry's other ratings)",
     const proposed = edited(c => {
       c.freeTraits.push({ id: "free000000000001", name: "Boss", dice: [8, 8, 8], preChallengeDice: [7] });
     });
-    expect(validateEntryRatings(pc(), proposed)).toEqual({ ok: true, value: { checked: [] } });
+    expect(validateEntryFields(pc(), proposed)).toEqual({ ok: true, value: { checked: [] } });
   });
 
   it("refuses data it can't read: INVALID_TRAIT_DATA", () => {
-    expect(validateEntryRatings(null, pc())).toEqual(refused("INVALID_TRAIT_DATA"));
-    expect(validateEntryRatings(pc(), edited(c => { shoot(c).sub = { id: S1 }; }))).toEqual(refused("INVALID_TRAIT_DATA"));
-    expect(validateEntryRatings(pc(), edited(c => { shoot(c).sub = [null]; }))).toEqual(refused("INVALID_TRAIT_DATA"));
-    expect(validateEntryRatings(pc(), edited(c => { shoot(c).sub[0].id = "short"; }))).toEqual(refused("INVALID_TRAIT_DATA"));
+    expect(validateEntryFields(null, pc())).toEqual(refused("INVALID_TRAIT_DATA"));
+    expect(validateEntryFields(pc(), edited(c => { shoot(c).sub = { id: S1 }; }))).toEqual(refused("INVALID_TRAIT_DATA"));
+    expect(validateEntryFields(pc(), edited(c => { shoot(c).sub = [null]; }))).toEqual(refused("INVALID_TRAIT_DATA"));
+    expect(validateEntryFields(pc(), edited(c => { shoot(c).sub[0].id = "short"; }))).toEqual(refused("INVALID_TRAIT_DATA"));
   });
 
   it("never changes its inputs", () => {
     const current = Object.freeze(pc());
     const proposed = edited(c => Object.assign(social(c), { challenged: true, preChallengeDice: [8] }));
     const copy = structuredClone(proposed);
-    validateEntryRatings(current, proposed);
+    validateEntryFields(current, proposed);
     expect(proposed).toEqual(copy);
   });
 });
@@ -159,14 +193,18 @@ describe("checkCharacterEdit with the new entry fields (ADR-037)", () => {
     expect(check(c => { c.traits[ATTRIBUTES].entries[0] = challengeStatement(social(c)).value; })).toMatchObject({ ok: true });
   });
 
-  it("TS-15c editing the statement, SFX, tags and description needs no configuration check", () => {
-    const result = check(c => {
-      Object.assign(social(c), editStatement(social(c), "I keep my word, mostly").value);
+  it("TS-15c editing a challenged entry's statement, SFX, tags and description keeps the challenge, with no configuration check", () => {
+    const challenged = edited(c => { c.traits[ATTRIBUTES].entries[0] = challengeStatement(social(c)).value; });
+    const proposed = edited(c => {
+      c.traits[ATTRIBUTES].entries[0] = editStatement(social(c), "I keep my word, mostly").value;
       social(c).sfx = [{ text: "Swayed by a friend", unlocked: false }];
       social(c).tags = ["Trust"];
       c.traits[DISTINCTIONS].entries[0].description = "Knows most ports";
+    }, challenged);
+    expect(checkCharacterEdit(challenged, proposed, defaultGameConfig())).toMatchObject({ ok: true, value: { entries: [] } });
+    expect(social(proposed)).toMatchObject({
+      statement: "I keep my word, mostly", dice: [6], challenged: true, preChallengeDice: [8]
     });
-    expect(result).toMatchObject({ ok: true, value: { entries: [] } });
   });
 
   it("rule 15: setting a set's or an entry's shut-down flag needs no configuration check", () => {

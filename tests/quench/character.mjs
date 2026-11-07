@@ -510,20 +510,28 @@ export function registerCharacterBatch(quench) {
           assert.deepEqual(storedSystem(actor).traits, system.traits);
         });
 
-        it("drops a bad shut-down reason or a non-boolean challenged sent in an update; the backstop doesn't read them", async () => {
-          // Recorded behaviour: Foundry refuses the invalid list and keeps the stored entries.
+        it("RQ-021 and RQ-022: refuses a bad shut-down reason, a non-boolean challenged and a challenge without a saved rating visibly", async () => {
           const system = pcSystem();
           const actor = await createCharacter(foundry.utils.deepClone(system));
-          for ( const spoil of [{ shutDown: { reason: "forgotten" } }, { challenged: "yes" }] ) {
+          const spoils = [{ shutDown: { reason: "forgotten" } }, { challenged: "yes" }, { challenged: true }];
+          for ( const spoil of spoils ) {
             const entries = [{ ...system.traits[ATTRIBUTES].entries[0], ...spoil }];
-            try {
-              await actor.update({ [`system.traits.${ATTRIBUTES}.entries`]: entries });
-            }
-            catch {
-              // A thrown refusal is a refusal too.
-            }
-            assert.deepEqual(storedSystem(actor).traits[ATTRIBUTES], system.traits[ATTRIBUTES]);
+            await actor.update({ name: "[Quench] renamed", [`system.traits.${ATTRIBUTES}.entries`]: entries });
+            // A silent drop by Foundry would keep the name change; the backstop cancels it too.
+            assert.equal(game.actors.get(actor.id).name, "[Quench] character", JSON.stringify(spoil));
+            assert.deepEqual(storedSystem(actor).traits[ATTRIBUTES], system.traits[ATTRIBUTES], JSON.stringify(spoil));
           }
+        });
+
+        it("drops an SFX without its unlocked flag sent in an update, keeping the update's other changes (Foundry's list check)", async () => {
+          // Recorded Foundry behaviour, not approved: an invalid element in a list is dropped from
+          // an update without an error (ADR-037 point 7). The backstop doesn't read SFX.
+          const system = pcSystem();
+          const actor = await createCharacter(foundry.utils.deepClone(system));
+          const entries = [{ ...system.traits[ATTRIBUTES].entries[0], sfx: [{ text: "Charm" }] }];
+          await actor.update({ name: "[Quench] renamed", [`system.traits.${ATTRIBUTES}.entries`]: entries });
+          assert.equal(game.actors.get(actor.id).name, "[Quench] renamed");
+          assert.deepEqual(storedSystem(actor).traits[ATTRIBUTES], system.traits[ATTRIBUTES]);
         });
 
         it("TS-14 and TS-14b: challenges written back through Actor#update pass the backstop", async () => {

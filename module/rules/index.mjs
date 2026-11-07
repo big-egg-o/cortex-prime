@@ -35,6 +35,6 @@ export {
 } from "./statements.mjs";
 export { effectiveRating, poolTraitCost, traitPoolEntries } from "./trait-pool.mjs";
 export {
-  checkCharacterEdit, checkCharacterUpdate, diffCharacterTraits, proposedTraitData, validateEntryRatings, validateRating,
+  checkCharacterEdit, checkCharacterUpdate, diffCharacterTraits, proposedTraitData, validateEntryFields, validateRating,
   validateTraitChanges
 } from "./traits.mjs";
