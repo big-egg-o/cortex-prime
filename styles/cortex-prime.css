@@ -59,6 +59,31 @@
   color: var(--color-text-secondary);
 }
 
+/* What the pool warned of when it was rolled (ADR-029, RQ-030): a note, not a control. */
+.cortex-prime.poolroll-card .cp-nonstandard {
+  margin: 0.25rem 0;
+  padding: 0.25rem 0.5rem;
+  border-left: 3px solid var(--color-level-warning);
+  font-size: var(--font-size-12);
+}
+
+.cortex-prime.poolroll-card .cp-nonstandard-title {
+  margin: 0;
+  border: none;
+  font-size: var(--font-size-12);
+  font-weight: bold;
+}
+
+.cortex-prime.poolroll-card .cp-nonstandard-reasons {
+  margin: 0;
+  padding-left: 1.1em;
+}
+
+.cortex-prime.poolroll-card .cp-unpriced {
+  margin: 0;
+  font-style: italic;
+}
+
 .cortex-prime.poolroll-card .cp-controls {
   display: flex;
   flex-wrap: wrap;

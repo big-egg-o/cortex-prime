@@ -7,7 +7,8 @@
  * @module dice/pool-roll-card
  */
 
-import { evaluate, rerollableIds, resolve, validateSelection } from "../rules/index.mjs";
+import { evaluate, rerollableIds, resolve, traitSetById, validateSelection } from "../rules/index.mjs";
+import { getGameConfig } from "../config/settings.mjs";
 import { applyCardChange, canEditPoolRollCard } from "./card-actions.mjs";
 
 const TEMPLATE = "systems/cortex-prime/templates/chat/pool-roll.hbs";
@@ -101,6 +102,57 @@ function formatResolvedHeadline(resolution) {
 }
 
 /**
+ * What a warning is about, by name: the trait's label as the pool stored it when it was rolled
+ * (the die whose source has the warning's trait id, and its actor id when the warning has one),
+ * or else the set's name in the current game configuration. Null when neither is known, for
+ * example a warning without ids, or a set the configuration no longer has.
+ * @param {{traitId?: string, actorId?: string, setId?: string}} warning
+ * @param {import("../rules/types.mjs").PoolDie[]} pool
+ * @returns {string|null}
+ */
+function warningSubject(warning, pool) {
+  if ( warning.traitId ) {
+    const die = pool.find(d => (d.source.traitId === warning.traitId)
+      && ((warning.actorId === undefined) || (d.source.actorId === warning.actorId)));
+    if ( die ) return die.source.label;
+  }
+  if ( warning.setId ) {
+    try {
+      return traitSetById(getGameConfig(), warning.setId)?.name ?? null;
+    }
+    catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+/**
+ * The card's "nonstandard selection" section (ADR-029 consequences, RQ-030): one reason per
+ * warning the message stored when it was rolled, naming the trait or set where it can, and a line
+ * for traits with no defined price. Shown, never judged: there is no cost line, and no control to
+ * approve the selection or charge for it (ADR-029 points 2 and 3); the table decides.
+ * @param {object} system - the message's system data
+ * @returns {{title: string, reasons: string[], unpriced: string|null}|null} null for a standard
+ *   selection
+ */
+function prepareNonstandard(system) {
+  const warnings = system.warnings ?? [];
+  const unpricedCount = (system.unpricedTraits ?? []).reduce((sum, u) => sum + u.count, 0);
+  if ( !warnings.length && !unpricedCount ) return null;
+  const reasons = warnings.map(warning => {
+    const key = `CORTEX.Chat.Nonstandard.Reasons.${warning.code}`;
+    const reason = game.i18n.has(key) ? game.i18n.localize(key) : warning.code;
+    const name = warningSubject(warning, system.pool);
+    return name ? game.i18n.format("CORTEX.Chat.Nonstandard.WithName", { reason, name }) : reason;
+  });
+  let unpriced = null;
+  if ( unpricedCount === 1 ) unpriced = game.i18n.localize("CORTEX.Chat.Nonstandard.UnpricedOne");
+  else if ( unpricedCount > 1 ) unpriced = game.i18n.format("CORTEX.Chat.Nonstandard.UnpricedMany", { count: unpricedCount });
+  return { title: game.i18n.localize("CORTEX.Chat.Nonstandard.Title"), reasons, unpriced };
+}
+
+/**
  * Builds the Handlebars context for a poolRoll card: a one-line headline, every rolled die
  * once with its current role, whether the current user may act on the card, and (while
  * interactive) the live validateSelection check for the controls panel. No game logic here
@@ -115,7 +167,9 @@ function formatResolvedHeadline(resolution) {
  *   effectControls: {effectId: string, size: number}[]|null,
  *   overflowChoice: {leftovers: {dieId: string, label: string}[], newDieLabel: string,
  *     takeOutAvailable: boolean, takeOutLabel: string}|null,
- *   reroll: {active: boolean, canReroll: boolean}|null}}
+ *   reroll: {active: boolean, canReroll: boolean}|null,
+ *   nonstandard: {title: string, reasons: string[], unpriced: string|null}|null}} `nonstandard`
+ *   is shown to everyone who can see the card, in every state (prepareNonstandard)
  */
 export function preparePoolRollCardContext(message) {
   const system = message.system;
@@ -215,7 +269,8 @@ export function preparePoolRollCardContext(message) {
     : null;
 
   return {
-    botch, dice, formula, headline, preview, interactive, selection, effectControls, overflowChoice, reroll
+    botch, dice, formula, headline, preview, interactive, selection, effectControls, overflowChoice, reroll,
+    nonstandard: prepareNonstandard(system)
   };
 }
 

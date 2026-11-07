@@ -11,9 +11,44 @@ const { ArrayField, BooleanField, NumberField, SchemaField, StringField } = foun
 
 /**
  * The current poolRoll schema version. 2: effect dice have ids and kinds, and the Resolution
- * has consumedDieIds and nextEffectNumber (Decisions ADR-026).
+ * has consumedDieIds and nextEffectNumber (Decisions ADR-026). 3: the roll stores its pool's
+ * warnings and unpriced traits (ADR-029 consequences, RQ-030).
  */
-export const POOL_ROLL_SCHEMA_VERSION = 2;
+export const POOL_ROLL_SCHEMA_VERSION = 3;
+
+/** Options for a field that stays absent until it is set. */
+const OPTIONAL = Object.freeze({ required: false, nullable: false, initial: undefined });
+
+/**
+ * @param {unknown} value
+ * @returns {boolean} whether value is a whole number from 1, checked without rounding (a
+ *   NumberField with `integer` and `min` would round and clamp it while cleaning)
+ */
+function isCount(value) {
+  return Number.isInteger(value) && (value >= 1);
+}
+
+/**
+ * @returns {Record<string, DataField>} one warning about the pool's traits, as poolTraitCost and
+ *   effectiveRating report it: a code and, where the warning has them, the set, actor and trait
+ */
+function warningSchema() {
+  return {
+    code: new StringField({ required: true, blank: false }),
+    setId: new StringField({ ...OPTIONAL, blank: false }),
+    actorId: new StringField({ ...OPTIONAL, blank: false }),
+    traitId: new StringField({ ...OPTIONAL, blank: false })
+  };
+}
+
+/** @returns {Record<string, DataField>} the traits of one set with no defined price (RQ-030) */
+function unpricedTraitsSchema() {
+  return {
+    setId: new StringField({ required: true, blank: false }),
+    count: new NumberField({ required: true, nullable: false, initial: undefined, validate: isCount,
+      validationError: "must be a whole number from 1" })
+  };
+}
 
 /** @returns {Record<string, import("../../../reference/foundry-14.369/common/data/fields.mjs").DataField>} */
 function dieSourceSchema() {
@@ -156,7 +191,13 @@ export default class PoolRollData extends foundry.abstract.TypeDataModel {
       rolled: new ArrayField(new SchemaField(rolledDieSchema())),
       selection: new SchemaField(selectionSchema()),
       resolution: new SchemaField(resolutionSchema(), { nullable: true, initial: null }),
-      state: new StringField({ required: true, choices: ["rolled", "resolved"], initial: "rolled" })
+      state: new StringField({ required: true, choices: ["rolled", "resolved"], initial: "rolled" }),
+      // What the pool's traits warned of when it was rolled, kept as rolled so later sheet
+      // changes don't alter the card (ADR-029 consequences), and the traits of a set that
+      // allows no further trait, which have no defined price (RQ-030). Empty for a pool of
+      // dice from no trait.
+      warnings: new ArrayField(new SchemaField(warningSchema())),
+      unpricedTraits: new ArrayField(new SchemaField(unpricedTraitsSchema()))
     };
   }
 
@@ -167,6 +208,13 @@ export default class PoolRollData extends foundry.abstract.TypeDataModel {
    * nothing. A Resolution is migrated only when its effectDice are present and either an entry
    * has no id or the source says it is from before version 2; a source without schemaVersion
    * (a partial update) is treated as current (ADR-026).
+   *
+   * Version 2 to 3 (ADR-029 consequences, RQ-030) only raises the version of a source that says
+   * it is older: a message rolled before warnings were stored gets empty `warnings` and
+   * `unpricedTraits` lists from the schema's initial values when it is cleaned, not from this
+   * step, which never fills in defaults: Foundry also runs this on partial update data, which
+   * must stay partial, so a step that filled them could overwrite stored lists (see the notes in
+   * module/data/migration-runner.mjs).
    * @override
    * @param {object} source
    * @returns {object} the same source, migrated in place
@@ -180,6 +228,7 @@ export default class PoolRollData extends foundry.abstract.TypeDataModel {
       migrateResolutionToV2(resolution);
     }
     if ( old ) source.schemaVersion = 2;
+    if ( (source.schemaVersion !== undefined) && (source.schemaVersion < 3) ) source.schemaVersion = 3;
     return source;
   }
 

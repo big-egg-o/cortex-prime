@@ -218,7 +218,11 @@ export function registerMigrationBatch(quench) {
           const warnings = [{ code: "TRAIT_SET_SHUT_DOWN", setId: "cpSetSkills00000" }];
           const message = await ChatMessage.create({
             type: "poolRoll",
-            system: { ...old, schemaVersion: POOL_ROLL_SCHEMA_VERSION, resolution: null, state: "rolled", warnings }
+            // A copy: creating cleans its data in place.
+            system: {
+              ...old, schemaVersion: POOL_ROLL_SCHEMA_VERSION, resolution: null, state: "rolled",
+              warnings: foundry.utils.deepClone(warnings)
+            }
           });
           messages.push(message);
           await message.update({ "system.selection.extraResultsPaid": 1 });
