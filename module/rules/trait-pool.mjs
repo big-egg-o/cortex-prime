@@ -94,14 +94,13 @@ function poolTraitWellFormed(trait) {
  * its own copy of the trait as source (kind "trait"). With Hinder (RQ-029) the trait gives one
  * d4 and its first entry reports `ppGained: 1`, the one plot point a use of Hinder gains (TS-02);
  * a trait already rated d4 gives its d4 as usual, and its first entry reports `ppGained: 0` and
- * `hint: "HINDER_ALREADY_D4"`. Who gains the plot point, and paying it out, are Plot Points
- * bookkeeping (ADR-014, ADR-029 point 3). Hinder changes the roll
- * only: the trait's stored rating stays as it is. A challenged statement (MOD Trait Statements)
- * gives each die three times for this roll (rule 16, TS-14, TS-16; the spec's implementation
- * notes for several dice). A fallback die is marked `isFallback` (TS-03). Hinder and a challenge
- * together are refused until RQ-032 is decided. Whether the trait's set offers Hinder or
- * statements is the caller's check; buildPool ignores the extra marks, so a caller that needs
- * them keeps the entries.
+ * `hint: "HINDER_ALREADY_D4"`. Who gains the plot point and how it is paid out are Plot Points
+ * bookkeeping (ADR-014, ADR-029 point 3). Hinder changes the roll only: the trait's stored
+ * rating stays as it is. A challenged statement (MOD Trait Statements) gives each die three
+ * times for this roll (rule 16, TS-14, TS-16; the spec's implementation notes for several dice).
+ * A fallback die is marked `isFallback` (TS-03). Hinder and a challenge together are refused
+ * until RQ-032 is decided. Whether the trait's set offers Hinder or statements is the caller's
+ * check; buildPool ignores the extra marks, so a caller that needs them keeps the entries.
  * @param {{dice: import("./types.mjs").DieSize[], label: string, actorId?: string,
  *   traitId?: string, isFallback?: boolean}} trait - dice from effectiveRating
  * @param {{hinder?: boolean, challenge?: boolean}} [options]
