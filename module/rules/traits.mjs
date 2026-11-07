@@ -375,21 +375,22 @@ function subTraitsWellFormed(sub) {
  * challenged entry's `preChallengeDice` is a rating with at least one die, its rating from before
  * the first unresolved challenge (RQ-022); `shutDown` is absent or `{reason}` with one of
  * SHUT_DOWN_REASONS. An unchallenged entry's `preChallengeDice` is left unread, because a challenge
- * replaces it. The entry's own rating isn't read.
- * @param {object} entry - a plain object
+ * replaces it. The entry's own rating isn't read. Every INVALID_TRAIT_DATA check comes before the
+ * saved rating's die sizes, so a die-size problem never hides a malformed field.
+ * @param {object} entry - a plain object; the caller checks that first
  * @returns {string|null} INVALID_TRAIT_DATA or INVALID_DIE_SIZE, or null when the fields are well
  *   formed
  */
 export function statementFieldsProblem(entry) {
   if ( (entry.challenged !== undefined) && (typeof entry.challenged !== "boolean") ) return "INVALID_TRAIT_DATA";
+  if ( (entry.shutDown !== undefined)
+    && !(isPlainObject(entry.shutDown) && SHUT_DOWN_REASONS.includes(entry.shutDown.reason)) ) return "INVALID_TRAIT_DATA";
   if ( entry.challenged ) {
     if ( !Array.isArray(entry.preChallengeDice) ) return "INVALID_TRAIT_DATA";
     const saved = validateRating(entry.preChallengeDice);
     if ( !saved.ok ) return saved.code;
     if ( saved.value.length === 0 ) return "INVALID_TRAIT_DATA";
   }
-  if ( (entry.shutDown !== undefined)
-    && !(isPlainObject(entry.shutDown) && SHUT_DOWN_REASONS.includes(entry.shutDown.reason)) ) return "INVALID_TRAIT_DATA";
   return null;
 }
 

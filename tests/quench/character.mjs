@@ -525,7 +525,8 @@ export function registerCharacterBatch(quench) {
 
         it("drops an SFX without its unlocked flag sent in an update, keeping the update's other changes (Foundry's list check)", async () => {
           // Recorded Foundry behaviour, not approved: an invalid element in a list is dropped from
-          // an update without an error (ADR-037 point 7). The backstop doesn't read SFX.
+          // an update without an error. The backstop doesn't read SFX, so this limitation is listed
+          // for the owner; ADR-037 point 7 covers only writes that bypass Actor#update.
           const system = pcSystem();
           const actor = await createCharacter(foundry.utils.deepClone(system));
           const entries = [{ ...system.traits[ATTRIBUTES].entries[0], sfx: [{ text: "Charm" }] }];

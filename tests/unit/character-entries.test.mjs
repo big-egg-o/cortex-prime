@@ -90,6 +90,12 @@ describe("validateEntryFields (ADR-037 point 2 for the entry's other fields)", (
     }
   });
 
+  it("RQ-021 refuses an unknown shut-down reason even when the stored saved rating holds a d7", () => {
+    const stored = edited(c => Object.assign(social(c), { challenged: true, preChallengeDice: [7] }));
+    const proposed = edited(c => { social(c).shutDown = { reason: "forgotten" }; }, stored);
+    expect(validateEntryFields(stored, proposed)).toEqual(refused("INVALID_TRAIT_DATA"));
+  });
+
   it("ADR-037 point 2 lets an unrelated edit through on a stored challenge without a saved rating, and clearing it", () => {
     const stored = edited(c => { social(c).challenged = true; });
     const unrelated = edited(c => { c.traits[DISTINCTIONS].entries[0].description = "Knows most ports"; }, stored);
