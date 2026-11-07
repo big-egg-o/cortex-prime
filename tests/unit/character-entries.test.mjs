@@ -1,60 +1,8 @@
-/*
- * PLAN (Part B: the character schema's remaining entry fields). Removed before the implementation
- * commit.
- *
- * Fields to add, with type, default and source:
- * - Set: `shutDown` boolean, required, default false. Rule 15, TS-12; poolTraitCost reads it as
- *   `setShutDown`.
- * - Set entry (free traits keep id, name and dice):
- *   - `description` string, optional (absent by default). Rule 13 (a distinction's descriptive
- *     line), rule 20 (a talent's description).
- *   - `statement` string, optional. Rule 16 (MOD Trait Statements), TS-14 to TS-16c;
- *     statements.mjs editStatement.
- *   - `challenged` boolean, optional. Rule 16, TS-14, TS-15c; read by statements.mjs.
- *   - `preChallengeDice` die sizes, optional. Rule 16, RQ-022 b, TS-14b, TS-15, TS-16c.
- *   - `sfx` [{text, unlocked}], required, default []. Rules 11 and 13, ADR-035. `text` a string
- *     (blank allowed, "" when missing, like `name`); `unlocked` a boolean that must be given: no
- *     rule says whether a new SFX starts locked, so no default is invented.
- *   - `tags` string[], optional. Rule 18 (resources), rule 20 (abilities). The spec gives no type;
- *     read as a list of plain-text tags.
- *   - `sub` [{id, name, dice}], optional. Rule 19, TS-19 to TS-21. The spec writes `[...]`; read as
- *     the minimum any trait has, the free-trait shape (id, name, rating).
- *   - `shutDown` {reason: "manual" | "statementChallenged"}, optional. Rules 15 and 16, TS-13,
- *     TS-16, RQ-021; the reasons come from statements.mjs SHUT_DOWN_REASONS.
- * - Free traits: no change. Their rating is already a list of dice (ADR-033), so a boss's trait
- *   with several dice fits (ADR-040 consequences, p. 118); covered by tests only.
- * - Optional fields stay absent, not null or "": statements.mjs reads absence as "not challenged"
- *   and "not shut down", and resolveChallengedStatement removes the keys.
- * - Booleans don't cast: Foundry's BooleanField turns "yes" into false, so a strict boolean field
- *   refuses non-booleans, as statements.mjs does (INVALID_TRAIT_DATA).
- *
- * Wiring:
- * - traits.mjs: a new pure validateEntryRatings checks the die sizes of a preChallengeDice or a
- *   sub-trait rating that an edit sets (TS-E01: Foundry drops a d7 in a list without an error, so
- *   the backstop must refuse it visibly; ADR-037 point 2's first code). checkCharacterEdit runs it
- *   after the diff and before validateTraitChanges (die sizes first), so the backstop gets
- *   it. No set-shape check for either: preChallengeDice is a past rating, which may conflict with
- *   its set after a configuration change (point 5); which shape a sub-trait's rating must fit is
- *   unsettled (PARKED), and ADR-029 point 2 and ADR-037 ("schema check only until then") leave an
- *   unsettled edit check at the schema.
- * - Statement, SFX text, tags, description and shut-down flags get no configuration check
- *   (ADR-029; plain text).
- * - statements.mjs, trait-pool.mjs, sheet-hints.mjs: no change. statements.mjs already reads the
- *   spec's shape; pool and sheet callers come with M2 and M3.
- *
- * Schema version and migration: no bump, no migration step. Every new field is optional or has a
- * default that Foundry's cleaning fills on load, and a migration step must never fill defaults
- * (module/data/migration-runner.mjs); old actors load as they are. PARKED for the report: what the first character
- * migration should be.
- */
-
 import { describe, expect, it } from "vitest";
-import * as rules from "../../module/rules/index.mjs";
 import { defaultGameConfig } from "../../module/rules/game-config.mjs";
-import { checkCharacterEdit, checkCharacterUpdate } from "../../module/rules/traits.mjs";
+import { checkCharacterEdit, checkCharacterUpdate, validateEntryRatings } from "../../module/rules/traits.mjs";
+import * as rules from "../../module/rules/index.mjs";
 import { challengeStatement, editStatement, resolveChallengedStatement } from "../../module/rules/statements.mjs";
-
-const { validateEntryRatings } = rules;
 
 // Ids from the defaults (ADR-036, ADR-040).
 const DISTINCTIONS = "cpSetDistinction";
@@ -104,7 +52,7 @@ const refused = code => ({ ok: false, code });
 
 describe("validateEntryRatings (ADR-037 point 2 for the entry's other ratings)", () => {
   it("is exported from the rules index", () => {
-    expect(typeof validateEntryRatings).toBe("function");
+    expect(rules.validateEntryRatings).toBe(validateEntryRatings);
   });
 
   it("TS-E01 refuses a d7 in a preChallengeDice the edit sets", () => {

@@ -421,7 +421,8 @@ export function registerCharacterBatch(quench) {
         it("fills a set's shutDown with false and an entry's sfx with [], and leaves the optional fields out", async () => {
           const setId = newId();
           const entry = { id: newId(), defId: null, name: "Cult Survivor", dice: [8] };
-          const actor = await createCharacter({ traits: { [setId]: { entries: [entry] } } });
+          // A copy: creating cleans its data in place.
+          const actor = await createCharacter({ traits: { [setId]: { entries: [{ ...entry }] } } });
           assert.deepEqual(storedSystem(actor).traits[setId], { shutDown: false, entries: [{ ...entry, sfx: [] }] });
         });
 

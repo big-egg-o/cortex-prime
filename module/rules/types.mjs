@@ -365,12 +365,20 @@ export const DIE_SIZES = Object.freeze(/** @type {DieSize[]} */ ([4, 6, 8, 10, 1
  * @property {string} [name]
  * @property {unknown[]} dice - the rating before its die sizes are checked: any array is accepted
  *   here, and a later check refuses values that aren't die sizes
- * @property {string} [statement] - (MOD) Trait Statements (rule 16)
- * @property {boolean} [challenged] - the statement is challenged and not yet resolved
- * @property {DieSize[]} [preChallengeDice] - the rating from before the first unresolved
- *   challenge (RQ-022)
- * @property {{reason: "manual"|"statementChallenged"}} [shutDown] - shut down by hand, or by a
- *   challenge of a d4 trait (rule 15, RQ-021)
+ * @property {string} [description] - set entries only: a distinction's descriptive line, a
+ *   talent's description (rules 13 and 20)
+ * @property {string} [statement] - set entries only: (MOD) Trait Statements (rule 16)
+ * @property {boolean} [challenged] - set entries only: the statement is challenged and not yet
+ *   resolved
+ * @property {DieSize[]} [preChallengeDice] - set entries only: the rating from before the first
+ *   unresolved challenge (RQ-022)
+ * @property {{text: string, unlocked: boolean}[]} [sfx] - set entries only: SFX as text, locked or
+ *   unlocked (ADR-035); the model stores [] when there are none
+ * @property {string[]} [tags] - set entries only: plain-text tags (rules 18 and 20)
+ * @property {{id: string, name: string, dice: unknown[]}[]} [sub] - set entries only: traits
+ *   attached to this one, such as specialties (rule 19)
+ * @property {{reason: "manual"|"statementChallenged"}} [shutDown] - set entries only: shut down
+ *   by hand, or by a challenge of a d4 trait (rule 15, RQ-021)
  */
 
 /**
@@ -378,8 +386,10 @@ export const DIE_SIZES = Object.freeze(/** @type {DieSize[]} */ ([4, 6, 8, 10, 1
  * such as schemaVersion and names, are ignored.
  * @typedef {Object} CharacterTraitData
  * @property {string|null} kindId
- * @property {Object<string, {entries: TraitEntryData[]}>} traits - keyed by trait-set id
- * @property {TraitEntryData[]} freeTraits
+ * @property {Object<string, {shutDown?: boolean, entries: TraitEntryData[]}>} traits - keyed by
+ *   trait-set id; `shutDown` is the whole set shut down by hand (rule 15), false in the model
+ *   unless set
+ * @property {TraitEntryData[]} freeTraits - id, name and dice only
  */
 
 /**

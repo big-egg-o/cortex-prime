@@ -7,22 +7,36 @@
  *
  * Editing checks what changes against the current game configuration (ADR-037 points 2 and 3):
  * `_preUpdate` runs on every `Actor#update`, as the backstop behind our apps, which check before
- * writing themselves. The decision is the pure checkCharacterUpdate; this model only feeds it.
+ * writing themselves. The decision is the pure checkCharacterUpdate; this model only feeds it. It
+ * also refuses a die size that doesn't exist in a preChallengeDice or a sub-trait's rating that
+ * the edit sets (TS-E01), which Foundry would otherwise drop without an error.
  *
- * This is the first slice of the M1 trait data: an entry holds only id, defId, name and dice.
- * The spec's other entry and set fields (preChallengeDice, challenged, statements, SFX, shut-down
- * flags, tags, sub-traits) need a later schema expansion. Until then Foundry's cleaning drops them
- * from anything written to a character, imports included, and it drops a set key that isn't a
- * 16-character id the same way.
+ * The fields follow the Traits & Trait Sets spec's data shapes. A set holds its shut-down flag and
+ * its entries; an entry holds its id, definition id, name and rating, and may hold a description,
+ * a statement and its challenge, SFX, tags, sub-traits and a shut-down reason. Free traits hold an
+ * id, a name and a rating, which may be several dice (a boss's trait, ADR-040). Fields the spec
+ * marks optional stay absent until set, never null or "": the pure statement functions read an
+ * absent `challenged` or `shutDown` as "no", and remove them when a challenge is resolved.
+ * Booleans are never converted (StrictBooleanField). Foundry's cleaning drops anything else, and a
+ * set key that isn't a 16-character id.
+ *
+ * The fields added after schema version 1 are all optional or have a default that cleaning fills
+ * in when an actor loads, so actors stored before them load unchanged and no migration step is
+ * needed (a step must never fill defaults: module/data/migration-runner.mjs). The version stays 1.
  * @module data/actor/character
  */
 
 import { ratingField } from "../fields/rating-field.mjs";
+import StrictBooleanField from "../fields/strict-boolean-field.mjs";
 import { getGameConfig } from "../../config/settings.mjs";
+import { SHUT_DOWN_REASONS } from "../../rules/statements.mjs";
 import { checkCharacterUpdate, diffCharacterTraits } from "../../rules/traits.mjs";
 
 const { ArrayField, NumberField, SchemaField, StringField, TypedObjectField } = foundry.data.fields;
 const { isValidId } = foundry.data.validators;
+
+/** Options for a field that stays absent until it is set (the spec's optional fields). */
+const OPTIONAL = Object.freeze({ required: false, nullable: false, initial: undefined });
 
 /** The current character schema version. */
 export const CHARACTER_SCHEMA_VERSION = 1;
@@ -40,7 +54,25 @@ function idField(options = {}) {
   });
 }
 
-/** @returns {Record<string, DataField>} one trait in a set */
+/** @returns {Record<string, DataField>} one SFX: text only in M1, locked or unlocked (ADR-035) */
+function sfxSchema() {
+  return {
+    text: new StringField({ required: true, blank: true, initial: "" }),
+    // No default: no rule says whether a new SFX starts locked, so the writer must say.
+    unlocked: new StrictBooleanField({ required: true, initial: undefined })
+  };
+}
+
+/** @returns {Record<string, DataField>} a trait attached to a trait, such as a specialty (rule 19) */
+function subTraitSchema() {
+  return {
+    id: idField(),
+    name: new StringField({ required: true, blank: true, initial: "" }),
+    dice: ratingField()
+  };
+}
+
+/** @returns {Record<string, DataField>} one trait in a set (the spec's data shapes) */
 function traitEntrySchema() {
   return {
     id: idField(),
@@ -48,7 +80,23 @@ function traitEntrySchema() {
     defId: idField({ nullable: true, initial: null }),
     // The trait's name in an open set; in a fixed set a snapshot kept as fallback data.
     name: new StringField({ required: true, blank: true, initial: "" }),
-    dice: ratingField()
+    dice: ratingField(),
+    // A distinction's descriptive line, a talent's description (rules 13 and 20).
+    description: new StringField({ ...OPTIONAL, blank: true }),
+    // (MOD) Trait Statements (rule 16): the statement, whether it is challenged and not yet
+    // resolved, and the rating from before the first unresolved challenge (RQ-022).
+    statement: new StringField({ ...OPTIONAL, blank: true }),
+    challenged: new StrictBooleanField({ ...OPTIONAL }),
+    preChallengeDice: ratingField({ ...OPTIONAL }),
+    sfx: new ArrayField(new SchemaField(sfxSchema())),
+    // Plain-text tags, such as a resource's or an ability's (rules 18 and 20).
+    tags: new ArrayField(new StringField({ required: true, blank: true }), { ...OPTIONAL }),
+    sub: new ArrayField(new SchemaField(subTraitSchema()), { ...OPTIONAL }),
+    // Shut down by hand, or by a challenge of a d4 trait (rule 15, RQ-021).
+    shutDown: new SchemaField(
+      { reason: new StringField({ required: true, choices: SHUT_DOWN_REASONS }) },
+      { ...OPTIONAL }
+    )
   };
 }
 
@@ -126,7 +174,11 @@ export default class CharacterData extends foundry.abstract.TypeDataModel {
       // Null until a kind is assigned.
       kindId: idField({ nullable: true, initial: null }),
       traits: new TypedObjectField(
-        new SchemaField({ entries: new ArrayField(new SchemaField(traitEntrySchema())) }),
+        new SchemaField({
+          // The whole set shut down, a flag set and cleared by hand (rule 15).
+          shutDown: new StrictBooleanField({ required: true, initial: false }),
+          entries: new ArrayField(new SchemaField(traitEntrySchema()))
+        }),
         { validateKey: isValidId }
       ),
       freeTraits: new ArrayField(new SchemaField(freeTraitSchema()))
