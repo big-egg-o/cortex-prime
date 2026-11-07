@@ -229,6 +229,19 @@ export function registerMigrationBatch(quench) {
           assert.deepEqual(JSON.parse(JSON.stringify(game.messages.get(message.id).system.toObject().warnings)), warnings);
         });
 
+        it("ADR-029: creating a message at version 2 stores version 3 with empty lists", async () => {
+          // Creation cleans without a stored source, so it takes its own path through migrateData.
+          const message = await ChatMessage.create({
+            type: "poolRoll",
+            system: { ...oldPendingOverflowSystem(), schemaVersion: 2, resolution: null, state: "rolled" }
+          });
+          messages.push(message);
+          const stored = game.messages.get(message.id).system.toObject();
+          assert.equal(stored.schemaVersion, 3);
+          assert.deepEqual(stored.warnings, []);
+          assert.deepEqual(stored.unpricedTraits, []);
+        });
+
         it("doesn't lower nextEffectNumber when a partial update removes e2 without sending it", async () => {
           const old = oldPendingOverflowSystem();
           const [twelveId, tenId, eightId] = old.pool.map(d => d.id);

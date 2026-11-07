@@ -110,7 +110,7 @@ export function registerPoolRollWarningsBatch(quench) {
             { unpricedTraits: [{ count: 1 }] }
           ];
           for ( const params of bad ) {
-            const before = game.messages.size;
+            const countBefore = game.messages.size;
             let error = null;
             try {
               const message = await postPoolRoll({ pool: traitPool(actorId), results: [5, 4, 3], ...params });
@@ -120,7 +120,7 @@ export function registerPoolRollWarningsBatch(quench) {
               error = err;
             }
             assert.isNotNull(error, JSON.stringify(params));
-            assert.equal(game.messages.size, before, JSON.stringify(params));
+            assert.equal(game.messages.size, countBefore, JSON.stringify(params));
           }
         });
 
@@ -199,6 +199,20 @@ export function registerPoolRollWarningsBatch(quench) {
             assert.notMatch(html.textContent, /cost:?\s*0\s*PP/i);
             assert.lengthOf(html.querySelectorAll(".cp-nonstandard button, .cp-nonstandard [data-action]"), 0);
           }
+        });
+
+        it("RQ-031: names a trait only from its own actor's die, and never by its set's name", async () => {
+          const message = await post({ warnings: [
+            // No actor id: the pool's dice all come from an actor, so no die is this trait's.
+            { code: "TRAIT_SHUT_DOWN", setId: SKILLS, traitId: "skillfight000001" },
+            // Another actor's trait with the same id.
+            { code: "TRAIT_SHUT_DOWN", setId: SKILLS, actorId: foundry.utils.randomID(), traitId: "skillfight000001" },
+            // A trait whose die isn't in the pool.
+            { code: "TRAIT_ORPHANED", setId: SKILLS, actorId, traitId: "skillgone0000001" }
+          ] });
+          assert.deepEqual([...(await card(message)).querySelectorAll(".cp-nonstandard li")].map(li => li.textContent.trim()), [
+            reason("TRAIT_SHUT_DOWN"), reason("TRAIT_SHUT_DOWN"), reason("TRAIT_ORPHANED")
+          ]);
         });
 
         it("shows no nonstandard section for a standard selection", async () => {
