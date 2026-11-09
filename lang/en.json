@@ -114,6 +114,7 @@
         "UNKNOWN_TRAIT_SET": "That trait set isn't in the game configuration.",
         "UNKNOWN_TRAIT_DEFINITION": "That trait isn't defined in its trait set.",
         "DUPLICATE_TRAIT_ID": "Two traits would share one id.",
+        "TOKEN_SET_REMOVAL_UNSUPPORTED": "A token that isn't linked to its actor can't remove a trait set. Clear the set's traits instead, or remove the set on the actor itself.",
         "INVALID_TRAIT_DATA": "The trait data of this change can't be read.",
         "INVALID_RATING_OPTIONS": "A trait set in the game configuration has invalid dice options.",
         "INVALID_GAME_CONFIG": "The game configuration can't be read."
