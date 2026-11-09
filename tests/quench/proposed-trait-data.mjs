@@ -15,11 +15,11 @@
  *   response instead, whose operators cleaning rebuilds as proxies;
  * - a real `Actor#update`, after which the trait data the requesting client holds (the server's
  *   response applied) must equal the pure state: that is what the backstop guards.
- * Where Foundry refuses an update, the backstop must refuse it too, visibly. Unlinked token
- * actors get the shapes that remove a set, which a token's delta can't hold; the differences are
- * recorded for the owner. The world's game configuration is the ADR-036 defaults while the batch
- * runs (the backstop runs on the real updates), and the stored one is put back afterwards; every
- * test character and scene is deleted.
+ * Where Foundry refuses an update, the backstop must refuse it too, visibly. On unlinked token
+ * actors, whose delta can't hold a removed set, every shape that removes one is refused, and
+ * clearing a set is stored (ADR-044). The world's game configuration is the ADR-036 defaults
+ * while the batch runs (the backstop runs on the real updates), and the stored one is put back
+ * afterwards; every test character and scene is deleted.
  * @module tests/quench/proposed-trait-data
  */
 
@@ -297,14 +297,16 @@ export function registerProposedTraitDataBatch(quench) {
         });
       });
 
-      describe("unlinked token actors: removing a set (recorded for the owner, ADR-037 point 3)", () => {
+      describe("unlinked token actors: removing a set is refused (ADR-044)", () => {
+        const RENAMED = "[Quench] renamed token actor";
+
         /**
-         * Runs an update on a fresh unlinked token's actor: the pure state from the cleaned changes,
-         * the backstop's decision, and the token actor's trait data afterwards.
-         * @param {() => object} update
-         * @returns {Promise<object>}
+         * Runs a test with a fresh character and an unlinked token of it on a scratch scene, which
+         * is deleted afterwards (the character goes with the other test actors).
+         * @param {(context: {actor: Actor, token: TokenDocument}) => Promise<void>} test
+         * @returns {Promise<void>}
          */
-        const compareOnToken = async update => {
+        const withToken = async test => {
           const actor = await Actor.implementation.create({
             name: "[Quench] proposed trait data (token)", type: "character", system: characterSystem(),
             prototypeToken: { actorLink: false }, flags: { [FLAG_SCOPE]: { [FLAG_KEY]: true } }
@@ -313,41 +315,114 @@ export function registerProposedTraitDataBatch(quench) {
           try {
             const tokenData = (await actor.getTokenDocument({ x: 0, y: 0 })).toObject();
             const [token] = await scene.createEmbeddedDocuments("Token", [tokenData]);
-            const synthetic = token.actor;
-            const changes = Actor.implementation.cleanData(update(), { migrate: true, sanitize: true, partial: true },
-              { creation: false, model: synthetic, source: synthetic._source });
-            const operators = { operatorOf: CharacterData.operatorOf };
-            const current = synthetic.system.toObject();
-            const pure = proposedTraitData(current, changes.system, operators);
-            const backstop = checkCharacterUpdate(current, foundry.utils.deepClone(changes.system), getGameConfig(), operators);
-            await synthetic.update(update());
-            return { pure, backstop, stored: traitData(token.actor.system.toObject()) };
+            await test({ actor, token });
           }
           finally {
             await scene.delete();
           }
         };
 
-        it("a forced deletion of a set key: the pure state drops the set, the token's actor gets it back from the base actor", async () => {
-          // A token's delta stores system as plain data and can't hold a deletion, so the synthetic
-          // actor is the base actor's data merged with the delta again. Not decided: see the report.
-          const { ForcedDeletion } = foundry.data.operators;
-          const result = await compareOnToken(() => ({ [`system.traits.${SKILLS}`]: new ForcedDeletion() }));
-          assert.isTrue(result.backstop.ok);
-          assert.notProperty(result.pure.value.traits, SKILLS);
-          assert.property(result.stored.traits, SKILLS, "the token's actor kept the set: the gap is closed, update the report");
+        /**
+         * The backstop's decision on a token's actor for an update, cleaned as the client backend
+         * cleans it.
+         * @param {Actor} synthetic
+         * @param {object} update
+         * @returns {object}
+         */
+        const backstopOnToken = (synthetic, update) => {
+          const changes = Actor.implementation.cleanData(update, { migrate: true, sanitize: true, partial: true },
+            { creation: false, model: synthetic, source: synthetic._source });
+          return checkCharacterUpdate(synthetic.system.toObject(), changes.system, getGameConfig(),
+            { operatorOf: CharacterData.operatorOf, unlinkedToken: synthetic.isToken });
+        };
+
+        /** @returns {number} how often an entry id occurs in a character's sets */
+        const occurrences = (system, id) => Object.values(system.traits).flatMap(set => set.entries).filter(e => e.id === id).length;
+
+        /** @returns {Actor} the token's actor rebuilt from the stored base actor and delta, as a reload builds it */
+        const rebuilt = token => getDocumentClass("ActorDelta").applyDelta(token.delta, game.actors.get(token.actorId));
+
+        const removals = {
+          "a forced deletion of a set key": () => ({ [`system.traits.${SKILLS}`]: new foundry.data.operators.ForcedDeletion() }),
+          "a forced replacement of traits that leaves the set out": () => ({
+            "system.traits": foundry.data.operators.ForcedReplacement.create({ [DISTINCTIONS]: characterSystem().traits[DISTINCTIONS] })
+          }),
+          "the legacy \"-=\" key": () => ({ [`system.traits.-=${SKILLS}`]: null })
+        };
+        for ( const [label, removal] of Object.entries(removals) ) {
+          it(`${label}: refused visibly, and nothing is stored`, async () => {
+            await withToken(async ({ token }) => {
+              const before = traitData(token.actor.system.toObject());
+              const update = { ...removal(), name: RENAMED };
+              assert.deepEqual(backstopOnToken(token.actor, update), { ok: false, code: "TOKEN_SET_REMOVAL_UNSUPPORTED" });
+              await token.actor.update(update);
+              assert.deepEqual(traitData(token.actor.system.toObject()), before);
+              assert.notEqual(token.actor.name, RENAMED, "the update was not cancelled as a whole");
+              assert.notProperty(token.delta.toObject().system ?? {}, "traits");
+            });
+          });
+        }
+
+        it("the removal that would leave a moved entry's id twice is refused", async () => {
+          await withToken(async ({ token }) => {
+            const fight = { ...characterSystem().traits[SKILLS].entries[0], defId: null };
+            const distinctions = [...characterSystem().traits[DISTINCTIONS].entries, fight];
+            const update = {
+              [`system.traits.${SKILLS}`]: new foundry.data.operators.ForcedDeletion(),
+              [`system.traits.${DISTINCTIONS}.entries`]: distinctions
+            };
+            assert.deepEqual(backstopOnToken(token.actor, update), { ok: false, code: "TOKEN_SET_REMOVAL_UNSUPPORTED" });
+            await token.actor.update(update);
+            assert.equal(occurrences(token.actor.system.toObject(), fight.id), 1);
+          });
         });
 
-        it("moving an entry out of a deleted set leaves its id twice on the token's actor, past the backstop (ADR-038)", async () => {
-          const { ForcedDeletion } = foundry.data.operators;
-          const fight = { ...characterSystem().traits[SKILLS].entries[0], defId: null };
-          const distinctions = [...characterSystem().traits[DISTINCTIONS].entries, fight];
-          const result = await compareOnToken(() => ({
-            [`system.traits.${SKILLS}`]: new ForcedDeletion(), [`system.traits.${DISTINCTIONS}.entries`]: distinctions
-          }));
-          assert.isTrue(result.backstop.ok, "the backstop sees a move");
-          const ids = Object.values(result.stored.traits).flatMap(set => set.entries.map(e => e.id));
-          assert.equal(ids.filter(id => id === fight.id).length, 2, "the duplicate is gone: the gap is closed, update the report");
+        it("clearing a set and moving its entry out is stored, with the id once", async () => {
+          await withToken(async ({ token }) => {
+            const fight = { ...characterSystem().traits[SKILLS].entries[0], defId: null };
+            const distinctions = [...characterSystem().traits[DISTINCTIONS].entries, fight];
+            await token.actor.update({
+              [`system.traits.${SKILLS}.entries`]: [], [`system.traits.${DISTINCTIONS}.entries`]: distinctions
+            });
+            assert.deepEqual(token.delta.toObject().system.traits[SKILLS].entries, [], "the delta holds the cleared list");
+            assert.equal(occurrences(token.actor.system.toObject(), fight.id), 1);
+            const fresh = rebuilt(token).system.toObject();
+            assert.deepEqual(fresh.traits[SKILLS].entries, []);
+            assert.equal(occurrences(fresh, fight.id), 1);
+          });
+        });
+
+        it("a forced replacement of system still counts as replacing on a token (ADR-043)", async () => {
+          await withToken(async ({ token }) => {
+            const system = { ...characterSystem(), traits: { [DISTINCTIONS]: characterSystem().traits[DISTINCTIONS] } };
+            const update = () => ({ system: new foundry.data.operators.ForcedReplacement(system), name: RENAMED });
+            assert.deepEqual(backstopOnToken(token.actor, update()), { ok: true, value: null });
+            await token.actor.update(update());
+            assert.equal(token.actor.name, RENAMED, "the replacing update was refused");
+          });
+        });
+
+        it("a world actor still removes a set", async () => {
+          const result = await compare(() => ({ [`system.traits.${SKILLS}`]: new foundry.data.operators.ForcedDeletion() }));
+          assert.isTrue(result.backstop.ok);
+          assert.notProperty(result.stored.traits, SKILLS);
+        });
+
+        it("limit: an edit of the base actor can leave an id twice on a token that overrides the old set", async () => {
+          // Pins a limit ADR-044 records: the delta keeps the token's own Skills list, and the base
+          // actor's move brings the same id in through Distinctions. No update of the token runs,
+          // so no backstop sees it; such duplicates load and can be repaired (ADR-038).
+          await withToken(async ({ actor, token }) => {
+            const fight = characterSystem().traits[SKILLS].entries[0];
+            await token.actor.update({ [`system.traits.${SKILLS}.entries`]: [{ ...fight, dice: [8] }] });
+            await actor.update({
+              [`system.traits.${SKILLS}.entries`]: [],
+              [`system.traits.${DISTINCTIONS}.entries`]: [...characterSystem().traits[DISTINCTIONS].entries, { ...fight, defId: null }]
+            });
+            assert.equal(occurrences(game.actors.get(actor.id).system.toObject(), fight.id), 1);
+            assert.equal(occurrences(rebuilt(token).system.toObject(), fight.id), 2,
+              "the token's actor holds the id once: the limit doesn't occur, update ADR-044");
+          });
         });
       });
     },
