@@ -69,8 +69,10 @@ function skillEntries() {
   ];
 }
 
-/** Deletes every actor this batch created, including ones left by an interrupted run. */
+/** Deletes every actor and scene this batch created, including ones left by an interrupted run. */
 async function deleteTestActors() {
+  const sceneIds = game.scenes.filter(s => s.getFlag(FLAG_SCOPE, FLAG_KEY)).map(s => s.id);
+  if ( sceneIds.length ) await getDocumentClass("Scene").deleteDocuments(sceneIds);
   const ids = game.actors.filter(a => a.getFlag(FLAG_SCOPE, FLAG_KEY)).map(a => a.id);
   if ( ids.length ) await Actor.implementation.deleteDocuments(ids);
 }
@@ -301,17 +303,21 @@ export function registerProposedTraitDataBatch(quench) {
         const RENAMED = "[Quench] renamed token actor";
 
         /**
-         * Runs a test with a fresh character and an unlinked token of it on a scratch scene, which
-         * is deleted afterwards (the character goes with the other test actors).
+         * Runs a test with a fresh character and a token of it on a scratch scene, which is deleted
+         * afterwards (the character goes with the other test actors). The token is unlinked unless
+         * `actorLink` says otherwise.
          * @param {(context: {actor: Actor, token: TokenDocument}) => Promise<void>} test
+         * @param {{actorLink?: boolean}} [options]
          * @returns {Promise<void>}
          */
-        const withToken = async test => {
+        const withToken = async (test, { actorLink = false } = {}) => {
           const actor = await Actor.implementation.create({
             name: "[Quench] proposed trait data (token)", type: "character", system: characterSystem(),
-            prototypeToken: { actorLink: false }, flags: { [FLAG_SCOPE]: { [FLAG_KEY]: true } }
+            prototypeToken: { actorLink }, flags: { [FLAG_SCOPE]: { [FLAG_KEY]: true } }
           });
-          const scene = await getDocumentClass("Scene").create({ name: "[Quench] proposed trait data" });
+          const scene = await getDocumentClass("Scene").create({
+            name: "[Quench] proposed trait data", flags: { [FLAG_SCOPE]: { [FLAG_KEY]: true } }
+          });
           try {
             const tokenData = (await actor.getTokenDocument({ x: 0, y: 0 })).toObject();
             const [token] = await scene.createEmbeddedDocuments("Token", [tokenData]);
@@ -355,7 +361,16 @@ export function registerProposedTraitDataBatch(quench) {
               const before = traitData(token.actor.system.toObject());
               const update = { ...removal(), name: RENAMED };
               assert.deepEqual(backstopOnToken(token.actor, update), { ok: false, code: "TOKEN_SET_REMOVAL_UNSUPPORTED" });
-              await token.actor.update(update);
+              const shown = [];
+              const showError = ui.notifications.error;
+              ui.notifications.error = message => shown.push(message);
+              try {
+                await token.actor.update(update);
+              }
+              finally {
+                ui.notifications.error = showError;
+              }
+              assert.deepEqual(shown, [game.i18n.localize("CORTEX.Character.Errors.TOKEN_SET_REMOVAL_UNSUPPORTED")]);
               assert.deepEqual(traitData(token.actor.system.toObject()), before);
               assert.notEqual(token.actor.name, RENAMED, "the update was not cancelled as a whole");
               assert.notProperty(token.delta.toObject().system ?? {}, "traits");
@@ -400,6 +415,14 @@ export function registerProposedTraitDataBatch(quench) {
             await token.actor.update(update());
             assert.equal(token.actor.name, RENAMED, "the replacing update was refused");
           });
+        });
+
+        it("a linked token's actor still removes a set", async () => {
+          await withToken(async ({ actor, token }) => {
+            assert.isFalse(token.actor.isToken, "a linked token's actor is the world actor");
+            await token.actor.update({ [`system.traits.${SKILLS}`]: new foundry.data.operators.ForcedDeletion() });
+            assert.notProperty(game.actors.get(actor.id).system.toObject().traits, SKILLS);
+          }, { actorLink: true });
         });
 
         it("a world actor still removes a set", async () => {
