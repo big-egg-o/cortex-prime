@@ -572,6 +572,22 @@ export function registerCharacterBatch(quench) {
           assert.deepEqual(storedSystem(actor).traits, system.traits);
         });
 
+        it("ADR-046 point 4, documents Foundry's behaviour: a text field that isn't text is cast and stored, not refused", async () => {
+          // Cleaning casts these values to text before _preUpdate, so the backstop only ever sees
+          // text: nothing is dropped, and nothing is refused.
+          const system = pcSystem();
+          const actor = await createCharacter(foundry.utils.deepClone(system));
+          const entries = [{
+            ...system.traits[ATTRIBUTES].entries[0], statement: 5, description: 7, tags: [5, true],
+            sfx: [{ text: 9, unlocked: true }]
+          }];
+          const shown = await errorsShownBy(() => actor.update({ [`system.traits.${ATTRIBUTES}.entries`]: entries }));
+          assert.deepEqual(shown, []);
+          assert.deepInclude(storedSystem(actor).traits[ATTRIBUTES].entries[0], {
+            statement: "5", description: "7", tags: ["5", "true"], sfx: [{ text: "9", unlocked: true }]
+          });
+        });
+
         it("ADR-046 point 5: a set's own SFX are stored through Actor#update and leave its entries alone", async () => {
           const system = pcSystem();
           const actor = await createCharacter(foundry.utils.deepClone(system));
