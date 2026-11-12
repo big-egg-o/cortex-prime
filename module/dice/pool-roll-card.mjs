@@ -105,10 +105,12 @@ function formatResolvedHeadline(resolution) {
  * What a warning is about, by name. A warning about one trait names it by its label as the pool
  * stored it when it was rolled: the die whose source has the warning's trait id and the same
  * actor id, an absent actor id matching only a die without one, since two actors' traits that
- * share an id are two traits (RQ-031). A warning about a set names it by the set's name in the
- * current game configuration. Null when the name isn't known: a trait whose die isn't in the pool,
- * a warning without ids, or a set the configuration no longer has.
- * @param {{traitId?: string, actorId?: string, setId?: string}} warning
+ * share an id are two traits (RQ-031). A warning about a set names it by the label stored with
+ * the warning, the set's name when the pool was rolled (ADR-047); a warning stored without one
+ * falls back to the set's name in the current game configuration. Null when the name isn't known:
+ * a trait whose die isn't in the pool, a warning without ids, or an unlabelled set the
+ * configuration no longer has.
+ * @param {{traitId?: string, actorId?: string, setId?: string, setLabel?: string}} warning
  * @param {import("../rules/types.mjs").PoolDie[]} pool
  * @param {import("../rules/types.mjs").GameConfig|null} config
  * @returns {string|null}
@@ -119,8 +121,9 @@ function warningSubject(warning, pool, config) {
       && ((d.source.actorId ?? undefined) === warning.actorId));
     return die?.source.label ?? null;
   }
-  if ( warning.setId && config ) return traitSetById(config, warning.setId)?.name ?? null;
-  return null;
+  if ( !warning.setId ) return null;
+  if ( warning.setLabel ) return warning.setLabel;
+  return (config ? traitSetById(config, warning.setId)?.name : null) ?? null;
 }
 
 /** @returns {import("../rules/types.mjs").GameConfig|null} the game configuration, or null if it can't be read */
@@ -146,7 +149,7 @@ function prepareNonstandard(system) {
   const warnings = system.warnings ?? [];
   const unpricedCount = (system.unpricedTraits ?? []).reduce((sum, u) => sum + u.count, 0);
   if ( !warnings.length && !unpricedCount ) return null;
-  const config = warnings.some(w => w.setId && !w.traitId) ? readGameConfig() : null;
+  const config = warnings.some(w => w.setId && !w.traitId && !w.setLabel) ? readGameConfig() : null;
   const reasons = warnings.map(warning => {
     const key = `CORTEX.Chat.Nonstandard.Reasons.${warning.code}`;
     const reason = game.i18n.has(key) ? game.i18n.localize(key) : warning.code;

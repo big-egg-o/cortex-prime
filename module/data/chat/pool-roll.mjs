@@ -30,12 +30,15 @@ function isCount(value) {
 
 /**
  * @returns {Record<string, DataField>} one warning about the pool's traits, as poolTraitCost and
- *   effectiveRating report it: a code and, where the warning has them, the set, actor and trait
+ *   effectiveRating report it: a code and, where the warning has them, the set, actor and trait.
+ *   A warning with a set also keeps that set's name as it was when the pool was rolled, so a
+ *   later rename or removal of the set doesn't change the card (ADR-047)
  */
 function warningSchema() {
   return {
     code: new StringField({ required: true, blank: false }),
     setId: new StringField({ ...OPTIONAL, blank: false }),
+    setLabel: new StringField({ ...OPTIONAL, blank: false }),
     actorId: new StringField({ ...OPTIONAL, blank: false }),
     traitId: new StringField({ ...OPTIONAL, blank: false })
   };
