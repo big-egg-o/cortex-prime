@@ -749,19 +749,34 @@ export function proposedTraitData(current, changes, operators = {}) {
  * Checks an update before it is written: the complete trait data it would leave
  * (proposedTraitData), then that edit (checkCharacterEdit). What the character model's update
  * backstop calls (ADR-037 point 3). A forced replacement of the whole system data is a replacing
- * update and counts as loading (point 4): it gets no edit check here, and the result is null.
+ * update and counts as loading (point 4, ADR-043): it gets no edit check here, and the result is
+ * null.
+ *
+ * On the actor of an unlinked token, an edit that passes is still refused when it removes a set
+ * the actor holds (ADR-044): the token's delta keeps only what the token changed and is merged
+ * onto the base actor's data, which can't express a removed key, so the set would come back as
+ * the base actor has it. Every form of removal is caught, because the diff compares the set keys
+ * of the stored and the proposed data, and so is a set the configuration no longer has. Clearing
+ * a set's entries is the way to empty it on a token. This comes after the edit's own checks, so a
+ * change that is wrong anywhere is reported as such first.
  * @param {import("./types.mjs").CharacterTraitData} current - the stored trait data
  * @param {object|null|undefined} changes - the update's `system` changes, cleaned as
  *   proposedTraitData expects
  * @param {import("./types.mjs").GameConfig} config
- * @param {Parameters<typeof proposedTraitData>[2]} [operators]
+ * @param {{operatorOf?: Parameters<typeof proposedTraitData>[2]["operatorOf"], unlinkedToken?: boolean}} [options]
+ *   `operatorOf` as for proposedTraitData; `unlinkedToken` true when the actor is an unlinked
+ *   token's
  * @returns {import("./types.mjs").EngineResult<import("./types.mjs").TraitChanges|null>} the
  *   diff, or null for a replacing update; refuses with proposedTraitData's code, then
- *   checkCharacterEdit's
+ *   checkCharacterEdit's, then TOKEN_SET_REMOVAL_UNSUPPORTED
  */
-export function checkCharacterUpdate(current, changes, config, operators = {}) {
-  const proposed = proposedTraitData(current, changes, operators);
+export function checkCharacterUpdate(current, changes, config, options = {}) {
+  const proposed = proposedTraitData(current, changes, options);
   if ( !proposed.ok ) return proposed;
   if ( proposed.value.replaced ) return ok(null);
-  return checkCharacterEdit(current, proposed.value, config);
+  const edit = checkCharacterEdit(current, proposed.value, config);
+  if ( edit.ok && (options?.unlinkedToken === true) && edit.value.removedSetIds.length ) {
+    return fail("TOKEN_SET_REMOVAL_UNSUPPORTED");
+  }
+  return edit;
 }

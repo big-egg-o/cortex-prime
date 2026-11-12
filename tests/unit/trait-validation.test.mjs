@@ -468,6 +468,54 @@ describe("checkCharacterUpdate", () => {
   });
 });
 
+describe("checkCharacterUpdate on an unlinked token's actor (ADR-044)", () => {
+  const TOKEN = { ...OPERATORS, unlinkedToken: true };
+  const update = (changes, base = pc(), options = TOKEN) => checkCharacterUpdate(base, changes, defaultGameConfig(), options);
+
+  it("refuses removing a set, however the update removes it", () => {
+    const withoutSkills = edited(c => { delete c.traits[SKILLS]; }).traits;
+    expect(update({ traits: { [SKILLS]: new Deletion() } })).toEqual(refused("TOKEN_SET_REMOVAL_UNSUPPORTED"));
+    expect(update({ [`traits.${SKILLS}`]: new Deletion() })).toEqual(refused("TOKEN_SET_REMOVAL_UNSUPPORTED"));
+    expect(update({ traits: new Replacement(withoutSkills) })).toEqual(refused("TOKEN_SET_REMOVAL_UNSUPPORTED"));
+  });
+
+  it("refuses the removal that would leave a moved entry's id twice on the token", () => {
+    const fight = { ...pc().traits[SKILLS].entries[0], defId: null };
+    const changes = {
+      traits: { [SKILLS]: new Deletion(), [DISTINCTIONS]: { entries: [...pc().traits[DISTINCTIONS].entries, fight] } }
+    };
+    expect(update(changes)).toEqual(refused("TOKEN_SET_REMOVAL_UNSUPPORTED"));
+  });
+
+  it("refuses removing a set the configuration no longer has, comparing the stored keys", () => {
+    const base = edited(c => { c.traits.goneSet000000001 = { entries: [{ id: E4, defId: null, name: "Old", dice: [6] }] }; });
+    expect(update({ traits: { goneSet000000001: new Deletion() } }, base)).toEqual(refused("TOKEN_SET_REMOVAL_UNSUPPORTED"));
+    expect(update({ traits: { goneSet000000001: { entries: [] } } }, base).ok).toBe(true);
+  });
+
+  it("lets a token clear a set and move its entry into another", () => {
+    const fight = { ...pc().traits[SKILLS].entries[0], defId: null };
+    const result = update({
+      traits: { [SKILLS]: { entries: [] }, [DISTINCTIONS]: { entries: [...pc().traits[DISTINCTIONS].entries, fight] } }
+    });
+    expect(result.ok).toBe(true);
+    expect(result.value.removedSetIds).toEqual([]);
+  });
+
+  it("reports what is wrong with the edit itself first", () => {
+    const changes = { traits: { [SKILLS]: new Deletion(), [ATTRIBUTES]: { entries: [{ id: E2, defId: PHYSICAL, name: "Physical", dice: [7] }] } } };
+    expect(update(changes)).toEqual(refused("INVALID_DIE_SIZE"));
+  });
+
+  it("leaves other actors and replacing updates as they were (ADR-043)", () => {
+    const deletion = { traits: { [SKILLS]: new Deletion() } };
+    expect(update(deletion, pc(), OPERATORS).value.removedSetIds).toEqual([SKILLS]);
+    expect(update(deletion, pc(), { ...OPERATORS, unlinkedToken: false }).value.removedSetIds).toEqual([SKILLS]);
+    const replacement = edited(c => { delete c.traits[SKILLS]; });
+    expect(update(new Replacement(replacement))).toEqual({ ok: true, value: null });
+  });
+});
+
 /** @returns {object} the object, frozen all the way down */
 function deepFreeze(value) {
   if ( value && (typeof value === "object") ) {

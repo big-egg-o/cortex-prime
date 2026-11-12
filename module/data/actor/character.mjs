@@ -178,7 +178,9 @@ export default class CharacterData extends foundry.abstract.TypeDataModel {
    * delete (client/documents/actor-delta.mjs `_preDelete`). Stored data that is already malformed
    * is left to Foundry's own checks, so a GM can still repair it (`game.actors.getInvalid`); only
    * new problems in a change are refused. Changes made later by other modules' `preUpdateActor`
-   * hooks are not seen here (point 7).
+   * hooks are not seen here (point 7). On an unlinked token's actor (`Actor#isToken`), an update
+   * that removes a trait set is refused too, because the token's delta can't store the removal
+   * (ADR-044).
    * @override
    * @param {object} changes - the cleaned changes to the actor
    * @param {object} options - the update operation's options
@@ -193,7 +195,7 @@ export default class CharacterData extends foundry.abstract.TypeDataModel {
     const current = this.toObject();
     if ( !diffCharacterTraits(current, current).ok || !validateEntryFields(current, current).ok ) return;
     const result = checkCharacterUpdate(current, changes.system, getGameConfig(), {
-      operatorOf: CharacterData.operatorOf
+      operatorOf: CharacterData.operatorOf, unlinkedToken: this.parent?.isToken === true
     });
     if ( result.ok ) return;
     const key = `CORTEX.Character.Errors.${result.code}`;
