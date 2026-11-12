@@ -144,19 +144,31 @@ export function registerCharacterMigrationBatch(quench) {
         it("leaves a partial update without a version alone: no step runs, nothing else is filled in or overwritten", async () => {
           const { id, system } = oldSystem();
           const actor = await createCharacter(system);
-          // A list sent in the old shape without a version is not migrated: cleaning drops the
-          // key the schema doesn't know, and the name the update gave stays.
-          await actor.update({ "system.freeTraits": [{ id, label: "Old label", name: "Sawn-off", dice: [8] }] });
-          assert.deepEqual(storedSystem(actor), { ...migrated(id), freeTraits: [{ id, name: "Sawn-off", dice: [8] }] });
+          // A list sent in the old shape without a version is not migrated: had the step run, the
+          // label would have become the name. Cleaning drops the key the schema doesn't know
+          // instead, and the name is the field's own empty initial value.
+          await actor.update({ "system.freeTraits": [{ id, label: "Old label", dice: [8] }] });
+          assert.deepEqual(storedSystem(actor), { ...migrated(id), freeTraits: [{ id, name: "", dice: [8] }] });
         });
 
-        it("migrates a partial update that says it is at the old version, and keeps it partial", async () => {
+        it("migrates a partial update that says it is at the old version, keeps it partial and keeps a value already in the new shape", async () => {
           const { id, system } = oldSystem();
+          // A kind id and a set that the update doesn't send: had the update been filled in with
+          // defaults, the kind id would be null again.
+          system.kindId = newId();
           system.traits = { [newId()]: { entries: [{ id: newId(), defId: null, name: "Kept as stored", dice: [8] }] } };
           const actor = await createCharacter(system);
           const before = storedSystem(actor);
-          await actor.update({ system: { schemaVersion: 1, freeTraits: [{ id, label: "Sawn-off", dice: [10] }] } });
-          assert.deepEqual(storedSystem(actor), { ...before, freeTraits: [{ id, name: "Sawn-off", dice: [10] }] });
+          assert.equal(before.kindId, system.kindId);
+          const second = newId();
+          await actor.update({ system: { schemaVersion: 1, freeTraits: [
+            { id, label: "Sawn-off", dice: [10] },
+            { id: second, label: "Old label", name: "Already named", dice: [6] }
+          ] } });
+          assert.deepEqual(storedSystem(actor), { ...before, freeTraits: [
+            { id, name: "Sawn-off", dice: [10] },
+            { id: second, name: "Already named", dice: [6] }
+          ] });
           assert.equal(before.schemaVersion, 2);
         });
       });
