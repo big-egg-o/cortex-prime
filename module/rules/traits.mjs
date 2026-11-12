@@ -431,40 +431,40 @@ function sfxWellFormed(sfx) {
   return true;
 }
 
+/** The plain fields of a set entry, as entryPlainFieldWellFormed reads them. */
+const ENTRY_PLAIN_FIELDS = Object.freeze(["name", "description", "statement", "sfx", "tags", "sub"]);
+
 /**
- * Whether a set entry's plain fields can be stored (ADR-046 point 4): its name, description and
- * statement are absent or text, its SFX are well formed, its tags are absent or a list of text,
+ * Whether one plain field of a set entry can be stored (ADR-046 point 4): a name, description or
+ * statement is absent or text, the SFX are well formed, the tags are absent or a list of text,
  * and each sub-trait's name is absent or text and its rating a list. The sub-traits' ids and die
  * sizes are checked elsewhere.
- * @param {object} entry - a plain object
+ * @param {string} field - one of ENTRY_PLAIN_FIELDS
+ * @param {unknown} value - the entry's value for it; sub-traits are a list of objects or absent
  * @returns {boolean}
  */
-function entryPlainFieldsWellFormed(entry) {
-  if ( !optionalText(entry.name) || !optionalText(entry.description) || !optionalText(entry.statement) ) return false;
-  if ( !sfxWellFormed(entry.sfx) ) return false;
-  if ( entry.tags !== undefined ) {
-    if ( !Array.isArray(entry.tags) ) return false;
-    for ( let i = 0; i < entry.tags.length; i++ ) {
-      if ( typeof entry.tags[i] !== "string" ) return false;
+function entryPlainFieldWellFormed(field, value) {
+  if ( field === "sfx" ) return sfxWellFormed(value);
+  if ( field === "tags" ) {
+    if ( value === undefined ) return true;
+    if ( !Array.isArray(value) ) return false;
+    for ( let i = 0; i < value.length; i++ ) {
+      if ( typeof value[i] !== "string" ) return false;
     }
+    return true;
   }
-  for ( const sub of entry.sub ?? [] ) {
-    if ( !optionalText(sub.name) || !Array.isArray(sub.dice) ) return false;
+  if ( field === "sub" ) {
+    for ( const sub of value ?? [] ) {
+      if ( !optionalText(sub.name) || !Array.isArray(sub.dice) ) return false;
+    }
+    return true;
   }
-  return true;
+  return optionalText(value);
 }
 
 /** @returns {boolean} whether two plain values hold the same data, key order included */
 function samePlain(a, b) {
   return JSON.stringify(a) === JSON.stringify(b);
-}
-
-/** The plain fields of a set entry, as entryPlainFieldsWellFormed reads them. */
-const ENTRY_PLAIN_FIELDS = Object.freeze(["name", "description", "statement", "sfx", "tags", "sub"]);
-
-/** @returns {boolean} whether two entries hold the same plain fields */
-function sameEntryPlainFields(a, b) {
-  return ENTRY_PLAIN_FIELDS.every(field => samePlain(a[field], b[field]));
 }
 
 /**
@@ -482,8 +482,8 @@ function sameEntryPlainFields(a, b) {
  *   A value the schema couldn't store, such as an SFX without its unlocked flag or a tag that
  *   isn't text, is refused visibly: Foundry would otherwise drop the whole list it sits in
  *   without an error, and with it every other change to that set's entries.
- * A field counts as set by the edit unless an entry with the same id in the same set already
- * holds the same value (for a sub-trait: a sub-trait with the same id and the same dice as a
+ * Each field counts as set by the edit unless an entry with the same id in the same set already
+ * holds the same value for it (for a sub-trait's rating: a sub-trait with the same id and the same dice as a
  * multiset), so what the edit leaves as stored is never checked again (ADR-037 point 2), and what
  * moves with its entry to another set is. Only the proposed data's shape is checked; the stored
  * data is read only to find what stayed the same, so a stored problem never stops an edit that
@@ -517,8 +517,9 @@ export function validateEntryFields(current, proposed) {
     for ( const entry of set.entries ) {
       if ( !subTraitsWellFormed(entry.sub) ) return fail("INVALID_TRAIT_DATA");
       const earlier = earlierOf(setId, entry);
-      if ( !earlier.some(e => sameEntryPlainFields(e, entry)) && !entryPlainFieldsWellFormed(entry) ) {
-        return fail("INVALID_TRAIT_DATA");
+      for ( const field of ENTRY_PLAIN_FIELDS ) {
+        if ( earlier.some(e => samePlain(e[field], entry[field])) ) continue;
+        if ( !entryPlainFieldWellFormed(field, entry[field]) ) return fail("INVALID_TRAIT_DATA");
       }
       if ( earlier.some(e => sameStatementFields(e, entry)) ) continue;
       if ( statementFieldsProblem(entry) === "INVALID_TRAIT_DATA" ) return fail("INVALID_TRAIT_DATA");

@@ -207,6 +207,19 @@ describe("validateEntryFields (ADR-037 point 2 for the entry's other fields)", (
     expect(validateEntryFields(stored, moved)).toEqual(refused("INVALID_TRAIT_DATA"));
   });
 
+  it("ADR-046 point 4 checks each plain field of an entry by itself", () => {
+    const stored = edited(c => { Object.assign(social(c), { sfx: [{ text: "Charm" }], tags: [5] }); });
+    // Another field of the same entry changes: the stored SFX and tags aren't checked again.
+    const described = edited(c => { social(c).description = "Warm"; }, stored);
+    expect(validateEntryFields(stored, described).ok).toBe(true);
+    // One malformed field is repaired while the other stays as stored.
+    const repaired = edited(c => { social(c).sfx = [{ text: "Charm", unlocked: true }]; }, stored);
+    expect(validateEntryFields(stored, repaired).ok).toBe(true);
+    // A field the edit sets is still refused, whatever the entry's other fields hold.
+    const worse = edited(c => { social(c).tags = [6]; }, stored);
+    expect(validateEntryFields(stored, worse)).toEqual(refused("INVALID_TRAIT_DATA"));
+  });
+
   it("refuses data it can't read: INVALID_TRAIT_DATA", () => {
     expect(validateEntryFields(null, pc())).toEqual(refused("INVALID_TRAIT_DATA"));
     expect(validateEntryFields(pc(), edited(c => { shoot(c).sub = { id: S1 }; }))).toEqual(refused("INVALID_TRAIT_DATA"));
