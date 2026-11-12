@@ -482,12 +482,15 @@ function samePlain(a, b) {
  *   A value the schema couldn't store, such as an SFX without its unlocked flag or a tag that
  *   isn't text, is refused visibly: Foundry would otherwise drop the whole list it sits in
  *   without an error, and with it every other change to that set's entries.
- * Each field counts as set by the edit unless an entry with the same id in the same set already
- * holds the same value for it (for a sub-trait's rating: a sub-trait with the same id and the same dice as a
- * multiset), so what the edit leaves as stored is never checked again (ADR-037 point 2), and what
- * moves with its entry to another set is. Only the proposed data's shape is checked; the stored
- * data is read only to find what stayed the same, so a stored problem never stops an edit that
- * repairs it.
+ * Each plain field counts as set by the edit unless an entry with the same id in the same set
+ * already holds the same value for it, so a plain field the edit leaves as stored is never checked
+ * again (ADR-037 point 2), and what moves with its entry to another set is. A list (SFX, tags,
+ * sub-traits) is one value: an edit that changes one of its items sets the whole list. The
+ * statement fields are compared together, as the statement functions read them together, and a
+ * sub-trait's rating counts as kept when a sub-trait with the same id holds the same dice as a
+ * multiset. That an entry's sub-traits are a list of objects with ids is checked on every edit.
+ * Only the proposed data's shape is checked; the stored data is read only to find what stayed the
+ * same, so a stored problem never stops an edit that repairs it.
  *
  * Only die sizes are checked, never a set's shape. `preChallengeDice` is a past rating, which may
  * no longer fit its set after a configuration change and is kept all the same (ADR-037 point 5).

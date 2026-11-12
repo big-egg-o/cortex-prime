@@ -525,11 +525,12 @@ export function registerCharacterBatch(quench) {
           const actor = await createCharacter(foundry.utils.deepClone(system));
           const social = [{ ...system.traits[ATTRIBUTES].entries[0], challenged: true, preChallengeDice: [7] }];
           const shoot = [{ ...system.traits[SKILLS].entries[0], sub: [{ ...system.traits[SKILLS].entries[0].sub[0], dice: [7] }] }];
-          const shown = await errorsShownBy(async () => {
-            await actor.update({ name: "[Quench] renamed", [`system.traits.${ATTRIBUTES}.entries`]: social });
-            await actor.update({ name: "[Quench] renamed", [`system.traits.${SKILLS}.entries`]: shoot });
-          });
-          assert.deepEqual(shown, [refusalText("INVALID_DIE_SIZE"), refusalText("INVALID_DIE_SIZE")]);
+          for ( const [setId, entries] of [[ATTRIBUTES, social], [SKILLS, shoot]] ) {
+            const shown = await errorsShownBy(
+              () => actor.update({ name: "[Quench] renamed", [`system.traits.${setId}.entries`]: entries })
+            );
+            assert.deepEqual(shown, [refusalText("INVALID_DIE_SIZE")], setId);
+          }
 
           // A silent drop by Foundry would keep the name change; the backstop cancels it too.
           assert.equal(game.actors.get(actor.id).name, "[Quench] character");
