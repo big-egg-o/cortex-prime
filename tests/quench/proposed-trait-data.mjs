@@ -210,7 +210,8 @@ export function registerProposedTraitDataBatch(quench) {
           const traits = () => ({ [SKILLS]: { entries: skillEntries() }, [SCENE_DISTINCTIONS]: { entries: scene } });
           const result = await compare(() => ({ "system.traits": new ForcedReplacement(traits()) }));
           assertSame(result, "traits", { directDiffers: true });
-          assert.deepEqual(result.local?.traits, { [SKILLS]: characterSystem().traits[SKILLS] },
+          // The kept set is compared as it was stored, with whatever defaults the schema gives a set.
+          assert.deepEqual(result.local?.traits, { [SKILLS]: result.current.traits[SKILLS] },
             "Foundry's direct commit of a plain ForcedReplacement changed; the directDiffers exception can go");
         });
 
