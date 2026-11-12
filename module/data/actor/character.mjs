@@ -24,11 +24,14 @@
  *
  * The fields added after schema version 1 are all optional or have a default that cleaning fills
  * in when an actor loads, so actors stored before them load unchanged and no migration step is
- * needed (a step must never fill defaults: module/data/migration-runner.mjs). The version stays 1.
+ * needed (a step must never fill defaults: module/data/migration-runner.mjs). The version stays 1
+ * until a stored field changes its shape or meaning; every such change gets a step in
+ * CHARACTER_MIGRATIONS, which migrateData runs (ADR-045).
  * @module data/actor/character
  */
 
 import { ratingField } from "../fields/rating-field.mjs";
+import { checkMigrations, defineMigrations, migrateSourceInPlace } from "../migration-runner.mjs";
 import StrictBooleanField from "../fields/strict-boolean-field.mjs";
 import { getGameConfig } from "../../config/settings.mjs";
 import { SHUT_DOWN_REASONS } from "../../rules/statements.mjs";
@@ -42,6 +45,15 @@ const OPTIONAL = Object.freeze({ required: false, nullable: false, initial: unde
 
 /** The current character schema version. */
 export const CHARACTER_SCHEMA_VERSION = 1;
+
+/** Migrations of stored character data; version 1 is the first schema, so there are none yet. */
+export const CHARACTER_MIGRATIONS = defineMigrations([]);
+
+// The schema version has two sources, the constant and the list; a step added without bumping
+// the constant would make every stored character too new, so this fails at load instead.
+if ( checkMigrations(CHARACTER_MIGRATIONS).value !== CHARACTER_SCHEMA_VERSION ) {
+  throw new Error("CHARACTER_SCHEMA_VERSION must match the last character migration");
+}
 
 /**
  * An id in Foundry's 16-character alphanumeric format, as foundry.utils.randomID() makes them. Used
@@ -115,6 +127,28 @@ function freeTraitSchema() {
  * System data for a "character" actor: its kind, its traits by set, and its free traits.
  */
 export default class CharacterData extends foundry.abstract.TypeDataModel {
+
+  /**
+   * The migrations migrateData runs. A static property, so that the Quench batch that proves the
+   * framework can put a test-only step in place while it runs and put this list back afterwards
+   * (ADR-045 point 3). Nothing else may change it.
+   * @type {readonly import("../migration-runner.mjs").Migration[]}
+   */
+  static migrations = CHARACTER_MIGRATIONS;
+
+  /**
+   * Brings stored character data up to the current schema (module/data/migration-runner.mjs).
+   * Foundry calls this with its cleaning options on world load and creation (full data) and on
+   * every update (`partial` true); partial data without a version is left as it is.
+   * @override
+   * @param {object} source
+   * @param {object} [options] - Foundry's cleaning options
+   * @returns {object} the same source
+   */
+  static migrateData(source, options) {
+    super.migrateData(source, options);
+    return migrateSourceInPlace(source, this.migrations, { partial: options?.partial === true });
+  }
 
   /**
    * Tells the pure update builder which values are Foundry's update operators
