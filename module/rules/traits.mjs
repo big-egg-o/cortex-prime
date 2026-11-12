@@ -7,7 +7,7 @@
 
 import { fail, ok } from "./result.mjs";
 import { actorKindById, ratingOptionsOf, traitDefById, traitSetById } from "./game-config.mjs";
-import { DIE_SIZES } from "./types.mjs";
+import { DIE_SIZES, SHUT_DOWN_REASONS } from "./types.mjs";
 
 /**
  * Checks a trait's rating: a list of die sizes (ADR-033), several for mobs, bosses, resources
@@ -356,20 +356,229 @@ export function validateTraitChanges(changes, config) {
 }
 
 /**
- * Checks an edit of a character's traits from its stored data to the complete data it would
- * have afterwards: what changed (diffCharacterTraits), then whether that fits the configuration
- * (validateTraitChanges). This is the check ADR-037 point 3 puts before every write of our apps
- * and in the character model's update backstop. Creating an actor, a replacing update and the
- * system's own migrations count as loading (point 4) and don't come here.
+ * Whether an entry's sub-traits can be read: absent, or a list of objects with an id.
+ * @param {unknown} sub
+ * @returns {boolean}
+ */
+function subTraitsWellFormed(sub) {
+  if ( sub === undefined ) return true;
+  if ( !Array.isArray(sub) ) return false;
+  for ( let i = 0; i < sub.length; i++ ) {
+    if ( !isPlainObject(sub[i]) || !isTraitId(sub[i].id) ) return false;
+  }
+  return true;
+}
+
+/**
+ * The first problem with the statement fields of a trait entry, as the statement functions read
+ * them (rule 16; module/rules/statements.mjs): `challenged` is a boolean when present; a
+ * challenged entry's `preChallengeDice` is a rating with at least one die, its rating from before
+ * the first unresolved challenge (RQ-022); `shutDown` is absent or `{reason}` with one of
+ * SHUT_DOWN_REASONS. An unchallenged entry's `preChallengeDice` is left unread, because a challenge
+ * replaces it. The entry's own rating isn't read. Every INVALID_TRAIT_DATA check comes before the
+ * saved rating's die sizes, so a die-size problem never hides a malformed field.
+ * @param {object} entry - a plain object; the caller checks that first
+ * @returns {string|null} INVALID_TRAIT_DATA or INVALID_DIE_SIZE, or null when the fields are well
+ *   formed
+ */
+export function statementFieldsProblem(entry) {
+  if ( (entry.challenged !== undefined) && (typeof entry.challenged !== "boolean") ) return "INVALID_TRAIT_DATA";
+  if ( (entry.shutDown !== undefined)
+    && !(isPlainObject(entry.shutDown) && SHUT_DOWN_REASONS.includes(entry.shutDown.reason)) ) return "INVALID_TRAIT_DATA";
+  if ( entry.challenged ) {
+    if ( !Array.isArray(entry.preChallengeDice) ) return "INVALID_TRAIT_DATA";
+    const saved = validateRating(entry.preChallengeDice);
+    if ( !saved.ok ) return saved.code;
+    if ( saved.value.length === 0 ) return "INVALID_TRAIT_DATA";
+  }
+  return null;
+}
+
+/** @returns {boolean} whether two values are both absent, or both ratings with the same dice */
+function sameOptionalDice(a, b) {
+  if ( (a === undefined) || (b === undefined) ) return a === b;
+  return Array.isArray(a) && Array.isArray(b) && sameDice(a, b);
+}
+
+/** @returns {boolean} whether two entries agree on their statement fields as statementFieldsProblem reads them */
+function sameStatementFields(a, b) {
+  return (a.challenged === b.challenged) && sameOptionalDice(a.preChallengeDice, b.preChallengeDice)
+    && ((a.shutDown === undefined) === (b.shutDown === undefined)) && (a.shutDown?.reason === b.shutDown?.reason);
+}
+
+/** @returns {object[]} a stored entry's sub-traits that can be compared: objects in a list */
+function readableSubTraits(entry) {
+  return Array.isArray(entry.sub) ? entry.sub.filter(isPlainObject) : [];
+}
+
+/** @returns {boolean} whether value is absent or text */
+function optionalText(value) {
+  return (value === undefined) || (typeof value === "string");
+}
+
+/**
+ * Whether a list of SFX can be stored: absent, or a list of `{text, unlocked}` whose text is
+ * absent or text and whose unlocked flag is a boolean. The flag has no default (ADR-046 point 3).
+ * @param {unknown} sfx
+ * @returns {boolean}
+ */
+function sfxWellFormed(sfx) {
+  if ( sfx === undefined ) return true;
+  if ( !Array.isArray(sfx) ) return false;
+  for ( let i = 0; i < sfx.length; i++ ) {
+    if ( !isPlainObject(sfx[i]) || !optionalText(sfx[i].text) || (typeof sfx[i].unlocked !== "boolean") ) return false;
+  }
+  return true;
+}
+
+/** The plain fields of a set entry, as entryPlainFieldWellFormed reads them. */
+const ENTRY_PLAIN_FIELDS = Object.freeze(["name", "description", "statement", "sfx", "tags", "sub"]);
+
+/**
+ * Whether one plain field of a set entry can be stored (ADR-046 point 4): a name, description or
+ * statement is absent or text, the SFX are well formed, the tags are absent or a list of text,
+ * and each sub-trait's name is absent or text and its rating a list. The sub-traits' ids and die
+ * sizes are checked elsewhere.
+ * @param {string} field - one of ENTRY_PLAIN_FIELDS
+ * @param {unknown} value - the entry's value for it; sub-traits are a list of objects or absent
+ * @returns {boolean}
+ */
+function entryPlainFieldWellFormed(field, value) {
+  if ( field === "sfx" ) return sfxWellFormed(value);
+  if ( field === "tags" ) {
+    if ( value === undefined ) return true;
+    if ( !Array.isArray(value) ) return false;
+    for ( let i = 0; i < value.length; i++ ) {
+      if ( typeof value[i] !== "string" ) return false;
+    }
+    return true;
+  }
+  if ( field === "sub" ) {
+    for ( const sub of value ?? [] ) {
+      if ( !optionalText(sub.name) || !Array.isArray(sub.dice) ) return false;
+    }
+    return true;
+  }
+  return optionalText(value);
+}
+
+/** @returns {boolean} whether two plain values hold the same data, key order included */
+function samePlain(a, b) {
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
+/**
+ * Checks the fields of the set entries an edit sets, beyond their own rating, definition and
+ * name (which diffCharacterTraits and validateTraitChanges check):
+ * - the statement fields (rule 16; statementFieldsProblem), so that a challenge the statement
+ *   functions couldn't resolve, such as `challenged` without a saved rating, is refused visibly
+ *   instead of being stored, and a malformed value Foundry would drop without an error is
+ *   refused visibly (ADR-037 point 3);
+ * - the die sizes of the other ratings an entry holds: `preChallengeDice` (RQ-022) and each
+ *   sub-trait's rating (rule 19). A die size that doesn't exist is refused (TS-E01), as for any
+ *   rating, because Foundry drops a list holding one without an error;
+ * - the plain fields (ADR-046 point 4): an entry's name, description, statement, SFX, tags and
+ *   sub-trait names, a set's shut-down flag and its own SFX (point 5), and a free trait's name.
+ *   A value the schema couldn't store, such as an SFX without its unlocked flag or a tag that
+ *   isn't text, is refused visibly: Foundry would otherwise drop the whole list it sits in
+ *   without an error, and with it every other change to that set's entries.
+ * Each plain field counts as set by the edit unless an entry with the same id in the same set
+ * already holds the same value for it, so a plain field the edit leaves as stored is never checked
+ * again (ADR-037 point 2), and what moves with its entry to another set is. A list (SFX, tags,
+ * sub-traits) is one value: an edit that changes one of its items sets the whole list. The
+ * statement fields are compared together, as the statement functions read them together, and a
+ * sub-trait's rating counts as kept when a sub-trait with the same id holds the same dice as a
+ * multiset. That an entry's sub-traits are a list of objects with ids is checked on every edit.
+ * Only the proposed data's shape is checked; the stored data is read only to find what stayed the
+ * same, so a stored problem never stops an edit that repairs it.
+ *
+ * Only die sizes are checked, never a set's shape. `preChallengeDice` is a past rating, which may
+ * no longer fit its set after a configuration change and is kept all the same (ADR-037 point 5).
+ * A sub-trait's rating gets the die-size check only: the parent set's rating options don't apply
+ * to it (ADR-046 point 1; Handbook p. 59), and ADR-029 point 2 refuses only data that can't
+ * exist. Free traits hold an id, a name and a rating; only the name is read here. Pure; never
+ * changes its inputs.
+ * @param {import("./types.mjs").CharacterTraitData} current - the stored data before the edit
+ * @param {import("./types.mjs").CharacterTraitData} proposed - the trait data after the edit
+ * @returns {import("./types.mjs").EngineResult<{checked: {setId: string, entryId: string,
+ *   subId: string|null, field: "preChallengeDice"|"sub"}[]}>} the ratings whose die sizes were
+ *   checked, in proposed order (sets in key order, entries in array order, an entry's
+ *   preChallengeDice before its sub-traits); refuses, in this order: INVALID_TRAIT_DATA (either
+ *   state isn't shaped like trait data, an entry's sub-traits aren't a list of objects with ids,
+ *   or a statement field or plain field the edit sets is malformed), INVALID_DIE_SIZE
+ */
+export function validateEntryFields(current, proposed) {
+  if ( !traitDataWellFormed(current) || !traitDataWellFormed(proposed) ) return fail("INVALID_TRAIT_DATA");
+  const earlierOf = (setId, entry) => (current.traits[setId]?.entries ?? []).filter(e => e.id === entry.id);
+
+  for ( const [setId, set] of Object.entries(proposed.traits) ) {
+    const storedSet = current.traits[setId];
+    if ( (set.shutDown !== storedSet?.shutDown) && (set.shutDown !== undefined) && (typeof set.shutDown !== "boolean") ) {
+      return fail("INVALID_TRAIT_DATA");
+    }
+    if ( !samePlain(set.sfx, storedSet?.sfx) && !sfxWellFormed(set.sfx) ) return fail("INVALID_TRAIT_DATA");
+    for ( const entry of set.entries ) {
+      if ( !subTraitsWellFormed(entry.sub) ) return fail("INVALID_TRAIT_DATA");
+      const earlier = earlierOf(setId, entry);
+      for ( const field of ENTRY_PLAIN_FIELDS ) {
+        if ( earlier.some(e => samePlain(e[field], entry[field])) ) continue;
+        if ( !entryPlainFieldWellFormed(field, entry[field]) ) return fail("INVALID_TRAIT_DATA");
+      }
+      if ( earlier.some(e => sameStatementFields(e, entry)) ) continue;
+      if ( statementFieldsProblem(entry) === "INVALID_TRAIT_DATA" ) return fail("INVALID_TRAIT_DATA");
+    }
+  }
+  for ( const free of proposed.freeTraits ) {
+    const kept = current.freeTraits.some(e => (e.id === free.id) && (e.name === free.name));
+    if ( !kept && !optionalText(free.name) ) return fail("INVALID_TRAIT_DATA");
+  }
+
+  const checked = [];
+  for ( const [setId, set] of Object.entries(proposed.traits) ) {
+    for ( const entry of set.entries ) {
+      const earlier = earlierOf(setId, entry);
+      if ( entry.preChallengeDice !== undefined ) {
+        const kept = earlier.some(e => Array.isArray(e.preChallengeDice) && Array.isArray(entry.preChallengeDice)
+          && sameDice(e.preChallengeDice, entry.preChallengeDice));
+        if ( !kept ) {
+          const sizes = validateRating(entry.preChallengeDice);
+          if ( !sizes.ok ) return sizes;
+          checked.push({ setId, entryId: entry.id, subId: null, field: "preChallengeDice" });
+        }
+      }
+      for ( const sub of entry.sub ?? [] ) {
+        const kept = earlier.some(e => readableSubTraits(e).some(s => (s.id === sub.id) && Array.isArray(s.dice)
+          && Array.isArray(sub.dice) && sameDice(s.dice, sub.dice)));
+        if ( kept ) continue;
+        const sizes = validateRating(sub.dice);
+        if ( !sizes.ok ) return sizes;
+        checked.push({ setId, entryId: entry.id, subId: sub.id, field: "sub" });
+      }
+    }
+  }
+  return ok({ checked });
+}
+
+/**
+ * Checks an edit of a character's traits from its stored data to the data it would have
+ * afterwards: what changed (diffCharacterTraits), the entries' other fields the edit sets
+ * (validateEntryFields), then whether the changes fit the configuration (validateTraitChanges).
+ * Die sizes come before set shapes, as in validateTraitChanges. This is the check ADR-037 point 3
+ * puts before every write of our apps and in the character model's update backstop. Creating an
+ * actor, a replacing update and the system's own migrations count as loading (point 4) and don't
+ * come here. Statement and SFX text, tags, descriptions and shut-down flags are checked for
+ * their type only (ADR-046 point 4), never against the configuration (ADR-029).
  * @param {import("./types.mjs").CharacterTraitData} current
  * @param {import("./types.mjs").CharacterTraitData} proposed
  * @param {import("./types.mjs").GameConfig} config
  * @returns {import("./types.mjs").EngineResult<import("./types.mjs").TraitChanges>} the diff;
- *   refuses with the diff's codes, then validateTraitChanges's
+ *   refuses with the diff's codes, then validateEntryFields's, then validateTraitChanges's
  */
 export function checkCharacterEdit(current, proposed, config) {
   const diff = diffCharacterTraits(current, proposed);
   if ( !diff.ok ) return diff;
+  const fields = validateEntryFields(current, proposed);
+  if ( !fields.ok ) return fields;
   const checked = validateTraitChanges(diff.value, config);
   return checked.ok ? diff : checked;
 }
@@ -444,8 +653,10 @@ function readUpdateValue(value, operatorOf) {
 }
 
 /**
- * Applies an update's system changes to a character's stored trait data and returns the complete
- * trait data the update would leave, for checkCharacterEdit (ADR-037 point 3). It expects the
+ * Applies an update's system changes to a character's stored trait data and returns the trait
+ * data the update would leave, as far as the edit checks read it (kind, entries, a set's
+ * shut-down flag and own SFX, free traits; anything else in a set is kept as stored), for
+ * checkCharacterEdit (ADR-037 point 3). It expects the
  * changes as Foundry passes them to `_preUpdate`: cleaned, so dotted keys are expanded, legacy
  * deletion and replacement keys are operators, nulls are reset to their initial values and form
  * input is cast (client/data/client-backend.mjs `#preUpdateDocumentArray`). Our apps clean their
@@ -456,8 +667,9 @@ function readUpdateValue(value, operatorOf) {
  * - `kindId` and `freeTraits` take the given value; a list is always replaced whole.
  * - `traits` merges by set key: a key that is forcibly deleted removes the set, a plain object
  *   merges into the stored set (or starts an empty one), and anything else replaces the set.
- *   Within a set only `entries` is read, and it is replaced whole, because every edit sends a
- *   set's whole list.
+ *   Within a set, `entries` is read and replaced whole, because every edit sends a set's whole
+ *   list; so are the set's `shutDown` flag and its own `sfx` list, which validateEntryFields
+ *   checks (a forced deletion of either leaves it absent).
  * - A forced replacement sets its value without merging, with the operators inside it applied;
  *   a forced deletion of a field other than a set key leaves it undefined, which the diff then
  *   refuses as malformed, as Foundry refuses the missing value.
@@ -516,6 +728,13 @@ export function proposedTraitData(current, changes, operators = {}) {
         if ( Object.hasOwn(setRead.merge, "entries") ) {
           const entriesRead = readUpdateValue(setRead.merge.entries, operatorOf);
           set.entries = ("set" in entriesRead) ? entriesRead.set : withOperatorsApplied(entriesRead.merge, operatorOf);
+        }
+        for ( const key of ["shutDown", "sfx"] ) {
+          if ( !Object.hasOwn(setRead.merge, key) ) continue;
+          const read = readUpdateValue(setRead.merge[key], operatorOf);
+          const value = ("set" in read) ? read.set : withOperatorsApplied(read.merge, operatorOf);
+          if ( value === undefined ) delete set[key];
+          else set[key] = value;
         }
         traits[setId] = set;
       }

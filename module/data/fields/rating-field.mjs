@@ -18,8 +18,10 @@ const { ArrayField, NumberField } = foundry.data.fields;
  * A new rating field: an array of die sizes, empty by default (a trait with no die, ADR-033).
  * `integer` is left off on purpose: NumberField rounds integer fields while cleaning, which
  * would store 7.6 as a d8 instead of refusing it. `choices` already admits only whole numbers.
+ * @param {object} [options] - ArrayField options, for example `{required: false, initial:
+ *   undefined}` for a rating that may be left out, such as a trait's preChallengeDice
  * @returns {import("../../../reference/foundry-14.369/common/data/fields.mjs").ArrayField}
  */
-export function ratingField() {
-  return new ArrayField(new NumberField({ required: true, nullable: false, choices: DIE_SIZES }));
+export function ratingField(options = {}) {
+  return new ArrayField(new NumberField({ required: true, nullable: false, choices: DIE_SIZES }), options);
 }

@@ -21,6 +21,15 @@
 export const DIE_SIZES = Object.freeze(/** @type {DieSize[]} */ ([4, 6, 8, 10, 12]));
 
 /**
+ * The shut-down reason a statement challenge sets on a d4 trait (Traits & Trait Sets data
+ * shapes; RQ-021). Exported from module/rules/statements.mjs too.
+ */
+export const STATEMENT_SHUT_DOWN_REASON = "statementChallenged";
+
+/** The shut-down reasons a trait entry can store (Traits & Trait Sets data shapes; rule 15). */
+export const SHUT_DOWN_REASONS = Object.freeze(["manual", STATEMENT_SHUT_DOWN_REASON]);
+
+/**
  * Where a pool die came from: a trait, an asset, an SFX, a complication, a doom die, a custom
  * die added by hand, and so on. Only ever referenced by a PoolDie, never mutated through one
  * (overflow and doubled dice carry their origin die's source, but stepping or doubling a pool
@@ -365,12 +374,20 @@ export const DIE_SIZES = Object.freeze(/** @type {DieSize[]} */ ([4, 6, 8, 10, 1
  * @property {string} [name]
  * @property {unknown[]} dice - the rating before its die sizes are checked: any array is accepted
  *   here, and a later check refuses values that aren't die sizes
- * @property {string} [statement] - (MOD) Trait Statements (rule 16)
- * @property {boolean} [challenged] - the statement is challenged and not yet resolved
- * @property {DieSize[]} [preChallengeDice] - the rating from before the first unresolved
- *   challenge (RQ-022)
- * @property {{reason: "manual"|"statementChallenged"}} [shutDown] - shut down by hand, or by a
- *   challenge of a d4 trait (rule 15, RQ-021)
+ * @property {string} [description] - set entries only: a distinction's descriptive line, a
+ *   talent's description (rules 13 and 20)
+ * @property {string} [statement] - set entries only: (MOD) Trait Statements (rule 16)
+ * @property {boolean} [challenged] - set entries only: the statement is challenged and not yet
+ *   resolved
+ * @property {DieSize[]} [preChallengeDice] - set entries only: the rating from before the first
+ *   unresolved challenge (RQ-022)
+ * @property {{text: string, unlocked: boolean}[]} [sfx] - set entries only: SFX as text, locked or
+ *   unlocked (ADR-035); the model stores [] when there are none
+ * @property {string[]} [tags] - set entries only: plain-text tags (rules 18 and 20)
+ * @property {{id: string, name: string, dice: unknown[]}[]} [sub] - set entries only: traits
+ *   attached to this one, such as specialties (rule 19)
+ * @property {{reason: "manual"|"statementChallenged"}} [shutDown] - set entries only: shut down
+ *   by hand, or by a challenge of a d4 trait (rule 15, RQ-021)
  */
 
 /**
@@ -378,8 +395,11 @@ export const DIE_SIZES = Object.freeze(/** @type {DieSize[]} */ ([4, 6, 8, 10, 1
  * such as schemaVersion and names, are ignored.
  * @typedef {Object} CharacterTraitData
  * @property {string|null} kindId
- * @property {Object<string, {entries: TraitEntryData[]}>} traits - keyed by trait-set id
- * @property {TraitEntryData[]} freeTraits
+ * @property {Object<string, {shutDown?: boolean, sfx?: {text: string, unlocked: boolean}[],
+ *   entries: TraitEntryData[]}>} traits - keyed by trait-set id; `shutDown` is the whole set shut
+ *   down by hand (rule 15), false in the model unless set; `sfx` are the set's own SFX as text
+ *   (ADR-035, ADR-046 point 5), empty in the model unless set
+ * @property {TraitEntryData[]} freeTraits - id, name and dice only
  */
 
 /**
