@@ -395,9 +395,10 @@ export const SHUT_DOWN_REASONS = Object.freeze(["manual", STATEMENT_SHUT_DOWN_RE
  * such as schemaVersion and names, are ignored.
  * @typedef {Object} CharacterTraitData
  * @property {string|null} kindId
- * @property {Object<string, {shutDown?: boolean, entries: TraitEntryData[]}>} traits - keyed by
- *   trait-set id; `shutDown` is the whole set shut down by hand (rule 15), false in the model
- *   unless set
+ * @property {Object<string, {shutDown?: boolean, sfx?: {text: string, unlocked: boolean}[],
+ *   entries: TraitEntryData[]}>} traits - keyed by trait-set id; `shutDown` is the whole set shut
+ *   down by hand (rule 15), false in the model unless set; `sfx` are the set's own SFX as text
+ *   (ADR-035, ADR-046 point 5), empty in the model unless set
  * @property {TraitEntryData[]} freeTraits - id, name and dice only
  */
 

@@ -59,8 +59,8 @@ function statementTraitProblem(trait) {
  * `challenged` and stepped down one step (Handbook p. 65). A d4 can't step lower: it stays a d4
  * and is shut down with the reason "statementChallenged" (RQ-021; Codex, Statements Mod Trait,
  * Questioning a Statement, last paragraph), unless the table had already shut it down by hand:
- * the one reason slot then keeps "manual". What clearing that manual shut-down later means for a
- * trait whose statement still needs rewriting is not decided; the books don't say.
+ * the one reason slot then keeps "manual", and what follows is the table's call (RQ-034; the
+ * books don't say).
  *
  * The books describe one die tripled and stepped down; a rating of several dice is refused until
  * RQ-033 is decided, although traitPoolEntries triples each die of such a rating as the spec's

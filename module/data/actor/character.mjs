@@ -9,10 +9,12 @@
  * `_preUpdate` runs on every `Actor#update`, as the backstop behind our apps, which check before
  * writing themselves. The decision is the pure checkCharacterUpdate; this model only feeds it. It
  * also refuses a die size that doesn't exist in a preChallengeDice or a sub-trait's rating that
- * the edit sets (TS-E01), which Foundry would otherwise drop without an error.
+ * the edit sets (TS-E01), and a plain field the schema couldn't store, such as an SFX without its
+ * unlocked flag (ADR-046 point 4). Foundry would otherwise drop the list holding either without
+ * an error, and with it the rest of that set's changes.
  *
- * The fields follow the Traits & Trait Sets spec's data shapes. A set holds its shut-down flag and
- * its entries; an entry holds its id, definition id, name and rating, and may hold a description,
+ * The fields follow the Traits & Trait Sets spec's data shapes. A set holds its shut-down flag, its
+ * own SFX and its entries; an entry holds its id, definition id, name and rating, and may hold a description,
  * a statement and its challenge, SFX, tags, sub-traits and a shut-down reason. Free traits hold an
  * id, a name and a rating, which may be several dice (a boss's trait, ADR-040). Fields the spec
  * marks optional stay absent until set, never null or "": the pure statement functions read an
@@ -58,7 +60,7 @@ function idField(options = {}) {
 function sfxSchema() {
   return {
     text: new StringField({ required: true, blank: true, initial: "" }),
-    // No default: no rule says whether a new SFX starts locked, so the writer must say.
+    // No default: the books leave it to the game whether an SFX starts locked (ADR-046 point 3).
     unlocked: new StrictBooleanField({ required: true, initial: undefined })
   };
 }
@@ -177,6 +179,8 @@ export default class CharacterData extends foundry.abstract.TypeDataModel {
         new SchemaField({
           // The whole set shut down, a flag set and cleared by hand (rule 15).
           shutDown: new StrictBooleanField({ required: true, initial: false }),
+          // The set's own SFX, such as a power set's (rule 14, ADR-046 point 5).
+          sfx: new ArrayField(new SchemaField(sfxSchema())),
           entries: new ArrayField(new SchemaField(traitEntrySchema()))
         }),
         { validateKey: isValidId }

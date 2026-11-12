@@ -80,7 +80,7 @@ function storedSystem(actor) {
 /**
  * A character's system data with two trait sets (one entry list as a fixed set would have it,
  * with defIds, one as an open set would, without) and free traits. Sets and entries carry the
- * defaults the schema fills in (a set's shutDown false, an entry's sfx empty), so the data reads
+ * defaults the schema fills in (a set's shutDown false, a set's and an entry's sfx empty), so the data reads
  * back as it went in.
  * @returns {{system: object, setA: string, setB: string}}
  */
@@ -91,11 +91,11 @@ function sampleSystem() {
     schemaVersion: CHARACTER_SCHEMA_VERSION,
     kindId: newId(),
     traits: {
-      [setA]: { shutDown: false, entries: [
+      [setA]: { shutDown: false, sfx: [], entries: [
         { id: newId(), defId: newId(), name: "Fight", dice: [8], sfx: [] },
         { id: newId(), defId: newId(), name: "Sneak", dice: [6], sfx: [] }
       ] },
-      [setB]: { shutDown: false, entries: [
+      [setB]: { shutDown: false, sfx: [], entries: [
         { id: newId(), defId: null, name: "Cult Survivor", dice: [8], sfx: [] }
       ] }
     },
@@ -215,7 +215,7 @@ export function registerCharacterBatch(quench) {
           const { system, setA } = sampleSystem();
           // A set the configuration has, so the new entry passes the edit check (ADR-037 point 2).
           const setB = SCENE_DISTINCTIONS;
-          system.traits[setB] = { shutDown: false, entries: [{ id: newId(), defId: null, name: "Cult Survivor", dice: [8], sfx: [] }] };
+          system.traits[setB] = { shutDown: false, sfx: [], entries: [{ id: newId(), defId: null, name: "Cult Survivor", dice: [8], sfx: [] }] };
           const actor = await createCharacter(foundry.utils.deepClone(system));
           const replacement = [{ id: newId(), defId: null, name: "Panicked Crowd", dice: [6, 6], sfx: [] }];
           await actor.update({ [`system.traits.${setB}.entries`]: replacement });
@@ -279,7 +279,7 @@ export function registerCharacterBatch(quench) {
 
           const stored = storedSystem(actor);
           assert.deepEqual(Object.keys(stored.traits), [setId]);
-          assert.deepEqual(stored.traits[setId], { shutDown: true, entries: [{ ...entry, preChallengeDice: [8], challenged: true }] });
+          assert.deepEqual(stored.traits[setId], { shutDown: true, sfx: [], entries: [{ ...entry, preChallengeDice: [8], challenged: true }] });
           assert.notProperty(stored, "notInSchema");
         });
       });
@@ -289,8 +289,8 @@ export function registerCharacterBatch(quench) {
         const pcSystem = () => ({
           kindId: PC_KIND,
           traits: {
-            [DISTINCTIONS]: { shutDown: false, entries: [{ id: newId(), defId: null, name: "Seasoned Smuggler", dice: [8], sfx: [] }] },
-            [SKILLS]: { shutDown: false, entries: [{ id: newId(), defId: FIGHT, name: "Fight", dice: [6], sfx: [] }] }
+            [DISTINCTIONS]: { shutDown: false, sfx: [], entries: [{ id: newId(), defId: null, name: "Seasoned Smuggler", dice: [8], sfx: [] }] },
+            [SKILLS]: { shutDown: false, sfx: [], entries: [{ id: newId(), defId: FIGHT, name: "Fight", dice: [6], sfx: [] }] }
           },
           freeTraits: []
         });
@@ -385,7 +385,7 @@ export function registerCharacterBatch(quench) {
               schemaVersion: CHARACTER_SCHEMA_VERSION,
               kindId: null,
               traits: {
-                [setId]: { shutDown: true, entries: [{
+                [setId]: { shutDown: true, sfx: [{ text: "Overload", unlocked: false }], entries: [{
                   id: newId(), defId: null, name: "Social", dice: [6],
                   description: "Talks people round", statement: "I always keep my word",
                   challenged: true, preChallengeDice: [8],
@@ -418,15 +418,15 @@ export function registerCharacterBatch(quench) {
           assert.deepEqual(storedSystem(actor).traits[setId].entries[0].shutDown, { reason: "statementChallenged" });
         });
 
-        it("fills a set's shutDown with false and an entry's sfx with [], and leaves the optional fields out", async () => {
+        it("fills a set's shutDown with false and a set's and an entry's sfx with [], and leaves the optional fields out", async () => {
           const setId = newId();
           const entry = { id: newId(), defId: null, name: "Cult Survivor", dice: [8] };
           // A copy: creating cleans its data in place.
           const actor = await createCharacter({ traits: { [setId]: { entries: [{ ...entry }] } } });
-          assert.deepEqual(storedSystem(actor).traits[setId], { shutDown: false, entries: [{ ...entry, sfx: [] }] });
+          assert.deepEqual(storedSystem(actor).traits[setId], { shutDown: false, sfx: [], entries: [{ ...entry, sfx: [] }] });
         });
 
-        it("loads a character stored in the old shape unchanged, apart from those two defaults, with no migration step (ADR-037 point 1)", () => {
+        it("loads a character stored in the old shape unchanged, apart from those defaults, with no migration step (ADR-037 point 1, ADR-045)", () => {
           // The shape stored before this schema expansion: entries of id, defId, name and dice.
           const setId = newId();
           const old = {
@@ -442,7 +442,7 @@ export function registerCharacterBatch(quench) {
           assert.equal(CHARACTER_SCHEMA_VERSION, 1);
           assert.deepEqual(plain(loaded.system.toObject()), {
             ...old,
-            traits: { [setId]: { shutDown: false, entries: old.traits[setId].entries.map(e => ({ ...e, sfx: [] })) } }
+            traits: { [setId]: { shutDown: false, sfx: [], entries: old.traits[setId].entries.map(e => ({ ...e, sfx: [] })) } }
           });
         });
 
@@ -485,10 +485,10 @@ export function registerCharacterBatch(quench) {
         const pcSystem = () => ({
           kindId: PC_KIND,
           traits: {
-            [ATTRIBUTES]: { shutDown: false, entries: [
+            [ATTRIBUTES]: { shutDown: false, sfx: [], entries: [
               { id: newId(), defId: SOCIAL, name: "Social", dice: [8], statement: "I always keep my word", sfx: [] }
             ] },
-            [SKILLS]: { shutDown: false, entries: [
+            [SKILLS]: { shutDown: false, sfx: [], entries: [
               { id: newId(), defId: SHOOT, name: "Shoot", dice: [12], sfx: [], sub: [{ id: newId(), name: "Guns", dice: [6] }] }
             ] }
           },
@@ -523,16 +523,25 @@ export function registerCharacterBatch(quench) {
           }
         });
 
-        it("drops an SFX without its unlocked flag sent in an update, keeping the update's other changes (Foundry's list check)", async () => {
-          // Recorded Foundry behaviour, not approved: an invalid element in a list is dropped from
-          // an update without an error. The backstop doesn't read SFX, so this limitation is listed
-          // for the owner; ADR-037 point 7 covers only writes that bypass Actor#update.
+        it("ADR-046 point 4: refuses an SFX without its unlocked flag visibly, on an entry and on a set, cancelling the whole update", async () => {
+          // Without the backstop Foundry drops the list holding it without an error, and with it
+          // every other change to that set's entries, while the update's other changes are saved.
           const system = pcSystem();
           const actor = await createCharacter(foundry.utils.deepClone(system));
-          const entries = [{ ...system.traits[ATTRIBUTES].entries[0], sfx: [{ text: "Charm" }] }];
+          const entries = [{ ...system.traits[ATTRIBUTES].entries[0], dice: [10], sfx: [{ text: "Charm" }] }];
           await actor.update({ name: "[Quench] renamed", [`system.traits.${ATTRIBUTES}.entries`]: entries });
-          assert.equal(game.actors.get(actor.id).name, "[Quench] renamed");
-          assert.deepEqual(storedSystem(actor).traits[ATTRIBUTES], system.traits[ATTRIBUTES]);
+          assert.equal(game.actors.get(actor.id).name, "[Quench] character", "an entry's SFX");
+          await actor.update({ name: "[Quench] renamed", [`system.traits.${SKILLS}.sfx`]: [{ text: "Overload" }] });
+          assert.equal(game.actors.get(actor.id).name, "[Quench] character", "a set's SFX");
+          assert.deepEqual(storedSystem(actor).traits, system.traits);
+        });
+
+        it("ADR-046 point 5: a set's own SFX are stored through Actor#update and leave its entries alone", async () => {
+          const system = pcSystem();
+          const actor = await createCharacter(foundry.utils.deepClone(system));
+          const sfx = [{ text: "Overload", unlocked: false }, { text: "Area attack", unlocked: true }];
+          await actor.update({ [`system.traits.${SKILLS}.sfx`]: sfx });
+          assert.deepEqual(storedSystem(actor).traits[SKILLS], { ...system.traits[SKILLS], sfx });
         });
 
         it("TS-14 and TS-14b: challenges written back through Actor#update pass the backstop", async () => {
@@ -597,7 +606,7 @@ export function registerCharacterBatch(quench) {
           assert.deepEqual(storedSystem(actor).traits, system.traits);
         });
 
-        it("PARKED rule 19: a sub-trait rated [6, 6] under a one-die skill passes the edit check (die sizes only)", async () => {
+        it("ADR-046 point 1, rule 19: a sub-trait rated [6, 6] under a one-die skill passes the edit check (die sizes only)", async () => {
           const system = pcSystem();
           const actor = await createCharacter(foundry.utils.deepClone(system));
           const entry = system.traits[SKILLS].entries[0];

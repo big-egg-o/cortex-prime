@@ -411,6 +411,62 @@ function readableSubTraits(entry) {
   return Array.isArray(entry.sub) ? entry.sub.filter(isPlainObject) : [];
 }
 
+/** @returns {boolean} whether value is absent or text */
+function optionalText(value) {
+  return (value === undefined) || (typeof value === "string");
+}
+
+/**
+ * Whether a list of SFX can be stored: absent, or a list of `{text, unlocked}` whose text is
+ * absent or text and whose unlocked flag is a boolean. The flag has no default (ADR-046 point 3).
+ * @param {unknown} sfx
+ * @returns {boolean}
+ */
+function sfxWellFormed(sfx) {
+  if ( sfx === undefined ) return true;
+  if ( !Array.isArray(sfx) ) return false;
+  for ( let i = 0; i < sfx.length; i++ ) {
+    if ( !isPlainObject(sfx[i]) || !optionalText(sfx[i].text) || (typeof sfx[i].unlocked !== "boolean") ) return false;
+  }
+  return true;
+}
+
+/**
+ * Whether a set entry's plain fields can be stored (ADR-046 point 4): its name, description and
+ * statement are absent or text, its SFX are well formed, its tags are absent or a list of text,
+ * and each sub-trait's name is absent or text and its rating a list. The sub-traits' ids and die
+ * sizes are checked elsewhere.
+ * @param {object} entry - a plain object
+ * @returns {boolean}
+ */
+function entryPlainFieldsWellFormed(entry) {
+  if ( !optionalText(entry.name) || !optionalText(entry.description) || !optionalText(entry.statement) ) return false;
+  if ( !sfxWellFormed(entry.sfx) ) return false;
+  if ( entry.tags !== undefined ) {
+    if ( !Array.isArray(entry.tags) ) return false;
+    for ( let i = 0; i < entry.tags.length; i++ ) {
+      if ( typeof entry.tags[i] !== "string" ) return false;
+    }
+  }
+  for ( const sub of entry.sub ?? [] ) {
+    if ( !optionalText(sub.name) || !Array.isArray(sub.dice) ) return false;
+  }
+  return true;
+}
+
+/** @returns {boolean} whether two plain values hold the same data, key order included */
+function samePlain(a, b) {
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
+/** The plain fields of a set entry, as entryPlainFieldsWellFormed reads them. */
+const ENTRY_PLAIN_FIELDS = Object.freeze(["name", "description", "statement", "sfx", "tags", "sub"]);
+
+/** @returns {boolean} whether two entries hold the same plain fields */
+function sameEntryPlainFields(a, b) {
+  return ENTRY_PLAIN_FIELDS.every(field => samePlain(a[field], b[field]));
+}
+
 /**
  * Checks the fields of the set entries an edit sets, beyond their own rating, definition and
  * name (which diffCharacterTraits and validateTraitChanges check):
@@ -420,7 +476,12 @@ function readableSubTraits(entry) {
  *   refused visibly (ADR-037 point 3);
  * - the die sizes of the other ratings an entry holds: `preChallengeDice` (RQ-022) and each
  *   sub-trait's rating (rule 19). A die size that doesn't exist is refused (TS-E01), as for any
- *   rating, because Foundry drops a list holding one without an error.
+ *   rating, because Foundry drops a list holding one without an error;
+ * - the plain fields (ADR-046 point 4): an entry's name, description, statement, SFX, tags and
+ *   sub-trait names, a set's shut-down flag and its own SFX (point 5), and a free trait's name.
+ *   A value the schema couldn't store, such as an SFX without its unlocked flag or a tag that
+ *   isn't text, is refused visibly: Foundry would otherwise drop the whole list it sits in
+ *   without an error, and with it every other change to that set's entries.
  * A field counts as set by the edit unless an entry with the same id in the same set already
  * holds the same value (for a sub-trait: a sub-trait with the same id and the same dice as a
  * multiset), so what the edit leaves as stored is never checked again (ADR-037 point 2), and what
@@ -430,10 +491,10 @@ function readableSubTraits(entry) {
  *
  * Only die sizes are checked, never a set's shape. `preChallengeDice` is a past rating, which may
  * no longer fit its set after a configuration change and is kept all the same (ADR-037 point 5).
- * Which shape a sub-trait's rating must fit is not settled, so it gets the die-size check only,
- * as ADR-037 does with other edits it leaves open, and ADR-029 point 2 refuses only data that
- * can't exist. SFX, tags and descriptions are plain text that Foundry's schema checks. Free traits
- * have none of these fields and aren't read. Pure; never changes its inputs.
+ * A sub-trait's rating gets the die-size check only: the parent set's rating options don't apply
+ * to it (ADR-046 point 1; Handbook p. 59), and ADR-029 point 2 refuses only data that can't
+ * exist. Free traits hold an id, a name and a rating; only the name is read here. Pure; never
+ * changes its inputs.
  * @param {import("./types.mjs").CharacterTraitData} current - the stored data before the edit
  * @param {import("./types.mjs").CharacterTraitData} proposed - the trait data after the edit
  * @returns {import("./types.mjs").EngineResult<{checked: {setId: string, entryId: string,
@@ -441,18 +502,31 @@ function readableSubTraits(entry) {
  *   checked, in proposed order (sets in key order, entries in array order, an entry's
  *   preChallengeDice before its sub-traits); refuses, in this order: INVALID_TRAIT_DATA (either
  *   state isn't shaped like trait data, an entry's sub-traits aren't a list of objects with ids,
- *   or an entry's statement fields are malformed), INVALID_DIE_SIZE
+ *   or a statement field or plain field the edit sets is malformed), INVALID_DIE_SIZE
  */
 export function validateEntryFields(current, proposed) {
   if ( !traitDataWellFormed(current) || !traitDataWellFormed(proposed) ) return fail("INVALID_TRAIT_DATA");
   const earlierOf = (setId, entry) => (current.traits[setId]?.entries ?? []).filter(e => e.id === entry.id);
 
   for ( const [setId, set] of Object.entries(proposed.traits) ) {
+    const storedSet = current.traits[setId];
+    if ( (set.shutDown !== storedSet?.shutDown) && (set.shutDown !== undefined) && (typeof set.shutDown !== "boolean") ) {
+      return fail("INVALID_TRAIT_DATA");
+    }
+    if ( !samePlain(set.sfx, storedSet?.sfx) && !sfxWellFormed(set.sfx) ) return fail("INVALID_TRAIT_DATA");
     for ( const entry of set.entries ) {
       if ( !subTraitsWellFormed(entry.sub) ) return fail("INVALID_TRAIT_DATA");
-      if ( earlierOf(setId, entry).some(e => sameStatementFields(e, entry)) ) continue;
+      const earlier = earlierOf(setId, entry);
+      if ( !earlier.some(e => sameEntryPlainFields(e, entry)) && !entryPlainFieldsWellFormed(entry) ) {
+        return fail("INVALID_TRAIT_DATA");
+      }
+      if ( earlier.some(e => sameStatementFields(e, entry)) ) continue;
       if ( statementFieldsProblem(entry) === "INVALID_TRAIT_DATA" ) return fail("INVALID_TRAIT_DATA");
     }
+  }
+  for ( const free of proposed.freeTraits ) {
+    const kept = current.freeTraits.some(e => (e.id === free.id) && (e.name === free.name));
+    if ( !kept && !optionalText(free.name) ) return fail("INVALID_TRAIT_DATA");
   }
 
   const checked = [];
@@ -488,8 +562,8 @@ export function validateEntryFields(current, proposed) {
  * Die sizes come before set shapes, as in validateTraitChanges. This is the check ADR-037 point 3
  * puts before every write of our apps and in the character model's update backstop. Creating an
  * actor, a replacing update and the system's own migrations count as loading (point 4) and don't
- * come here. Statement and SFX text, tags, descriptions and shut-down flags are not checked
- * against the configuration (ADR-029).
+ * come here. Statement and SFX text, tags, descriptions and shut-down flags are checked for
+ * their type only (ADR-046 point 4), never against the configuration (ADR-029).
  * @param {import("./types.mjs").CharacterTraitData} current
  * @param {import("./types.mjs").CharacterTraitData} proposed
  * @param {import("./types.mjs").GameConfig} config
@@ -576,8 +650,9 @@ function readUpdateValue(value, operatorOf) {
 
 /**
  * Applies an update's system changes to a character's stored trait data and returns the trait
- * data the update would leave, as far as the edit checks read it (kind, entries, free traits; a
- * set's other fields are kept as stored), for checkCharacterEdit (ADR-037 point 3). It expects the
+ * data the update would leave, as far as the edit checks read it (kind, entries, a set's
+ * shut-down flag and own SFX, free traits; anything else in a set is kept as stored), for
+ * checkCharacterEdit (ADR-037 point 3). It expects the
  * changes as Foundry passes them to `_preUpdate`: cleaned, so dotted keys are expanded, legacy
  * deletion and replacement keys are operators, nulls are reset to their initial values and form
  * input is cast (client/data/client-backend.mjs `#preUpdateDocumentArray`). Our apps clean their
@@ -588,8 +663,9 @@ function readUpdateValue(value, operatorOf) {
  * - `kindId` and `freeTraits` take the given value; a list is always replaced whole.
  * - `traits` merges by set key: a key that is forcibly deleted removes the set, a plain object
  *   merges into the stored set (or starts an empty one), and anything else replaces the set.
- *   Within a set only `entries` is read, and it is replaced whole, because every edit sends a
- *   set's whole list.
+ *   Within a set, `entries` is read and replaced whole, because every edit sends a set's whole
+ *   list; so are the set's `shutDown` flag and its own `sfx` list, which validateEntryFields
+ *   checks (a forced deletion of either leaves it absent).
  * - A forced replacement sets its value without merging, with the operators inside it applied;
  *   a forced deletion of a field other than a set key leaves it undefined, which the diff then
  *   refuses as malformed, as Foundry refuses the missing value.
@@ -648,6 +724,13 @@ export function proposedTraitData(current, changes, operators = {}) {
         if ( Object.hasOwn(setRead.merge, "entries") ) {
           const entriesRead = readUpdateValue(setRead.merge.entries, operatorOf);
           set.entries = ("set" in entriesRead) ? entriesRead.set : withOperatorsApplied(entriesRead.merge, operatorOf);
+        }
+        for ( const key of ["shutDown", "sfx"] ) {
+          if ( !Object.hasOwn(setRead.merge, key) ) continue;
+          const read = readUpdateValue(setRead.merge[key], operatorOf);
+          const value = ("set" in read) ? read.set : withOperatorsApplied(read.merge, operatorOf);
+          if ( value === undefined ) delete set[key];
+          else set[key] = value;
         }
         traits[setId] = set;
       }

@@ -158,6 +158,55 @@ describe("validateEntryFields (ADR-037 point 2 for the entry's other fields)", (
     expect(validateEntryFields(pc(), proposed)).toEqual({ ok: true, value: { checked: [] } });
   });
 
+  it("ADR-046 point 4 refuses an SFX the edit sets without a boolean unlocked flag, on an entry and on a set", () => {
+    const bad = [[{ text: "Charm" }], [{ text: "Charm", unlocked: "yes" }], [{ text: 5, unlocked: true }], ["Charm"], "Charm"];
+    for ( const sfx of bad ) {
+      expect(validateEntryFields(pc(), edited(c => { social(c).sfx = sfx; }))).toEqual(refused("INVALID_TRAIT_DATA"));
+      expect(validateEntryFields(pc(), edited(c => { c.traits[SKILLS].sfx = sfx; }))).toEqual(refused("INVALID_TRAIT_DATA"));
+    }
+    const sparse = [{ text: "Charm", unlocked: true }];
+    sparse.length = 2;
+    expect(validateEntryFields(pc(), edited(c => { social(c).sfx = sparse; }))).toEqual(refused("INVALID_TRAIT_DATA"));
+  });
+
+  it("ADR-046 point 4 refuses a tag, name, description, statement or sub-trait name the edit sets that isn't text", () => {
+    const edits = [
+      c => { social(c).tags = ["Trust", 7]; },
+      c => { social(c).tags = "Trust"; },
+      c => { social(c).name = 7; },
+      c => { social(c).description = { text: "x" }; },
+      c => { social(c).statement = null; },
+      c => { shoot(c).sub[0].name = 7; },
+      c => { shoot(c).sub.push({ id: S2, name: "Bows" }); },
+      c => { c.traits[SKILLS].shutDown = "yes"; },
+      c => { c.freeTraits.push({ id: "free000000000001", name: 7, dice: [8] }); }
+    ];
+    for ( const edit of edits ) expect(validateEntryFields(pc(), edited(edit))).toEqual(refused("INVALID_TRAIT_DATA"));
+  });
+
+  it("ADR-046 points 2, 3 and 5: text, tags, a locked and an unlocked SFX and a set's own SFX pass", () => {
+    const proposed = edited(c => {
+      Object.assign(social(c), { tags: ["Trust", ""], description: "", sfx: [{ text: "Charm", unlocked: false }, { unlocked: true }] });
+      c.traits[SKILLS].sfx = [{ text: "Overload", unlocked: true }];
+      c.freeTraits.push({ id: "free000000000001", name: "Big Shotgun", dice: [8] });
+    });
+    expect(validateEntryFields(pc(), proposed)).toEqual({ ok: true, value: { checked: [] } });
+  });
+
+  it("ADR-037 point 2 doesn't check again a plain field the edit leaves as stored", () => {
+    const stored = edited(c => {
+      social(c).sfx = [{ text: "Charm" }];
+      c.traits[SKILLS].sfx = [{ text: "Overload" }];
+      c.freeTraits.push({ id: "free000000000001", name: 7, dice: [8] });
+    });
+    const proposed = edited(c => { social(c).dice = [10]; c.traits[DISTINCTIONS].entries[0].description = "Knows most ports"; }, stored);
+    expect(validateEntryFields(stored, proposed).ok).toBe(true);
+    const repaired = edited(c => { social(c).sfx = [{ text: "Charm", unlocked: true }]; }, stored);
+    expect(validateEntryFields(stored, repaired).ok).toBe(true);
+    const moved = edited(c => { c.traits[DISTINCTIONS].entries.push(c.traits[ATTRIBUTES].entries.pop()); }, stored);
+    expect(validateEntryFields(stored, moved)).toEqual(refused("INVALID_TRAIT_DATA"));
+  });
+
   it("refuses data it can't read: INVALID_TRAIT_DATA", () => {
     expect(validateEntryFields(null, pc())).toEqual(refused("INVALID_TRAIT_DATA"));
     expect(validateEntryFields(pc(), edited(c => { shoot(c).sub = { id: S1 }; }))).toEqual(refused("INVALID_TRAIT_DATA"));
@@ -189,9 +238,9 @@ describe("checkCharacterEdit with the new entry fields (ADR-037)", () => {
     expect(check(c => { shoot(c).sub[0].dice = [7]; })).toEqual(refused("INVALID_DIE_SIZE"));
   });
 
-  it("PARKED rule 19: a sub-trait's rating gets the die-size check only, so [6, 6] passes under a one-die skill", () => {
-    // Which set shape a sub-trait's rating must fit is not settled; ADR-029 point 2 refuses only
-    // data that can't exist, and [6, 6] is a valid multi-level specialty (TS-21).
+  it("ADR-046 point 1, rule 19: a sub-trait's rating gets the die-size check only, so [6, 6] passes under a one-die skill", () => {
+    // The parent set's rating options don't apply to a sub-trait: [6, 6] is a valid multi-level
+    // specialty under a one-die skill (TS-21; Handbook p. 59).
     expect(check(c => { shoot(c).sub[0].dice = [6, 6]; })).toMatchObject({ ok: true });
   });
 
@@ -223,6 +272,19 @@ describe("checkCharacterEdit with the new entry fields (ADR-037)", () => {
 });
 
 describe("checkCharacterUpdate with the new entry fields (the backstop's path)", () => {
+  it("ADR-046 point 4 refuses a sheet submit of a set's entries holding an SFX without its unlocked flag", () => {
+    const entries = [{ ...social(pc()), dice: [10], sfx: [{ text: "Charm" }] }];
+    const changes = { traits: { [ATTRIBUTES]: { entries } } };
+    expect(checkCharacterUpdate(pc(), changes, defaultGameConfig())).toEqual(refused("INVALID_TRAIT_DATA"));
+  });
+
+  it("ADR-046 point 5: a set's own SFX sent alone pass and leave the entries as stored", () => {
+    const changes = { traits: { [SKILLS]: { sfx: [{ text: "Overload", unlocked: false }] } } };
+    expect(checkCharacterUpdate(pc(), changes, defaultGameConfig())).toMatchObject({ ok: true, value: { entries: [] } });
+    const bad = { traits: { [SKILLS]: { sfx: [{ text: "Overload" }] } } };
+    expect(checkCharacterUpdate(pc(), bad, defaultGameConfig())).toEqual(refused("INVALID_TRAIT_DATA"));
+  });
+
   it("TS-E01 refuses a d7 in a preChallengeDice sent with a sheet submit of a set's entries", () => {
     const entries = [{ ...social(pc()), challenged: true, preChallengeDice: [7] }];
     const result = checkCharacterUpdate(pc(), { traits: { [ATTRIBUTES]: { entries } } }, defaultGameConfig());
