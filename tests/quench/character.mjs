@@ -72,6 +72,29 @@ function plain(data) {
   return JSON.parse(JSON.stringify(data));
 }
 
+/**
+ * Runs an update and collects the error notifications it shows instead of showing them.
+ * @param {() => Promise<unknown>} run
+ * @returns {Promise<string[]>} the messages, in order
+ */
+async function errorsShownBy(run) {
+  const shown = [];
+  const showError = ui.notifications.error;
+  ui.notifications.error = message => shown.push(message);
+  try {
+    await run();
+  }
+  finally {
+    ui.notifications.error = showError;
+  }
+  return shown;
+}
+
+/** @returns {string} the notification a refusal with this code shows */
+function refusalText(code) {
+  return game.i18n.localize(`CORTEX.Character.Errors.${code}`);
+}
+
 /** @returns {object} the stored system data of a character, read back from the world collection */
 function storedSystem(actor) {
   return plain(game.actors.get(actor.id).system.toObject());
@@ -501,9 +524,12 @@ export function registerCharacterBatch(quench) {
           const system = pcSystem();
           const actor = await createCharacter(foundry.utils.deepClone(system));
           const social = [{ ...system.traits[ATTRIBUTES].entries[0], challenged: true, preChallengeDice: [7] }];
-          await actor.update({ name: "[Quench] renamed", [`system.traits.${ATTRIBUTES}.entries`]: social });
           const shoot = [{ ...system.traits[SKILLS].entries[0], sub: [{ ...system.traits[SKILLS].entries[0].sub[0], dice: [7] }] }];
-          await actor.update({ name: "[Quench] renamed", [`system.traits.${SKILLS}.entries`]: shoot });
+          const shown = await errorsShownBy(async () => {
+            await actor.update({ name: "[Quench] renamed", [`system.traits.${ATTRIBUTES}.entries`]: social });
+            await actor.update({ name: "[Quench] renamed", [`system.traits.${SKILLS}.entries`]: shoot });
+          });
+          assert.deepEqual(shown, [refusalText("INVALID_DIE_SIZE"), refusalText("INVALID_DIE_SIZE")]);
 
           // A silent drop by Foundry would keep the name change; the backstop cancels it too.
           assert.equal(game.actors.get(actor.id).name, "[Quench] character");
@@ -516,7 +542,10 @@ export function registerCharacterBatch(quench) {
           const spoils = [{ shutDown: { reason: "forgotten" } }, { challenged: "yes" }, { challenged: true }];
           for ( const spoil of spoils ) {
             const entries = [{ ...system.traits[ATTRIBUTES].entries[0], ...spoil }];
-            await actor.update({ name: "[Quench] renamed", [`system.traits.${ATTRIBUTES}.entries`]: entries });
+            const shown = await errorsShownBy(
+              () => actor.update({ name: "[Quench] renamed", [`system.traits.${ATTRIBUTES}.entries`]: entries })
+            );
+            assert.deepEqual(shown, [refusalText("INVALID_TRAIT_DATA")], JSON.stringify(spoil));
             // A silent drop by Foundry would keep the name change; the backstop cancels it too.
             assert.equal(game.actors.get(actor.id).name, "[Quench] character", JSON.stringify(spoil));
             assert.deepEqual(storedSystem(actor).traits[ATTRIBUTES], system.traits[ATTRIBUTES], JSON.stringify(spoil));
@@ -529,9 +558,15 @@ export function registerCharacterBatch(quench) {
           const system = pcSystem();
           const actor = await createCharacter(foundry.utils.deepClone(system));
           const entries = [{ ...system.traits[ATTRIBUTES].entries[0], dice: [10], sfx: [{ text: "Charm" }] }];
-          await actor.update({ name: "[Quench] renamed", [`system.traits.${ATTRIBUTES}.entries`]: entries });
+          const onEntry = await errorsShownBy(
+            () => actor.update({ name: "[Quench] renamed", [`system.traits.${ATTRIBUTES}.entries`]: entries })
+          );
+          assert.deepEqual(onEntry, [refusalText("INVALID_TRAIT_DATA")], "an entry's SFX");
           assert.equal(game.actors.get(actor.id).name, "[Quench] character", "an entry's SFX");
-          await actor.update({ name: "[Quench] renamed", [`system.traits.${SKILLS}.sfx`]: [{ text: "Overload" }] });
+          const onSet = await errorsShownBy(
+            () => actor.update({ name: "[Quench] renamed", [`system.traits.${SKILLS}.sfx`]: [{ text: "Overload" }] })
+          );
+          assert.deepEqual(onSet, [refusalText("INVALID_TRAIT_DATA")], "a set's SFX");
           assert.equal(game.actors.get(actor.id).name, "[Quench] character", "a set's SFX");
           assert.deepEqual(storedSystem(actor).traits, system.traits);
         });
