@@ -18,6 +18,7 @@ import { registerDiceBatch } from "./dice.mjs";
 import { registerEffectBatch } from "./effect.mjs";
 import { registerGameConfigBatch } from "./game-config.mjs";
 import { registerMigrationBatch } from "./migration.mjs";
+import { registerPoolRollWarningsBatch } from "./poolroll-warnings.mjs";
 import { registerProposedTraitDataBatch } from "./proposed-trait-data.mjs";
 import { registerRatingFieldBatch } from "./rating-field.mjs";
 import { registerRerollBatch } from "./reroll.mjs";
@@ -34,6 +35,7 @@ export function registerQuenchBatches(quench) {
   registerSelectionBatch(quench);
   registerEffectBatch(quench);
   registerMigrationBatch(quench);
+  registerPoolRollWarningsBatch(quench);
   registerRerollBatch(quench);
   registerBuilderBatch(quench);
   registerRatingFieldBatch(quench);

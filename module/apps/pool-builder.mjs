@@ -110,13 +110,15 @@ export default class PoolBuilder extends HandlebarsApplicationMixin(ApplicationV
   /**
    * Rolls the current pool via postPoolRoll and keeps it — players often roll a similar pool
    * again. `results`, dev/test only, skips Foundry's dice the same way postPoolRoll's own
-   * param does; the click action never passes it.
+   * param does; the click action never passes it. The builder holds dice from no trait until
+   * the M2 sheet brings traits to it, so its pool has no warnings and no unpriced traits yet
+   * (ADR-029 consequences, RQ-030).
    * @param {number[]} [results]
    * @returns {Promise<ChatMessage|void>} nothing if the pool is empty
    */
   async rollPool(results) {
     if ( this.pool.length === 0 ) return;
-    return postPoolRoll({ pool: this.pool, results });
+    return postPoolRoll({ pool: this.pool, results, warnings: [], unpricedTraits: [] });
   }
 
   /**

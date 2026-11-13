@@ -42,6 +42,20 @@
         "TOO_MANY_EFFECT_DICE": "More effect dice than are available.",
         "EFFECT_DIE_MISSING": "An eligible die is still unused as an effect die.",
         "Unexpected": "Something went wrong with this card. The details are in the browser console."
+      },
+      "Nonstandard": {
+        "Title": "Nonstandard selection",
+        "WithName": "{reason}: {name}",
+        "Reasons": {
+          "TRAIT_SHUT_DOWN": "Shut-down trait",
+          "TRAIT_SET_SHUT_DOWN": "Shut-down trait set",
+          "EXTRA_TRAIT_NOT_ALLOWED": "Further trait from a set that allows only one",
+          "PRIME_SET_MISSING": "No trait from a prime set",
+          "TRAIT_ORPHANED": "Trait no longer in the game configuration",
+          "RATING_CONFLICTS_WITH_SET": "Rating that no longer fits its trait set"
+        },
+        "UnpricedOne": "No standard cost · 1 trait unpriced",
+        "UnpricedMany": "No standard cost · {count} traits unpriced"
       }
     },
     "Builder": {

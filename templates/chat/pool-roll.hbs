@@ -20,6 +20,23 @@
     </div>
   </div>
 
+  {{!-- What the pool warned of when it was rolled (ADR-029, RQ-030): shown, with no control to approve or charge. --}}
+  {{#if nonstandard}}
+  <section class="cp-nonstandard" role="note">
+    <h5 class="cp-nonstandard-title"><i class="fa-solid fa-triangle-exclamation" inert></i> {{ nonstandard.title }}</h5>
+    {{#if nonstandard.reasons.length}}
+    <ul class="cp-nonstandard-reasons">
+      {{#each nonstandard.reasons}}
+      <li>{{ this }}</li>
+      {{/each}}
+    </ul>
+    {{/if}}
+    {{#if nonstandard.unpriced}}
+    <p class="cp-unpriced">{{ nonstandard.unpriced }}</p>
+    {{/if}}
+  </section>
+  {{/if}}
+
   {{#if interactive}}
   {{#unless reroll.active}}
   <div class="cp-controls cp-selection">

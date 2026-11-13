@@ -118,6 +118,9 @@ export function registerBuilderBatch(quench) {
           assert.equal(message.system.rolled[0].result, 5);
           assert.equal(message.system.rolled[1].result, 3);
           assert.lengthOf(app.pool, 2, "rolling keeps the pool");
+          // Traits reach the builder only with the M2 sheet, so it posts no warnings yet (ADR-029, RQ-030).
+          assert.deepEqual(message.system.toObject().warnings, []);
+          assert.deepEqual(message.system.toObject().unpricedTraits, []);
         });
 
         it("keeps every id unique through remove, add, double and a d12 step-up overflow, " +

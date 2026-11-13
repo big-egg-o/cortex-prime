@@ -87,8 +87,8 @@ export function registerMigrationBatch(quench) {
           const twelveId = old.pool[0].id;
           const migrated = PoolRollData.migrateData(foundry.utils.deepClone(old));
 
-          assert.equal(migrated.schemaVersion, 2);
-          assert.equal(POOL_ROLL_SCHEMA_VERSION, 2);
+          assert.equal(migrated.schemaVersion, 3);
+          assert.equal(POOL_ROLL_SCHEMA_VERSION, 3);
           assert.deepEqual(migrated.resolution.effectDice, [
             { id: "e1", kind: "rolled", size: 12, dieId: twelveId, isDefault: false },
             { id: "e2", kind: "default", size: 4, dieId: null, isDefault: true }
@@ -126,7 +126,21 @@ export function registerMigrationBatch(quench) {
             }
           };
           const migrated = PoolRollData.migrateData(foundry.utils.deepClone(v2));
-          assert.deepEqual(migrated, v2);
+          assert.deepEqual(migrated, { ...v2, schemaVersion: 3 });
+        });
+
+        it("ADR-029: takes a version-2 source to version 3 and fills nothing in itself", () => {
+          // The empty warnings and unpricedTraits lists come from the schema when the message is
+          // cleaned, not from the step, so a step can never overwrite stored lists.
+          const v2 = { schemaVersion: 2, state: "rolled", resolution: null };
+          const migrated = PoolRollData.migrateData(foundry.utils.deepClone(v2));
+          assert.deepEqual(migrated, { ...v2, schemaVersion: 3 });
+          assert.deepEqual(PoolRollData.migrateData(foundry.utils.deepClone(migrated)), migrated, "a second run changes nothing");
+        });
+
+        it("ADR-026 and ADR-029: leave a partial update without schemaVersion alone, lists included", () => {
+          const partial = { state: "resolved" };
+          assert.deepEqual(PoolRollData.migrateData(foundry.utils.deepClone(partial)), partial);
         });
 
         it("leaves a resolution without schemaVersion alone when its entries have ids (a partial update)", () => {
@@ -151,7 +165,9 @@ export function registerMigrationBatch(quench) {
           );
 
           const system = message.system.toObject();
-          assert.equal(system.schemaVersion, 2);
+          assert.equal(system.schemaVersion, 3);
+          assert.deepEqual(system.warnings, [], "ADR-029: an old message has no stored warnings");
+          assert.deepEqual(system.unpricedTraits, [], "RQ-030: nor unpriced traits");
           assert.deepEqual(system.resolution.effectDice.map(e => [e.id, e.kind]), [["e1", "rolled"], ["e2", "default"]]);
           assert.deepEqual(system.resolution.consumedDieIds, []);
           assert.equal(system.resolution.nextEffectNumber, 3);
@@ -187,6 +203,43 @@ export function registerMigrationBatch(quench) {
           assert.equal(after.nextEffectNumber, 4);
           assert.deepEqual(after.consumedDieIds, [old.pool[1].id]);
           assert.deepEqual(after.effectDice.map(e => e.id), ["e2"]);
+        });
+
+        it("ADR-029: loads a version-2 message with empty lists, and keeps stored warnings through a partial update", async () => {
+          const v2 = ChatMessage.implementation.fromSource(
+            { type: "poolRoll", system: { ...oldPendingOverflowSystem(), schemaVersion: 2, resolution: null, state: "rolled" } },
+            { strict: true, clean: { expand: false } }
+          );
+          assert.equal(v2.system.schemaVersion, 3);
+          assert.deepEqual(v2.system.toObject().warnings, []);
+          assert.deepEqual(v2.system.toObject().unpricedTraits, []);
+
+          const old = oldPendingOverflowSystem();
+          const warnings = [{ code: "TRAIT_SET_SHUT_DOWN", setId: "cpSetSkills00000" }];
+          const message = await ChatMessage.create({
+            type: "poolRoll",
+            // A copy: creating cleans its data in place.
+            system: {
+              ...old, schemaVersion: POOL_ROLL_SCHEMA_VERSION, resolution: null, state: "rolled",
+              warnings: foundry.utils.deepClone(warnings)
+            }
+          });
+          messages.push(message);
+          await message.update({ "system.selection.extraResultsPaid": 1 });
+          assert.deepEqual(JSON.parse(JSON.stringify(game.messages.get(message.id).system.toObject().warnings)), warnings);
+        });
+
+        it("ADR-029: creating a message at version 2 stores version 3 with empty lists", async () => {
+          // Creation cleans without a stored source, so it takes its own path through migrateData.
+          const message = await ChatMessage.create({
+            type: "poolRoll",
+            system: { ...oldPendingOverflowSystem(), schemaVersion: 2, resolution: null, state: "rolled" }
+          });
+          messages.push(message);
+          const stored = game.messages.get(message.id).system.toObject();
+          assert.equal(stored.schemaVersion, 3);
+          assert.deepEqual(stored.warnings, []);
+          assert.deepEqual(stored.unpricedTraits, []);
         });
 
         it("doesn't lower nextEffectNumber when a partial update removes e2 without sending it", async () => {
