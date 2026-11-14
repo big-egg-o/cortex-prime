@@ -68,7 +68,35 @@
       "Empty": "No dice yet. Add one below.",
       "AddDie": "Add",
       "CustomDieDefaultLabel": "Custom",
-      "Roll": "Roll"
+      "Roll": "Roll",
+      "Option": {
+        "hinder": "Hinder",
+        "challenge": "Challenge"
+      },
+      "Fallback": "fallback",
+      "Cost": "Cost: {cost} PP",
+      "HinderGain": "Hinder gains {pp} PP (not paid automatically)",
+      "SteppedDown": "{trait} steps down after its challenge.",
+      "Hints": {
+        "HINDER_ALREADY_D4": "Already a d4: Hinder gains no plot point."
+      },
+      "Errors": {
+        "INVALID_TRAIT_DATA": "This trait's data can't be read.",
+        "INVALID_TRAIT_OPTIONS": "A trait can't be added that way.",
+        "INVALID_GAME_CONFIG": "The game configuration can't be read.",
+        "UNKNOWN_TRAIT_SET": "That trait set isn't in the game configuration.",
+        "UNKNOWN_TRAIT": "This character doesn't hold that trait.",
+        "TRAIT_UNNAMED": "Give this trait a name before adding it to a pool.",
+        "TRAIT_HAS_NO_DICE": "This trait has no die to add.",
+        "TRAIT_ORPHANED": "This trait is no longer in the game configuration.",
+        "INVALID_DIE_SIZE": "This trait's rating holds a die size that doesn't exist.",
+        "TRAIT_UNRATED": "This trait has no rating.",
+        "TRAIT_OPTION_UNAVAILABLE": "This trait can't be added that way.",
+        "TRAIT_OPTIONS_CONFLICT": "Hinder and a challenge can't be used together yet.",
+        "STATEMENT_RATING_NOT_ONE_DIE": "A statement on a rating of several dice can't be challenged yet.",
+        "CHALLENGE_NEEDS_OWNER": "Only someone who can edit this character can challenge its statement.",
+        "ACTOR_NOT_FOUND": "The character of a challenged trait can't be found, so it wasn't stepped down."
+      }
     },
     "Keybindings": {
       "OpenPoolBuilder": "Open the Pool Builder"
@@ -148,6 +176,11 @@
       "UnknownKind": "This character's actor kind isn't in the game configuration, so its trait sets can't be shown. Its traits are kept as stored.",
       "NoSets": "This character's actor kind has no trait sets.",
       "NoTraits": "No traits in this set yet.",
+      "Pool": {
+        "Add": "Add {trait} to your dice pool",
+        "Hinder": "Add {trait} with Hinder: one d4, gains 1 PP",
+        "Challenge": "Add {trait} as a challenged statement: its die three times"
+      },
       "Hints": {
         "RATING_OUTSIDE_GUIDANCE": "Outside this trait set's usual range. The rating is kept.",
         "RATING_CONFLICTS_WITH_SET": "This rating no longer fits its trait set's dice options. It is kept as stored; the next change to it has to fit."
