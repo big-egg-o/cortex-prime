@@ -24,6 +24,7 @@ import { registerProposedTraitDataBatch } from "./proposed-trait-data.mjs";
 import { registerRatingFieldBatch } from "./rating-field.mjs";
 import { registerRerollBatch } from "./reroll.mjs";
 import { registerSelectionBatch } from "./selection.mjs";
+import { registerSheetPoolBatch } from "./sheet-pool.mjs";
 
 /**
  * Register all Cortex Prime batches with Quench.
@@ -43,6 +44,7 @@ export function registerQuenchBatches(quench) {
   registerCharacterMigrationBatch(quench);
   registerCharacterBatch(quench);
   registerCharacterSheetBatch(quench);
+  registerSheetPoolBatch(quench);
   registerProposedTraitDataBatch(quench);
   registerContestModelBatch(quench);
   registerContestRelayBatch(quench);

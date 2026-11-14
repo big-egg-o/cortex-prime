@@ -3,13 +3,17 @@
   <fieldset class="cp-source">
     <legend class="control">
       <span>{{ this.label }}</span>
-      <button type="button" class="ui-control icon" data-action="clearSource" data-source-label="{{ this.label }}"
+      {{#if this.actorName}}<span class="hint cp-source-actor">{{ this.actorName }}</span>{{/if}}
+      {{#if this.option}}<span class="cp-source-option">{{ this.option }}</span>{{/if}}
+      {{#if this.ppGained}}<span class="cp-source-pp">{{ this.ppGained }}</span>{{/if}}
+      <button type="button" class="ui-control icon" data-action="clearGroup" data-group-key="{{ this.key }}"
         data-tooltip aria-label="{{ localize "CORTEX.Builder.ClearSource" }}"><i class="fa-solid fa-trash" inert></i></button>
     </legend>
+    {{#if this.hint}}<p class="hint">{{ this.hint }}</p>{{/if}}
     {{#each this.dice}}
     <div class="form-group cp-die-row" data-die-id="{{ this.id }}">
       <span class="cp-die-icon"><i class="fa-solid fa-dice-d{{ this.size }} fa-fw" inert></i></span>
-      <span class="label">d{{ this.size }}</span>
+      <span class="label">d{{ this.size }}{{#if ../fallback}} <span class="hint">({{ localize "CORTEX.Builder.Fallback" }})</span>{{/if}}</span>
       <div class="form-fields">
         <button type="button" class="ui-control icon" data-action="stepDie" data-die-id="{{ this.id }}" data-steps="-1"
           data-tooltip aria-label="{{ localize "CORTEX.Chat.StepDown" }}"><i class="fa-solid fa-angle-down" inert></i></button>
@@ -26,6 +30,24 @@
   {{else}}
   <p class="hint">{{ localize "CORTEX.Builder.Empty" }}</p>
   {{/each}}
+
+  {{#if summary}}
+  <div class="cp-pool-summary">
+    {{#if summary.cost}}<p class="cp-pool-cost">{{ summary.cost }}</p>{{/if}}
+    {{#if summary.hinderGain}}<p class="hint cp-pool-hinder">{{ summary.hinderGain }}</p>{{/if}}
+    {{#if summary.nonstandard}}
+    <section class="cp-nonstandard" role="note">
+      <h5 class="cp-nonstandard-title"><i class="fa-solid fa-triangle-exclamation" inert></i> {{ summary.nonstandard.title }}</h5>
+      {{#if summary.nonstandard.reasons.length}}
+      <ul class="cp-nonstandard-reasons">
+        {{#each summary.nonstandard.reasons}}<li>{{ this }}</li>{{/each}}
+      </ul>
+      {{/if}}
+      {{#if summary.nonstandard.unpriced}}<p class="cp-unpriced">{{ summary.nonstandard.unpriced }}</p>{{/if}}
+    </section>
+    {{/if}}
+  </div>
+  {{/if}}
 
   <div class="form-group cp-add-die">
     <select name="size" aria-label="{{ localize "CORTEX.Builder.DieSize" }}">

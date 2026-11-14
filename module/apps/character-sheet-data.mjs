@@ -44,6 +44,13 @@ export const RATING_INPUTS = "ratings";
  * @property {boolean} noDice - the set has no dice (rule 3)
  * @property {string[]} hints - ratingGuidance's codes (rule 9, ADR-037 point 5)
  * @property {boolean} shutDown - the trait or its whole set is flagged shut down (rule 15)
+ * @property {string|null} poolTraitId - the id the pool knows the trait by: a fixed set's
+ *   definition id, an open set's entry id (module/rules/pool-traits.mjs)
+ * @property {boolean} rollable - the trait gives a die, its rating or its set's fallback, so it
+ *   can be added to a pool (Character Sheets behaviour 20)
+ * @property {boolean} canHinder - the set offers Hinder (rule 11)
+ * @property {boolean} canChallenge - the set offers statements and the trait has one (rule 16);
+ *   who may challenge is the sheet's check (ADR-048)
  */
 
 /**
@@ -123,6 +130,8 @@ function traitRow(set, def, entry, setShutDown) {
   const editable = (entry !== null) && (set.hasDice === true) && (typeof entry.id === "string");
   const rating = effectiveRating(set, def, entry);
   const hints = ratingGuidance(set, dice);
+  const poolTraitId = (set.list === "fixed") ? (def?.id ?? null) : (entry?.id ?? null);
+  const rollable = rating.ok && (typeof poolTraitId === "string");
   return {
     entryId: entry?.id ?? null,
     name: def?.name ?? ((typeof entry?.name === "string") ? entry.name : ""),
@@ -133,7 +142,12 @@ function traitRow(set, def, entry, setShutDown) {
     unrated: !rating.ok && (rating.code === "TRAIT_UNRATED"),
     noDice: set.hasDice !== true,
     hints: hints.ok ? hints.value : [],
-    shutDown: setShutDown || isPlainObject(entry?.shutDown)
+    shutDown: setShutDown || isPlainObject(entry?.shutDown),
+    poolTraitId,
+    rollable,
+    canHinder: rollable && (set.features?.hinder === true),
+    canChallenge: rollable && (set.features?.statements === true) && (typeof entry?.statement === "string")
+      && (entry.statement.trim() !== "")
   };
 }
 

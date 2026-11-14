@@ -170,6 +170,32 @@ describe("characterSheetView", () => {
     expect(trait.hints).toContain("RATING_CONFLICTS_WITH_SET");
   });
 
+  it("gives every trait with a die the pool's trait id: a fixed set's definition, an open set's entry", () => {
+    const view = characterSheetView(pcSystem(), defaultGameConfig());
+    const distinctions = view.sets.find(s => s.id === DISTINCTIONS).traits;
+    const attributes = view.sets.find(s => s.id === ATTRIBUTES).traits;
+    expect(distinctions.map(t => [t.poolTraitId, t.rollable])).toEqual([[ENTRY_CULT, true]]);
+    expect(attributes.map(t => [t.poolTraitId, t.rollable])).toEqual([
+      ["cpAttrPhysical00", true], ["cpAttrMental0000", true], [SOCIAL, true]
+    ]);
+    // A trait that gives no die can't be added (rule 3, TS-04).
+    const system = pcSystem();
+    system.traits[DISTINCTIONS].entries[0].dice = [];
+    expect(characterSheetView(system, defaultGameConfig()).sets[0].traits[0]).toMatchObject({ rollable: false });
+  });
+
+  it("offers Hinder where the set has it (rule 11) and a challenge where the set has statements and the trait one (rule 16)", () => {
+    const config = defaultGameConfig();
+    let view = characterSheetView(pcSystem(), config);
+    expect(view.sets[0].traits[0]).toMatchObject({ canHinder: true, canChallenge: false });
+    expect(view.sets[1].traits.map(t => [t.canHinder, t.canChallenge])).toEqual([[false, false], [false, false], [false, false]]);
+
+    traitSetById(config, ATTRIBUTES).features.statements = true;
+    view = characterSheetView(pcSystem(), config);
+    // Only Social has a statement.
+    expect(view.sets[1].traits.map(t => t.canChallenge)).toEqual([false, false, true]);
+  });
+
   it("shows the guidance hint for a rating outside the set's usual range (rule 9, TS-E07)", () => {
     const system = pcSystem();
     system.traits[ATTRIBUTES].entries[0].dice = [4];
