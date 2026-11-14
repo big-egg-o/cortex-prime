@@ -1,0 +1,43 @@
+<div class="cp-sheet">
+  <header class="cp-sheet-header">
+    <img class="cp-portrait" src="{{ actor.img }}" alt="{{ actor.name }}" data-edit="img" data-action="editImage"
+      data-tooltip="{{ localize "CORTEX.Sheet.EditPortrait" }}">
+    <div class="cp-sheet-title">
+      <input class="cp-actor-name" type="text" name="name" value="{{ source.name }}"
+        placeholder="{{ localize "CORTEX.Sheet.Name" }}" aria-label="{{ localize "CORTEX.Sheet.Name" }}">
+      {{#if kindName}}<p class="hint cp-kind">{{ kindName }}</p>{{/if}}
+    </div>
+  </header>
+
+  <section class="cp-sheet-body scrollable">
+    {{#if notice}}<p class="notification info">{{ notice }}</p>{{/if}}
+
+    {{#each sets}}
+    <fieldset class="cp-trait-set{{#if this.shutDown}} cp-shut-down{{/if}}" data-set-id="{{ this.id }}">
+      <legend>{{ this.name }}</legend>
+      {{#unless this.traits.length}}<p class="hint">{{ localize "CORTEX.Sheet.NoTraits" }}</p>{{/unless}}
+      {{#each this.traits}}
+      <div class="form-group cp-trait{{#if this.shutDown}} cp-shut-down{{/if}}"
+        {{#if this.entryId}}data-entry-id="{{ this.entryId }}"{{/if}}>
+        <label>{{ this.label }}</label>
+        <div class="form-fields">
+          {{#if this.editable}}
+            {{#each this.slots}}
+            <select name="{{ this.inputName }}" class="cp-die{{#if this.adds}} cp-die-add{{/if}}"
+              aria-label="{{ this.ariaLabel }}" data-tooltip="{{ this.ariaLabel }}">
+              <option value="">{{#if this.adds}}+{{else}}–{{/if}}</option>
+              {{#each this.options}}<option value="{{ this.value }}" {{#if this.selected}}selected{{/if}}>{{ this.label }}</option>{{/each}}
+            </select>
+            {{/each}}
+            {{#unless this.dice.length}}<span class="cp-rating-note">{{ this.ratingText }}</span>{{/unless}}
+          {{else}}
+            <span class="cp-rating-note">{{ this.ratingText }}</span>
+          {{/if}}
+        </div>
+        {{#each this.hintTexts}}<p class="hint">{{ this }}</p>{{/each}}
+      </div>
+      {{/each}}
+    </fieldset>
+    {{/each}}
+  </section>
+</div>

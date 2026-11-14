@@ -11,6 +11,7 @@ import { registerBuilderBatch } from "./builder.mjs";
 import { registerCardBatch } from "./card.mjs";
 import { registerCharacterMigrationBatch } from "./character-migration.mjs";
 import { registerCharacterBatch } from "./character.mjs";
+import { registerCharacterSheetBatch } from "./character-sheet.mjs";
 import { registerChatBatch } from "./chat.mjs";
 import { registerContestModelBatch } from "./contest-model.mjs";
 import { registerContestRelayBatch } from "./contest-relay.mjs";
@@ -41,6 +42,7 @@ export function registerQuenchBatches(quench) {
   registerRatingFieldBatch(quench);
   registerCharacterMigrationBatch(quench);
   registerCharacterBatch(quench);
+  registerCharacterSheetBatch(quench);
   registerProposedTraitDataBatch(quench);
   registerContestModelBatch(quench);
   registerContestRelayBatch(quench);

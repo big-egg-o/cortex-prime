@@ -134,6 +134,25 @@
         "INVALID_GAME_CONFIG": "The game configuration can't be read."
       }
     },
+    "Sheet": {
+      "Character": "Cortex Prime character sheet",
+      "Name": "Name",
+      "EditPortrait": "Change the portrait",
+      "Unnamed": "(unnamed trait)",
+      "Die": "{trait}: die {number}",
+      "AddDie": "{trait}: add a die",
+      "NoDice": "No die",
+      "Fallback": "{die} (fallback)",
+      "Unrated": "Unrated",
+      "NoKind": "This character has no actor kind yet, so it has no trait sets to show.",
+      "UnknownKind": "This character's actor kind isn't in the game configuration, so its trait sets can't be shown. Its traits are kept as stored.",
+      "NoSets": "This character's actor kind has no trait sets.",
+      "NoTraits": "No traits in this set yet.",
+      "Hints": {
+        "RATING_OUTSIDE_GUIDANCE": "Outside this trait set's usual range. The rating is kept.",
+        "RATING_CONFLICTS_WITH_SET": "This rating no longer fits its trait set's dice options. It is kept as stored; the next change to it has to fit."
+      }
+    },
     "Config": {
       "Title": "Game configuration",
       "MenuName": "Game configuration",
