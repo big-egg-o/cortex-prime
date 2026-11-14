@@ -18,7 +18,8 @@
       {{#unless this.traits.length}}<p class="hint">{{ localize "CORTEX.Sheet.NoTraits" }}</p>{{/unless}}
       {{#each this.traits}}
       <div class="form-group cp-trait{{#if this.shutDown}} cp-shut-down{{/if}}"
-        {{#if this.entryId}}data-entry-id="{{ this.entryId }}"{{/if}}>
+        {{#if this.entryId}}data-entry-id="{{ this.entryId }}"{{/if}}
+        {{#if this.poolTraitId}}data-pool-trait-id="{{ this.poolTraitId }}"{{/if}}>
         <label>{{ this.label }}</label>
         <div class="form-fields">
           {{#if this.editable}}
@@ -32,6 +33,20 @@
             {{#unless this.dice.length}}<span class="cp-rating-note">{{ this.ratingText }}</span>{{/unless}}
           {{else}}
             <span class="cp-rating-note">{{ this.ratingText }}</span>
+          {{/if}}
+          {{#if this.rollable}}
+          <span class="cp-pool-buttons">
+            <button type="button" class="ui-control icon" data-action="addToPool"
+              data-tooltip="{{ this.poolLabels.add }}" aria-label="{{ this.poolLabels.add }}"><i class="fa-solid fa-dice" inert></i></button>
+            {{#if this.canHinder}}
+            <button type="button" class="ui-control icon" data-action="addToPool" data-option="hinder"
+              data-tooltip="{{ this.poolLabels.hinder }}" aria-label="{{ this.poolLabels.hinder }}"><i class="fa-solid fa-arrow-down-wide-short" inert></i></button>
+            {{/if}}
+            {{#if this.canChallenge}}
+            <button type="button" class="ui-control icon" data-action="addToPool" data-option="challenge"
+              data-tooltip="{{ this.poolLabels.challenge }}" aria-label="{{ this.poolLabels.challenge }}"><i class="fa-solid fa-bolt" inert></i></button>
+            {{/if}}
+          </span>
           {{/if}}
         </div>
         {{#each this.hintTexts}}<p class="hint">{{ this }}</p>{{/each}}

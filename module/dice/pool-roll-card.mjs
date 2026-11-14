@@ -140,12 +140,15 @@ function readGameConfig() {
  * The card's "nonstandard selection" section (ADR-029 consequences, RQ-030): one reason per
  * warning the message stored when it was rolled, naming the trait or set where it can, and a line
  * for traits with no defined price. Shown, never judged: there is no cost line, and no control to
- * approve the selection or charge for it (ADR-029 points 2 and 3); the table decides.
- * @param {object} system - the message's system data
+ * approve the selection or charge for it (ADR-029 points 2 and 3); the table decides. The pool
+ * builder shows the same section for the pool it is about to roll.
+ * @param {{pool: import("../rules/types.mjs").PoolDie[], warnings?: object[],
+ *   unpricedTraits?: {setId: string, count: number}[]}} system - the message's system data, or a
+ *   pool with its warnings and unpriced traits
  * @returns {{title: string, reasons: string[], unpriced: string|null}|null} null for a standard
  *   selection
  */
-function prepareNonstandard(system) {
+export function prepareNonstandard(system) {
   const warnings = system.warnings ?? [];
   const unpricedCount = (system.unpricedTraits ?? []).reduce((sum, u) => sum + u.count, 0);
   if ( !warnings.length && !unpricedCount ) return null;
