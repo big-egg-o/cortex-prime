@@ -11,7 +11,8 @@
  * - `actorRef`: which actor the trait belongs to. An unlinked token's actor has its base actor's
  *   id, so the caller passes a reference that tells them apart (Foundry code passes the uuid);
  * - `setId`: the trait's set;
- * - `option`: "hinder" or "challenge" when the trait was added that way, absent for a plain add;
+ * - `option`: "hinder", "challenge" or "hinderChallenge" (both, RQ-032) when the trait was added
+ *   that way, absent for a plain add;
  * - `ppGained` and `hint`: Hinder's plot point, or the hint for a trait already at d4 (RQ-029);
  * - `isFallback`: the die is its set's fallback (rule 8, TS-03);
  * - `ratingConflict`: the stored rating no longer fits its set (ADR-037 point 5).
@@ -28,8 +29,23 @@ import { traitDefById, traitSetById } from "./game-config.mjs";
 import { challengeStatement } from "./statements.mjs";
 import { effectiveRating, poolTraitCost, traitPoolEntries } from "./trait-pool.mjs";
 
-/** How a trait can be added besides plainly (Character Sheets CS-D10). */
-export const POOL_TRAIT_OPTIONS = Object.freeze(["hinder", "challenge"]);
+/** How a trait can be added besides plainly (Character Sheets CS-D10 and CS-D14). */
+export const POOL_TRAIT_OPTIONS = Object.freeze(["hinder", "challenge", "hinderChallenge"]);
+
+/** @returns {boolean} whether an option uses Hinder */
+function usesHinder(option) {
+  return (option === "hinder") || (option === "hinderChallenge");
+}
+
+/** @returns {boolean} whether an option challenges the trait's statement */
+function usesChallenge(option) {
+  return (option === "challenge") || (option === "hinderChallenge");
+}
+
+/** @returns {{multiDice: boolean}} whether a set's ratings of several dice may be challenged (ADR-053) */
+function challengeOptionsOf(set) {
+  return { multiDice: set.features?.multiDiceChallenges === true };
+}
 
 /** The source fields the roll message stores (the poolRoll schema's die source). */
 const ROLLED_SOURCE_KEYS = Object.freeze(["kind", "actorId", "traitId", "label"]);
@@ -116,23 +132,26 @@ export function poolDieGroupKey(die) {
  * point 5 conflicts) and its pool entries traitPoolEntries' (Hinder, RQ-029; a challenge, rule 16).
  *
  * Hinder needs a set with the Hinder feature (rule 11) and a challenge a set with the statements
- * feature and a trait with a statement (rule 16); otherwise the option doesn't exist for that
- * trait and is refused. A challenge is also refused where the step-down that follows the roll
- * would be (ADR-048): a stored rating of several dice until RQ-033 is decided, or no stored rating.
+ * feature and a trait with a statement (rule 16); both together need both (RQ-032). Otherwise the
+ * option doesn't exist for that trait and is refused. A challenge is also refused where the
+ * step-down that follows the roll would be (ADR-048): a stored rating of several dice in a set
+ * that doesn't support challenging them (rule 16a, RQ-033, ADR-053), a rating of mixed sizes, or
+ * no stored rating. The table handles those by hand; nothing is added without its cost.
  * Whether the user may challenge, that is may update the actor afterwards, is the caller's check.
  * @param {import("./types.mjs").CharacterTraitData} system - the actor's stored data
  * @param {import("./types.mjs").GameConfig} config
  * @param {string} setId
  * @param {string} traitId - a fixed set's definition id or an open set's entry id
- * @param {{actorId?: string, option?: "hinder"|"challenge"|null}} [options]
+ * @param {{actorId?: string, option?: "hinder"|"challenge"|"hinderChallenge"|null}} [options]
  * @returns {import("./types.mjs").EngineResult<{setId: string, traitId: string,
- *   option: "hinder"|"challenge"|null, ratingConflict: boolean,
+ *   option: "hinder"|"challenge"|"hinderChallenge"|null, ratingConflict: boolean,
  *   entries: ReturnType<typeof traitPoolEntries>["value"]}>} refuses, in this order:
  *   INVALID_TRAIT_DATA (data that can't be read), INVALID_TRAIT_OPTIONS (an option that doesn't
  *   exist), UNKNOWN_TRAIT_SET, UNKNOWN_TRAIT, TRAIT_UNNAMED (an open-set trait without a name, which
  *   a die can't be labelled with), effectiveRating's codes (TRAIT_HAS_NO_DICE, TRAIT_ORPHANED,
  *   INVALID_DIE_SIZE, TRAIT_UNRATED), TRAIT_OPTION_UNAVAILABLE, challengeStatement's codes for a
- *   challenge (STATEMENT_RATING_NOT_ONE_DIE, TRAIT_UNRATED and malformed fields)
+ *   challenge (STATEMENT_RATING_NOT_ONE_DIE, STATEMENT_RATING_MIXED_SIZES, TRAIT_UNRATED and
+ *   malformed fields)
  */
 export function traitPoolDice(system, config, setId, traitId, options = {}) {
   if ( !isPlainObject(system) || !isPlainObject(config) || !Array.isArray(config.traitSets)
@@ -155,17 +174,17 @@ export function traitPoolDice(system, config, setId, traitId, options = {}) {
   const rating = effectiveRating(set, def, entry);
   if ( !rating.ok ) return rating;
 
-  if ( (option === "hinder") && (set.features?.hinder !== true) ) return fail("TRAIT_OPTION_UNAVAILABLE");
-  if ( option === "challenge" ) {
+  if ( usesHinder(option) && (set.features?.hinder !== true) ) return fail("TRAIT_OPTION_UNAVAILABLE");
+  if ( usesChallenge(option) ) {
     if ( (set.features?.statements !== true) || !isName(entry?.statement) ) return fail("TRAIT_OPTION_UNAVAILABLE");
-    const stepDown = challengeStatement(entry);
+    const stepDown = challengeStatement(entry, challengeOptionsOf(set));
     if ( !stepDown.ok ) return stepDown;
   }
 
   const trait = { dice: rating.value.dice, label, traitId };
   if ( actorId !== undefined ) trait.actorId = actorId;
   if ( rating.value.isFallback ) trait.isFallback = true;
-  const entries = traitPoolEntries(trait, { hinder: option === "hinder", challenge: option === "challenge" });
+  const entries = traitPoolEntries(trait, { hinder: usesHinder(option), challenge: usesChallenge(option) });
   if ( !entries.ok ) return entries;
   return ok({
     setId, traitId, option,
@@ -300,7 +319,7 @@ export function poolTraitReport(pool, actors, config) {
     if ( trait.actorRef !== null ) costTrait.actorId = trait.actorRef;
     costTrait.setShutDown = setData?.shutDown === true;
     costTrait.traitShutDown = isPlainObject(entry?.shutDown);
-    costTrait.hinder = trait.option === "hinder";
+    costTrait.hinder = usesHinder(trait.option);
     return costTrait;
   });
   const base = poolTraitCost(costTraits, config, null);
@@ -344,7 +363,7 @@ export function poolTraitReport(pool, actors, config) {
     extraTraits: base.value.extraTraits,
     unpricedTraits: base.value.unpricedTraits,
     warnings,
-    ppGained: traits.reduce((sum, trait) => sum + ((trait.option === "hinder") ? trait.ppGained : 0), 0)
+    ppGained: traits.reduce((sum, trait) => sum + (usesHinder(trait.option) ? trait.ppGained : 0), 0)
   });
 }
 
@@ -374,7 +393,7 @@ export function rollablePool(pool) {
 export function challengedPoolTraits(pool) {
   const listed = poolTraits(pool);
   if ( !listed.ok ) return listed;
-  return ok(listed.value.filter(trait => trait.option === "challenge")
+  return ok(listed.value.filter(trait => usesChallenge(trait.option))
     .map(({ key, setId, traitId, actorId, actorRef, label }) => ({ key, setId, traitId, actorId, actorRef, label })));
 }
 
@@ -411,7 +430,7 @@ export function entriesAfterChallenge(system, config, setId, traitId) {
   const setData = system.traits?.[setId];
   const entry = entryFor(setData, traitId, set.list === "fixed");
   if ( !entry ) return fail("UNKNOWN_TRAIT");
-  const challenged = challengeStatement(entry);
+  const challenged = challengeStatement(entry, challengeOptionsOf(set));
   if ( !challenged.ok ) return challenged;
   return ok(setData.entries.map(stored => copyStored((stored === entry) ? challenged.value : stored)));
 }

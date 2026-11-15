@@ -576,3 +576,16 @@ function deepFreeze(value) {
   }
   return value;
 }
+
+describe("features added after the first schema (ADR-053)", () => {
+  it("accepts a set without multiDiceChallenges as off, and refuses a value that isn't a boolean", () => {
+    const config = defaultGameConfig();
+    expect(config.traitSets.every(set => set.features.multiDiceChallenges === false)).toBe(true);
+    for ( const set of config.traitSets ) delete set.features.multiDiceChallenges;
+    expect(validateGameConfig(config).ok).toBe(true);
+    config.traitSets[0].features.multiDiceChallenges = "yes";
+    expect(validateGameConfig(config).errors).toEqual([
+      { code: "INVALID_TRAIT_SET", path: "traitSets.0.features.multiDiceChallenges" }
+    ]);
+  });
+});

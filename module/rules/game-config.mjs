@@ -23,10 +23,22 @@ export const TRAIT_SET_LISTS = Object.freeze(["fixed", "open"]);
  */
 export const EXTRA_TRAIT_RULES = Object.freeze(["pp", "none"]);
 
-/** The per-set switches for what a set's traits carry (rules 11 and 13-20). */
+/**
+ * The per-set switches for what a set's traits carry (rules 11 and 13-20). `multiDiceChallenges`
+ * says that statement challenges also apply to this set's ratings of several equal-sized dice
+ * (rule 16a, RQ-033, ADR-053); it is off unless the GM turns it on, because the dice alone don't
+ * tell a multi-level specialty from a resource or a mob trait.
+ */
 export const TRAIT_SET_FEATURES = Object.freeze([
-  "description", "sfx", "statements", "tags", "subTraits", "hinder", "setSfx", "shutDown"
+  "description", "sfx", "statements", "tags", "subTraits", "hinder", "setSfx", "shutDown", "multiDiceChallenges"
 ]);
+
+/**
+ * Features added after the first configuration schema. A configuration written before them may
+ * leave them out, which reads as off; the stored setting's schema fills them in as off when it
+ * is cleaned, so no migration step is needed (as for the character model, ADR-045).
+ */
+const LATER_TRAIT_SET_FEATURES = Object.freeze(["multiDiceChallenges"]);
 
 /** The fewest sets in the prime role the Handbook advises (rule 7; Handbook p. 26, p. 47; ADR-041). */
 const MIN_PRIME_SETS = 2;
@@ -126,7 +138,9 @@ function checkTraitSet(set, path, report, claimId) {
   if ( !isPlainObject(set.features) ) report("INVALID_TRAIT_SET", `${path}.features`);
   else {
     for ( const feature of TRAIT_SET_FEATURES ) {
-      if ( typeof set.features[feature] !== "boolean" ) report("INVALID_TRAIT_SET", `${path}.features.${feature}`);
+      const value = set.features[feature];
+      if ( (value === undefined) && LATER_TRAIT_SET_FEATURES.includes(feature) ) continue;
+      if ( typeof value !== "boolean" ) report("INVALID_TRAIT_SET", `${path}.features.${feature}`);
     }
   }
 }

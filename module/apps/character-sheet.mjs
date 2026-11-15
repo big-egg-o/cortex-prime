@@ -12,7 +12,8 @@
  *
  * Every trait that gives a die has buttons that fill the current user's dice pool (ADR-016,
  * ADR-049; Character Sheets behaviours 20 and 21, CS-D10): add it plainly, with Hinder where its
- * set offers Hinder, or as a challenged statement where its set offers statements and it has one.
+ * set offers Hinder, as a challenged statement where its set offers statements and it has one, or
+ * with both where both apply (RQ-032, CS-D14).
  * Adding writes nothing to the actor, so a user who can see the sheet but not edit it can still
  * add its traits, such as a location's scene distinction (rule 12). A challenge is offered only to
  * users who can edit the actor, since its step-down is written after the roll (ADR-048).
@@ -78,7 +79,9 @@ export default class CharacterSheet extends HandlebarsApplicationMixin(ActorShee
         ...trait,
         label: trait.name || i18n.localize("CORTEX.Sheet.Unnamed"),
         canChallenge: trait.canChallenge && mayChallenge,
+        canHinderChallenge: trait.canHinder && trait.canChallenge && mayChallenge,
         poolLabels: {
+          hinderChallenge: i18n.format("CORTEX.Sheet.Pool.HinderChallenge", { trait: trait.name }),
           add: i18n.format("CORTEX.Sheet.Pool.Add", { trait: trait.name }),
           hinder: i18n.format("CORTEX.Sheet.Pool.Hinder", { trait: trait.name }),
           challenge: i18n.format("CORTEX.Sheet.Pool.Challenge", { trait: trait.name })

@@ -46,6 +46,10 @@
             <button type="button" class="ui-control icon" data-action="addToPool" data-option="challenge"
               data-tooltip="{{ this.poolLabels.challenge }}" aria-label="{{ this.poolLabels.challenge }}"><i class="fa-solid fa-bolt" inert></i></button>
             {{/if}}
+            {{#if this.canHinderChallenge}}
+            <button type="button" class="ui-control icon" data-action="addToPool" data-option="hinderChallenge"
+              data-tooltip="{{ this.poolLabels.hinderChallenge }}" aria-label="{{ this.poolLabels.hinderChallenge }}"><i class="fa-solid fa-angles-down" inert></i></button>
+            {{/if}}
           </span>
           {{/if}}
         </div>

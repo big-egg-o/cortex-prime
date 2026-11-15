@@ -98,9 +98,12 @@ function poolTraitWellFormed(trait) {
  * bookkeeping (ADR-014, ADR-029 point 3). Hinder changes the roll only: the trait's stored
  * rating stays as it is. A challenged statement (MOD Trait Statements) gives each die three
  * times for this roll (rule 16, TS-14, TS-16; the spec's implementation notes for several dice).
- * A fallback die is marked `isFallback` (TS-03). Hinder and a challenge together are refused
- * until RQ-032 is decided. Whether the trait's set offers Hinder or statements is the caller's
- * check; buildPool ignores the extra marks, so a caller that needs them keeps the entries.
+ * A fallback die is marked `isFallback` (TS-03). Hinder and a challenge together apply Hinder
+ * first and then triple the result (RQ-032 reading A, RQ-033): three d4s, with `ppGained: 1`
+ * once, on the first entry, where Hinder gave up die size or count, or `ppGained: 0` and the
+ * hint for a trait rated exactly one d4. Whether the trait's set offers Hinder or statements, and
+ * whether a rating of several dice may be challenged, is the caller's check; buildPool ignores
+ * the extra marks, so a caller that needs them keeps the entries.
  * @param {{dice: import("./types.mjs").DieSize[], label: string, actorId?: string,
  *   traitId?: string, isFallback?: boolean}} trait - dice from effectiveRating
  * @param {{hinder?: boolean, challenge?: boolean}} [options]
@@ -108,15 +111,14 @@ function poolTraitWellFormed(trait) {
  *   source: import("./types.mjs").DieSource, ppGained?: number, hint?: string,
  *   isFallback?: true}[]>} refuses,
  *   in this order: INVALID_TRAIT_DATA (no label, or ids or marks of the wrong type),
- *   INVALID_TRAIT_OPTIONS (options that aren't an object of booleans), TRAIT_OPTIONS_CONFLICT
- *   (Hinder and a challenge), INVALID_DIE_SIZE, TRAIT_UNRATED (no dice)
+ *   INVALID_TRAIT_OPTIONS (options that aren't an object of booleans), INVALID_DIE_SIZE,
+ *   TRAIT_UNRATED (no dice)
  */
 export function traitPoolEntries(trait, options = {}) {
   if ( !poolTraitWellFormed(trait) ) return fail("INVALID_TRAIT_DATA");
   if ( !isPlainObject(options) ) return fail("INVALID_TRAIT_OPTIONS");
   const { hinder = false, challenge = false } = options;
   if ( (typeof hinder !== "boolean") || (typeof challenge !== "boolean") ) return fail("INVALID_TRAIT_OPTIONS");
-  if ( hinder && challenge ) return fail("TRAIT_OPTIONS_CONFLICT");
   const rating = validateRating(trait.dice);
   if ( !rating.ok ) return rating;
   if ( rating.value.length === 0 ) return fail("TRAIT_UNRATED");
@@ -128,17 +130,16 @@ export function traitPoolEntries(trait, options = {}) {
     s.label = trait.label;
     return s;
   };
+  // Hinder first, then the challenge's tripling (RQ-032): the plot point is recorded once.
   const hindered = hinder ? hinderedDice(rating.value) : null;
-  if ( hindered ) {
-    return ok(hindered.map((size, i) => (i === 0 ? { size, source: source(), ppGained: 1 } : { size, source: source() })));
-  }
-  const dice = challenge ? rating.value.flatMap(size => [size, size, size]) : rating.value;
+  const base = hindered ?? rating.value;
+  const dice = challenge ? base.flatMap(size => [size, size, size]) : base;
   const entries = dice.map(size => {
     const entry = { size, source: source() };
-    if ( trait.isFallback ) entry.isFallback = true;
+    if ( trait.isFallback && !hindered ) entry.isFallback = true;
     return entry;
   });
-  if ( hinder ) Object.assign(entries[0], { ppGained: 0, hint: "HINDER_ALREADY_D4" });
+  if ( hinder ) Object.assign(entries[0], hindered ? { ppGained: 1 } : { ppGained: 0, hint: "HINDER_ALREADY_D4" });
   return ok(entries);
 }
 
