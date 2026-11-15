@@ -455,7 +455,7 @@ export async function openPoolBuilder({ beside } = {}) {
  * actor, since its step-down is written after the roll (ADR-048). A refusal is shown as a
  * notification and leaves the pool as it was.
  * @param {Actor} actor - a "character" actor, world or unlinked token
- * @param {string} setId
+ * @param {string|null} setId - null for a free trait (TS-22)
  * @param {string} traitId - a fixed set's definition id or an open set's entry id
  * @param {"hinder"|"challenge"|"hinderChallenge"|null} [option]
  * @param {{beside?: foundry.applications.api.ApplicationV2}} [options] - the sheet the builder

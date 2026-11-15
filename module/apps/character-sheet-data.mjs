@@ -28,6 +28,12 @@ export const NEW_RATING_INPUTS = "newRatings";
 /** The top-level name of the name inputs of open-set traits: `names.<setId>.<entryId>`. */
 export const NAME_INPUTS = "names";
 
+/** The top-level name of the rating inputs of free traits: `freeRatings.<entryId>.<dieIndex>`. */
+export const FREE_RATING_INPUTS = "freeRatings";
+
+/** The top-level name of the name inputs of free traits: `freeNames.<entryId>`. */
+export const FREE_NAME_INPUTS = "freeNames";
+
 /**
  * @typedef {object} RatingSlot
  * @property {string} inputName - the select's name
@@ -84,6 +90,37 @@ export const NAME_INPUTS = "names";
  *   configuration doesn't have, or a known kind
  * @property {{id: string, name: string}|null} kind
  * @property {SheetSet[]} sets
+ * @property {SheetTrait[]|null} freeTraits - the free traits of a kind that has them (TS-22), in
+ *   stored order; null for a kind without free traits and for a character without a known kind
+ * @property {OtherTraits} others - what the character stores that the sheet doesn't list above
+ */
+
+/**
+ * @typedef {object} OtherTrait
+ * @property {string|null} entryId - null for an entry without an id, which can't be removed by id
+ * @property {string} name - the stored name
+ * @property {import("../rules/types.mjs").DieSize[]} dice - the stored rating
+ */
+
+/**
+ * @typedef {object} OtherTraitGroup
+ * @property {string} setId
+ * @property {string|null} name - the set's name in the game configuration, null for a set it
+ *   doesn't have
+ * @property {"noDefinition"|"notInKind"|"unknownSet"} reason - entries of one of the kind's sets
+ *   that the sheet's rows don't show (in a fixed set: no definition matches them, TS-E03, or
+ *   another entry already stands for their definition), a set the kind doesn't include, or a set
+ *   the configuration doesn't have
+ * @property {OtherTrait[]} traits
+ */
+
+/**
+ * Stored traits the sheet's sections don't list (Character Sheets behaviour 10, CS-D5, ADR-051).
+ * @typedef {object} OtherTraits
+ * @property {OtherTraitGroup[]} sets - in stored order; sets with nothing unlisted are left out
+ * @property {OtherTrait[]} freeTraits - the stored free traits of a character whose kind has no
+ *   free traits, or that has no known kind
+ * @property {number} count - how many traits the groups and the free traits hold together
  */
 
 /** @returns {boolean} whether value is a plain object, not an array, class instance or null */
@@ -114,21 +151,21 @@ function storedDice(entry) {
  * The rating inputs of one trait: a select per stored die, and a blank one that adds a die
  * when the rating is empty or the set allows several dice. A rating with more dice than its set
  * now allows gets a select for each, so nothing stored is hidden (ADR-037 point 5).
- * @param {object} set
- * @param {string} entryId
+ * @param {string} prefix - the inputs' name up to the die index
  * @param {number[]} dice
+ * @param {boolean} multiDice - whether a further die can be added to a rating that has one
  * @returns {RatingSlot[]}
  */
-function ratingSlots(set, entryId, dice) {
+function ratingSlots(prefix, dice, multiDice) {
   const slot = (index, value) => ({
-    inputName: `${RATING_INPUTS}.${set.id}.${entryId}.${index}`,
+    inputName: `${prefix}.${index}`,
     index,
     value,
     adds: value === null,
     options: DIE_SIZES.map(size => ({ value: size, label: `d${size}`, selected: size === value }))
   });
   const slots = dice.map((size, index) => slot(index, size));
-  if ( (dice.length === 0) || set.multiDice ) slots.push(slot(dice.length, null));
+  if ( (dice.length === 0) || multiDice ) slots.push(slot(dice.length, null));
   return slots;
 }
 
@@ -152,7 +189,7 @@ function traitRow(set, def, entry, setShutDown) {
     name: def?.name ?? ((typeof entry?.name === "string") ? entry.name : ""),
     dice: [...dice],
     editable,
-    slots: editable ? ratingSlots(set, entry.id, dice) : [],
+    slots: editable ? ratingSlots(`${RATING_INPUTS}.${set.id}.${entry.id}`, dice, set.multiDice === true) : [],
     fallbackDie: (rating.ok && rating.value.isFallback) ? rating.value.dice[0] : null,
     unrated: !rating.ok && (rating.code === "TRAIT_UNRATED"),
     noDice: set.hasDice !== true,
@@ -172,23 +209,100 @@ function traitRow(set, def, entry, setShutDown) {
 }
 
 /**
+ * One free trait's row: a name and a rating, in no set (TS-22). It has no fallback die, so an
+ * empty rating is unrated, and neither Hinder nor a statement, which are set features. Its rating
+ * gets a select per stored die, and a blank one only while it is empty.
+ * @param {object} entry - what the actor stores
+ * @returns {SheetTrait}
+ */
+function freeTraitRow(entry) {
+  const dice = storedDice(entry);
+  const hasId = typeof entry.id === "string";
+  const rating = effectiveRating(null, null, entry);
+  const hints = ratingGuidance(null, dice);
+  return {
+    entryId: hasId ? entry.id : null,
+    name: (typeof entry.name === "string") ? entry.name : "",
+    dice: [...dice],
+    editable: hasId,
+    slots: hasId ? ratingSlots(`${FREE_RATING_INPUTS}.${entry.id}`, dice, false) : [],
+    fallbackDie: null,
+    unrated: !rating.ok && (rating.code === "TRAIT_UNRATED"),
+    noDice: false,
+    hints: hints.ok ? hints.value : [],
+    shutDown: false,
+    newSlot: null,
+    nameInput: hasId ? `${FREE_NAME_INPUTS}.${entry.id}` : null,
+    poolTraitId: hasId ? entry.id : null,
+    rollable: rating.ok && hasId,
+    canHinder: false,
+    canChallenge: false
+  };
+}
+
+/** @returns {OtherTrait} a stored entry as the "Other stored traits" list shows it */
+function otherTrait(entry) {
+  return {
+    entryId: (typeof entry.id === "string") ? entry.id : null,
+    name: (typeof entry.name === "string") ? entry.name : "",
+    dice: [...storedDice(entry)]
+  };
+}
+
+/**
+ * The stored traits the sheet's sections don't list (CS-D5, ADR-051): every stored entry that no
+ * row stands for, grouped by its set, and the free traits of a character whose kind has none.
+ * Nothing is left out because of its shape, so everything stored can be found and removed.
+ * @param {object} system
+ * @param {import("../rules/types.mjs").GameConfig} config
+ * @param {object|null} kind - the character's kind, null when it has none the configuration knows
+ * @param {Set<object>} listed - the stored entries the sheet's rows stand for
+ * @returns {OtherTraits}
+ */
+function otherStoredTraits(system, config, kind, listed) {
+  const kindSetIds = Array.isArray(kind?.traitSetIds) ? kind.traitSetIds : [];
+  const sets = [];
+  for ( const [setId, stored] of Object.entries(isPlainObject(system?.traits) ? system.traits : {}) ) {
+    const entries = Array.isArray(stored?.entries) ? stored.entries.filter(isPlainObject) : [];
+    const traits = entries.filter(entry => !listed.has(entry)).map(otherTrait);
+    if ( !traits.length ) continue;
+    const set = Array.isArray(config?.traitSets) ? traitSetById(config, setId) : null;
+    const reason = !isPlainObject(set) ? "unknownSet" : kindSetIds.includes(setId) ? "noDefinition" : "notInKind";
+    sets.push({ setId, name: isPlainObject(set) ? set.name : null, reason, traits });
+  }
+  const free = ((kind?.freeTraits === true) || !Array.isArray(system?.freeTraits)) ? []
+    : system.freeTraits.filter(isPlainObject).map(otherTrait);
+  return { sets, freeTraits: free, count: sets.reduce((sum, group) => sum + group.traits.length, free.length) };
+}
+
+/**
  * What the sheet shows: the trait sets of the character's actor kind, in the kind's order and
  * named as the configuration names them (ADR-031). A fixed set lists its definitions in the
  * configuration's order, each with the actor's entry for it (by definition id, ADR-034) or none;
  * a definition without an entry shows its fallback die or that it is unrated, with an input that
  * creates the entry when a die is chosen. An open set lists the actor's entries in stored order.
- * Not shown yet: free traits (TS-22), sets the kind doesn't
- * include, and entries no definition matches (TS-E03); they are kept as stored when the sheet
- * writes.
+ * A kind with free traits lists them after its sets (TS-22). Everything else the character stores
+ * (sets the kind doesn't include, entries no definition matches (TS-E03), free traits of a kind
+ * without them) is listed in `others` for the sheet's edit mode (CS-D5) and kept as stored when
+ * the sheet writes.
  * @param {import("../rules/types.mjs").CharacterTraitData} system - the actor's system data
  * @param {import("../rules/types.mjs").GameConfig} config - the current game configuration
  * @returns {SheetView}
  */
 export function characterSheetView(system, config) {
   const kindId = system?.kindId ?? null;
-  if ( kindId === null ) return { kindStatus: "unassigned", kind: null, sets: [] };
-  const kind = Array.isArray(config?.actorKinds) ? actorKindById(config, kindId) : null;
-  if ( !kind ) return { kindStatus: "unknown", kind: null, sets: [] };
+  const kind = ((kindId !== null) && Array.isArray(config?.actorKinds)) ? (actorKindById(config, kindId) ?? null) : null;
+  if ( !kind ) {
+    return {
+      kindStatus: (kindId === null) ? "unassigned" : "unknown", kind: null, sets: [], freeTraits: null,
+      others: otherStoredTraits(system, config, null, new Set())
+    };
+  }
+  const listed = new Set();
+  const row = (set, def, entry, setShutDown) => {
+    if ( entry ) listed.add(entry);
+    return traitRow(set, def, entry, setShutDown);
+  };
 
   const sets = (Array.isArray(kind.traitSetIds) ? kind.traitSetIds : [])
     .map(setId => traitSetById(config, setId))
@@ -199,15 +313,20 @@ export function characterSheetView(system, config) {
       const setShutDown = stored.shutDown === true;
       const traits = (set.list === "fixed")
         ? (Array.isArray(set.traits) ? set.traits : []).filter(isPlainObject).map(def => {
-          return traitRow(set, def, entries.find(entry => entry.defId === def.id) ?? null, setShutDown);
+          return row(set, def, entries.find(entry => entry.defId === def.id) ?? null, setShutDown);
         })
-        : entries.map(entry => traitRow(set, null, entry, setShutDown));
+        : entries.map(entry => row(set, null, entry, setShutDown));
       return {
         id: set.id, name: set.name, hasDice: set.hasDice === true, multiDice: set.multiDice === true,
         shutDown: setShutDown, open: set.list !== "fixed", traits
       };
     });
-  return { kindStatus: "assigned", kind: { id: kind.id, name: kind.name }, sets };
+  const freeTraits = (kind.freeTraits === true)
+    ? (Array.isArray(system.freeTraits) ? system.freeTraits : []).filter(isPlainObject).map(freeTraitRow) : null;
+  return {
+    kindStatus: "assigned", kind: { id: kind.id, name: kind.name }, sets, freeTraits,
+    others: otherStoredTraits(system, config, kind, listed)
+  };
 }
 
 /**
@@ -411,4 +530,83 @@ export function removeTraitEntry(system, setId, entryId) {
   const entries = storedEntries(system, setId);
   if ( !entries.some(entry => isPlainObject(entry) && (entry.id === entryId)) ) return fail("UNKNOWN_TRAIT");
   return ok({ entries: entries.filter(entry => !(isPlainObject(entry) && (entry.id === entryId))) });
+}
+
+/**
+ * The stored free traits as a list of copies, [] where the actor holds none.
+ * @param {object} system
+ * @returns {object[]}
+ */
+function storedFreeTraits(system) {
+  return Array.isArray(system?.freeTraits) ? system.freeTraits.map(copyStored) : [];
+}
+
+/**
+ * Turns the sheet's free-trait inputs into the free traits of an update (Character Sheets
+ * behaviour 9; TS-22). The whole list comes back, because an update replaces it whole, with only
+ * the changed ratings and names replaced. As for set traits, a name is trimmed and a blank one
+ * changes nothing, a blank die input leaves its die out, and inputs for a trait the actor no
+ * longer holds are ignored. Whether the dice exist is checkCharacterUpdate's job as well.
+ * @param {import("../rules/types.mjs").CharacterTraitData} system - the stored system data, read
+ *   when the form is submitted
+ * @param {{ratings?: unknown, names?: unknown}} form - entry id to die index to value, and entry
+ *   id to name; each undefined when the form has no such inputs
+ * @returns {import("../rules/types.mjs").EngineResult<object[]|null>} the new list, or null when
+ *   nothing changed; refuses INVALID_TRAIT_DATA and INVALID_DIE_SIZE
+ */
+export function freeTraitChanges(system, form) {
+  if ( !isPlainObject(form) ) return fail("INVALID_TRAIT_DATA");
+  const { ratings = {}, names = {} } = form;
+  if ( !isPlainObject(ratings) || !isPlainObject(names) ) return fail("INVALID_TRAIT_DATA");
+  const rated = new Map();
+  for ( const [entryId, dieInputs] of Object.entries(ratings) ) {
+    const rating = inputRating(dieInputs);
+    if ( !rating.ok ) return rating;
+    rated.set(entryId, rating.value);
+  }
+  let changed = false;
+  const list = storedFreeTraits(system).map(entry => {
+    if ( !isPlainObject(entry) ) return entry;
+    if ( rated.has(entry.id) && !sameDice(rated.get(entry.id), storedDice(entry)) ) {
+      entry.dice = rated.get(entry.id);
+      changed = true;
+    }
+    const name = names[entry.id];
+    if ( (typeof name === "string") && (name.trim() !== "") && (name.trim() !== entry.name) ) {
+      entry.name = name.trim();
+      changed = true;
+    }
+    return entry;
+  });
+  return ok(changed ? list : null);
+}
+
+/**
+ * The free traits with a new one at the end: a name and no rating yet, since a free trait has no
+ * set to give it a starting rating (TS-22, CS-D9).
+ * @param {import("../rules/types.mjs").CharacterTraitData} system - the stored system data
+ * @param {string} id - the new trait's id, made by the caller
+ * @param {string} name
+ * @returns {import("../rules/types.mjs").EngineResult<object[]>} refuses INVALID_TRAIT_DATA (an
+ *   id or a name that isn't text, a blank name)
+ */
+export function addFreeTrait(system, id, name) {
+  if ( !isPlainObject(system) || (typeof id !== "string") || (typeof name !== "string") || (name.trim() === "") ) {
+    return fail("INVALID_TRAIT_DATA");
+  }
+  return ok([...storedFreeTraits(system), { id, name: name.trim(), dice: [] }]);
+}
+
+/**
+ * The free traits without one of them.
+ * @param {import("../rules/types.mjs").CharacterTraitData} system - the stored system data
+ * @param {string} entryId
+ * @returns {import("../rules/types.mjs").EngineResult<object[]>} refuses INVALID_TRAIT_DATA, or
+ *   UNKNOWN_TRAIT when the actor holds no free trait with that id
+ */
+export function removeFreeTrait(system, entryId) {
+  if ( !isPlainObject(system) || (typeof entryId !== "string") ) return fail("INVALID_TRAIT_DATA");
+  const list = storedFreeTraits(system);
+  if ( !list.some(entry => isPlainObject(entry) && (entry.id === entryId)) ) return fail("UNKNOWN_TRAIT");
+  return ok(list.filter(entry => !(isPlainObject(entry) && (entry.id === entryId))));
 }

@@ -24,8 +24,13 @@
  * the choice to anyone who can edit it, in either mode (CS-D3). A fixed set's trait the actor
  * holds no entry for gets an entry when a rating is chosen for it (behaviour 13).
  *
- * Not in this slice: free traits, the list of stored traits the sheet doesn't show, statements,
- * SFX, tags, sub-traits and shut-down controls.
+ * A kind with free traits gets a section for them after its sets: name and dice, in no set
+ * (behaviour 9, TS-22). Edit mode also lists what the character stores that no section shows
+ * (entries no definition matches, sets outside the kind, free traits of a kind without them)
+ * under "Other stored traits", each with a remove button that asks first; nothing is ever removed
+ * automatically (CS-D5, ADR-051).
+ *
+ * Not in this slice: statements, SFX, tags, sub-traits and shut-down controls.
  * @module apps/character-sheet
  */
 
@@ -33,7 +38,8 @@ import CharacterData from "../data/actor/character.mjs";
 import { getGameConfig } from "../config/settings.mjs";
 import { checkCharacterUpdate } from "../rules/traits.mjs";
 import {
-  NAME_INPUTS, NEW_RATING_INPUTS, RATING_INPUTS, addTraitEntry, characterSheetView, removeTraitEntry, sheetTraitChanges
+  FREE_NAME_INPUTS, FREE_RATING_INPUTS, NAME_INPUTS, NEW_RATING_INPUTS, RATING_INPUTS, addFreeTrait, addTraitEntry,
+  characterSheetView, freeTraitChanges, removeFreeTrait, removeTraitEntry, sheetTraitChanges
 } from "./character-sheet-data.mjs";
 import { addTraitToPool } from "./pool-builder.mjs";
 
@@ -71,6 +77,15 @@ export default class CharacterSheet extends HandlebarsApplicationMixin(ActorShee
     return this.#editMode && this.isEditable;
   }
 
+  /**
+   * A sheet that is closed opens in play mode the next time (CS-D1).
+   * @override
+   */
+  _onClose(options) {
+    super._onClose(options);
+    this.#editMode = false;
+  }
+
   /** @override */
   static PARTS = {
     sheet: { template: TEMPLATE, scrollable: [".cp-sheet-body"] }
@@ -95,38 +110,46 @@ export default class CharacterSheet extends HandlebarsApplicationMixin(ActorShee
     const i18n = game.i18n;
     const mayChallenge = this.actor.isOwner;
     const editMode = this.editMode;
-    const sets = view.sets.map(set => ({
-      ...set,
-      traits: set.traits.map(trait => ({
-        ...trait,
-        label: trait.name || i18n.localize("CORTEX.Sheet.Unnamed"),
-        nameInput: editMode ? trait.nameInput : null,
-        removeLabel: i18n.format("CORTEX.Sheet.RemoveTrait", { trait: trait.name }),
-        newSlot: (trait.newSlot && this.isEditable)
-          ? { ...trait.newSlot, ariaLabel: i18n.format("CORTEX.Sheet.NewRating", { trait: trait.name }) } : null,
-        canChallenge: trait.canChallenge && mayChallenge,
-        canHinderChallenge: trait.canHinder && trait.canChallenge && mayChallenge,
-        poolLabels: {
-          hinderChallenge: i18n.format("CORTEX.Sheet.Pool.HinderChallenge", { trait: trait.name }),
-          add: i18n.format("CORTEX.Sheet.Pool.Add", { trait: trait.name }),
-          hinder: i18n.format("CORTEX.Sheet.Pool.Hinder", { trait: trait.name }),
-          challenge: i18n.format("CORTEX.Sheet.Pool.Challenge", { trait: trait.name })
-        },
-        ratingText: CharacterSheet.#ratingText(trait),
-        hintTexts: trait.hints.map(code => i18n.localize(`CORTEX.Sheet.Hints.${code}`)),
-        slots: trait.slots.map(slot => ({
-          ...slot,
-          ariaLabel: slot.adds
-            ? i18n.format("CORTEX.Sheet.AddDie", { trait: trait.name })
-            : i18n.format("CORTEX.Sheet.Die", { trait: trait.name, number: slot.index + 1 })
-        }))
+    const row = trait => ({
+      ...trait,
+      label: trait.name || i18n.localize("CORTEX.Sheet.Unnamed"),
+      nameInput: editMode ? trait.nameInput : null,
+      removeLabel: i18n.format("CORTEX.Sheet.RemoveTrait", { trait: trait.name }),
+      newSlot: (trait.newSlot && this.isEditable)
+        ? { ...trait.newSlot, ariaLabel: i18n.format("CORTEX.Sheet.NewRating", { trait: trait.name }) } : null,
+      canChallenge: trait.canChallenge && mayChallenge,
+      canHinderChallenge: trait.canHinder && trait.canChallenge && mayChallenge,
+      poolLabels: {
+        hinderChallenge: i18n.format("CORTEX.Sheet.Pool.HinderChallenge", { trait: trait.name }),
+        add: i18n.format("CORTEX.Sheet.Pool.Add", { trait: trait.name }),
+        hinder: i18n.format("CORTEX.Sheet.Pool.Hinder", { trait: trait.name }),
+        challenge: i18n.format("CORTEX.Sheet.Pool.Challenge", { trait: trait.name })
+      },
+      ratingText: CharacterSheet.#ratingText(trait),
+      hintTexts: trait.hints.map(code => i18n.localize(`CORTEX.Sheet.Hints.${code}`)),
+      slots: trait.slots.map(slot => ({
+        ...slot,
+        ariaLabel: slot.adds
+          ? i18n.format("CORTEX.Sheet.AddDie", { trait: trait.name })
+          : i18n.format("CORTEX.Sheet.Die", { trait: trait.name, number: slot.index + 1 })
       }))
+    });
+    // The sheet's sections: the kind's sets, then its free traits, which belong to no set (TS-22).
+    const sections = view.sets.map(set => ({
+      ...set, free: false, emptyText: i18n.localize("CORTEX.Sheet.NoTraits"), traits: set.traits.map(row)
     }));
+    if ( view.freeTraits ) {
+      sections.push({
+        id: null, name: i18n.localize("CORTEX.Sheet.FreeTraits"), free: true, open: true, shutDown: false,
+        emptyText: i18n.localize("CORTEX.Sheet.NoFreeTraits"), traits: view.freeTraits.map(row)
+      });
+    }
     return Object.assign(context, {
       actor: this.actor,
       kindName: view.kind?.name ?? null,
       notice: CharacterSheet.#notice(view),
-      sets,
+      sections,
+      others: this.#others(view),
       editMode,
       canEdit: this.isEditable,
       kindPicker: this.#kindPicker(view, system, config)
@@ -155,6 +178,39 @@ export default class CharacterSheet extends HandlebarsApplicationMixin(ActorShee
   }
 
   /**
+   * The "Other stored traits" list, or null outside edit mode and where there is nothing to list
+   * (CS-D5, ADR-051): what the character stores that no section shows, by its stored names.
+   * @param {import("./character-sheet-data.mjs").SheetView} view
+   * @returns {{groups: {setId: string|null, free: boolean, label: string, traits: object[]}[]}|null}
+   */
+  #others(view) {
+    if ( !this.editMode || !view.others.count ) return null;
+    const i18n = game.i18n;
+    const trait = other => {
+      const name = other.name || i18n.localize("CORTEX.Sheet.Unnamed");
+      return {
+        ...other, label: name, ratingText: other.dice.map(size => `d${size}`).join(" "),
+        removeLabel: i18n.format("CORTEX.Sheet.RemoveTrait", { trait: name })
+      };
+    };
+    const groups = view.others.sets.map(group => ({
+      setId: group.setId,
+      free: false,
+      label: (group.reason === "unknownSet")
+        ? i18n.format("CORTEX.Sheet.Others.unknownSet", { id: group.setId })
+        : i18n.format(`CORTEX.Sheet.Others.${group.reason}`, { set: group.name }),
+      traits: group.traits.map(trait)
+    }));
+    if ( view.others.freeTraits.length ) {
+      groups.push({
+        setId: null, free: true, label: i18n.localize("CORTEX.Sheet.Others.freeTraits"),
+        traits: view.others.freeTraits.map(trait)
+      });
+    }
+    return { groups };
+  }
+
+  /**
    * Foundry disables every control of a sheet the user can't edit, each trait set's fieldset
    * included, which disables everything inside it. The pool buttons only fill the user's own pool,
    * so they are enabled again (ADR-049): the fieldsets are, and the buttons. The rating inputs keep
@@ -176,10 +232,21 @@ export default class CharacterSheet extends HandlebarsApplicationMixin(ActorShee
    * @param {HTMLElement} target
    */
   static async #onAddToPool(_event, target) {
-    const setId = target.closest("[data-set-id]")?.dataset.setId;
+    const setId = CharacterSheet.#setIdOf(target);
     const traitId = target.closest("[data-pool-trait-id]")?.dataset.poolTraitId;
-    if ( !setId || !traitId ) return;
+    if ( (setId === undefined) || !traitId ) return;
     await addTraitToPool(this.actor, setId, traitId, target.dataset.option ?? null, { beside: this });
+  }
+
+  /**
+   * Which of the sheet's sections a control is in.
+   * @param {HTMLElement} target
+   * @returns {string|null|undefined} a set's id, null for free traits, undefined for neither
+   */
+  static #setIdOf(target) {
+    const section = target.closest("[data-set-id], [data-free-traits]");
+    if ( !section ) return undefined;
+    return ("freeTraits" in section.dataset) ? null : section.dataset.setId;
   }
 
   /**
@@ -192,14 +259,15 @@ export default class CharacterSheet extends HandlebarsApplicationMixin(ActorShee
   }
 
   /**
-   * Adds a trait to the clicked open set.
+   * Adds a trait to the clicked open set, or a free trait.
    * @this {CharacterSheet}
    * @param {PointerEvent} _event
    * @param {HTMLElement} target
    */
   static async #onAddTrait(_event, target) {
-    const setId = target.closest("[data-set-id]")?.dataset.setId;
-    if ( setId ) await this.addTrait(setId);
+    const setId = CharacterSheet.#setIdOf(target);
+    if ( setId === null ) await this.addFreeTrait();
+    else if ( setId ) await this.addTrait(setId);
   }
 
   /**
@@ -209,15 +277,18 @@ export default class CharacterSheet extends HandlebarsApplicationMixin(ActorShee
    * @param {HTMLElement} target
    */
   static async #onRemoveTrait(_event, target) {
-    const setId = target.closest("[data-set-id]")?.dataset.setId;
+    const setId = CharacterSheet.#setIdOf(target);
     const row = target.closest("[data-entry-id]");
-    if ( !setId || !row ) return;
-    const name = row.querySelector("input.cp-trait-name")?.value || game.i18n.localize("CORTEX.Sheet.Unnamed");
+    if ( (setId === undefined) || !row ) return;
+    const name = row.querySelector("input.cp-trait-name")?.value || row.dataset.traitName
+      || game.i18n.localize("CORTEX.Sheet.Unnamed");
     const confirmed = await foundry.applications.api.DialogV2.confirm({
       window: { title: "CORTEX.Sheet.RemoveTitle" },
       content: `<p>${foundry.utils.escapeHTML(game.i18n.format("CORTEX.Sheet.RemoveConfirm", { trait: name }))}</p>`
     });
-    if ( confirmed ) await this.removeTrait(setId, row.dataset.entryId);
+    if ( !confirmed ) return;
+    if ( setId === null ) await this.removeFreeTrait(row.dataset.entryId);
+    else await this.removeTrait(setId, row.dataset.entryId);
   }
 
   /**
@@ -230,7 +301,31 @@ export default class CharacterSheet extends HandlebarsApplicationMixin(ActorShee
     const added = addTraitEntry(this.actor.system.toObject(), getGameConfig(), setId, foundry.utils.randomID(),
       game.i18n.localize("CORTEX.Sheet.NewTrait"));
     if ( !added.ok ) return this.#refuse(added.code);
-    return this.#writeTraits({ [setId]: added.value });
+    return this.#writeSystem({ traits: { [setId]: added.value } });
+  }
+
+  /**
+   * Adds a new free trait, named "New trait" and with no rating yet, then renders.
+   * @returns {Promise<boolean>} whether it was written
+   */
+  async addFreeTrait() {
+    if ( !this.isEditable ) return false;
+    const added = addFreeTrait(this.actor.system.toObject(), foundry.utils.randomID(),
+      game.i18n.localize("CORTEX.Sheet.NewTrait"));
+    if ( !added.ok ) return this.#refuse(added.code);
+    return this.#writeSystem({ freeTraits: added.value });
+  }
+
+  /**
+   * Removes a free trait, without asking: the click handler asks first.
+   * @param {string} entryId
+   * @returns {Promise<boolean>} whether it was written
+   */
+  async removeFreeTrait(entryId) {
+    if ( !this.isEditable ) return false;
+    const removed = removeFreeTrait(this.actor.system.toObject(), entryId);
+    if ( !removed.ok ) return this.#refuse(removed.code);
+    return this.#writeSystem({ freeTraits: removed.value });
   }
 
   /**
@@ -243,17 +338,17 @@ export default class CharacterSheet extends HandlebarsApplicationMixin(ActorShee
     if ( !this.isEditable ) return false;
     const removed = removeTraitEntry(this.actor.system.toObject(), setId, entryId);
     if ( !removed.ok ) return this.#refuse(removed.code);
-    return this.#writeTraits({ [setId]: removed.value });
+    return this.#writeSystem({ traits: { [setId]: removed.value } });
   }
 
   /**
    * Writes trait changes through Actor#update after the same check the form submit runs
    * (ADR-037 point 3).
-   * @param {Record<string, {entries: object[]}>} traits - changed sets by id
+   * @param {{traits?: Record<string, {entries: object[]}>, freeTraits?: object[]}} system - the
+   *   changed sets by id, or the whole list of free traits
    * @returns {Promise<boolean>} whether the update was made
    */
-  async #writeTraits(traits) {
-    const system = { traits };
+  async #writeSystem(system) {
     const checked = checkCharacterUpdate(this.actor.system.toObject(), system, getGameConfig(), {
       operatorOf: CharacterData.operatorOf, unlinkedToken: this.actor.isToken === true
     });
@@ -289,26 +384,31 @@ export default class CharacterSheet extends HandlebarsApplicationMixin(ActorShee
   static #notice(view) {
     if ( view.kindStatus === "unassigned" ) return game.i18n.localize("CORTEX.Sheet.NoKind");
     if ( view.kindStatus === "unknown" ) return game.i18n.localize("CORTEX.Sheet.UnknownKind");
-    if ( !view.sets.length ) return game.i18n.localize("CORTEX.Sheet.NoSets");
+    if ( !view.sets.length && !view.freeTraits ) return game.i18n.localize("CORTEX.Sheet.NoSets");
     return null;
   }
 
   /**
-   * Turns the trait inputs (ratings, new ratings and names) into the trait changes of the update,
-   * from the data stored when the form is submitted; the other inputs (name, portrait, kind) are
+   * Turns the trait inputs (ratings, new ratings and names, and the free traits' ratings and
+   * names) into the trait changes of the update, from the data stored when the form is submitted; the other inputs (name, portrait, kind) are
    * read as Foundry reads them. A rating
    * input that can't be read refuses the whole submit (thrown, so the form shows it as an error).
    * @override
    */
   _processFormData(event, form, formData) {
     const {
-      [RATING_INPUTS]: ratings, [NEW_RATING_INPUTS]: newRatings, [NAME_INPUTS]: names, ...data
+      [RATING_INPUTS]: ratings, [NEW_RATING_INPUTS]: newRatings, [NAME_INPUTS]: names,
+      [FREE_RATING_INPUTS]: freeRatings, [FREE_NAME_INPUTS]: freeNames, ...data
     } = super._processFormData(event, form, formData);
-    const traits = sheetTraitChanges(this.actor.system.toObject(), getGameConfig(), { ratings, newRatings, names },
+    const stored = this.actor.system.toObject();
+    const traits = sheetTraitChanges(stored, getGameConfig(), { ratings, newRatings, names },
       () => foundry.utils.randomID());
     if ( !traits.ok ) throw new Error(CharacterSheet.#refusalText(traits.code));
+    const freeTraits = freeTraitChanges(stored, { ratings: freeRatings, names: freeNames });
+    if ( !freeTraits.ok ) throw new Error(CharacterSheet.#refusalText(freeTraits.code));
     // The kind select submits "system.kindId"; the trait changes go beside it.
     if ( Object.keys(traits.value).length ) data.system = { ...data.system, traits: traits.value };
+    if ( freeTraits.value ) data.system = { ...data.system, freeTraits: freeTraits.value };
     return data;
   }
 

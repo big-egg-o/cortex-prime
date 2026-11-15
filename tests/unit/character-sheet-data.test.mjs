@@ -2,8 +2,8 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
-  NAME_INPUTS, NEW_RATING_INPUTS, RATING_INPUTS, addTraitEntry, characterSheetView, removeTraitEntry, sheetTraitChanges,
-  traitChangesFromInputs
+  FREE_NAME_INPUTS, FREE_RATING_INPUTS, NAME_INPUTS, NEW_RATING_INPUTS, RATING_INPUTS, addFreeTrait, addTraitEntry,
+  characterSheetView, freeTraitChanges, removeFreeTrait, removeTraitEntry, sheetTraitChanges, traitChangesFromInputs
 } from "../../module/apps/character-sheet-data.mjs";
 import { defaultGameConfig, traitSetById } from "../../module/rules/game-config.mjs";
 
@@ -218,14 +218,15 @@ describe("characterSheetView", () => {
 
   it("says when the character has no kind, or one the configuration doesn't have, and shows no sets", () => {
     const config = defaultGameConfig();
-    expect(characterSheetView({ ...pcSystem(), kindId: null }, config)).toEqual({ kindStatus: "unassigned", kind: null, sets: [] });
+    const unassigned = characterSheetView({ ...pcSystem(), kindId: null }, config);
+    expect(unassigned).toMatchObject({ kindStatus: "unassigned", kind: null, sets: [], freeTraits: null });
     expect(characterSheetView({ ...pcSystem(), kindId: "noSuchKind000000" }, config))
-      .toEqual({ kindStatus: "unknown", kind: null, sets: [] });
+      .toMatchObject({ kindStatus: "unknown", kind: null, sets: [], freeTraits: null });
   });
 
   it("shows a kind without sets as having none", () => {
     const view = characterSheetView({ ...pcSystem(), kindId: MINOR_GMC }, defaultGameConfig());
-    expect(view).toEqual({ kindStatus: "assigned", kind: { id: MINOR_GMC, name: "Minor GMC" }, sets: [] });
+    expect(view).toMatchObject({ kindStatus: "assigned", kind: { id: MINOR_GMC, name: "Minor GMC" }, sets: [], freeTraits: [] });
   });
 
   it("shows a set the actor holds nothing in as an open set with no traits", () => {
@@ -414,6 +415,137 @@ describe("trait management (Character Sheets behaviours 13 and 14)", () => {
     for ( const code of ["INVALID_TRAIT_DATA", "INVALID_DIE_SIZE", "UNKNOWN_TRAIT_SET", "UNKNOWN_TRAIT", "TRAIT_SET_NOT_OPEN"] ) {
       expect(lang.CORTEX.Character.Errors[code], code).toBeTypeOf("string");
     }
+  });
+});
+
+describe("free traits (Character Sheets behaviour 9, TS-22)", () => {
+  const config = deepFreeze(defaultGameConfig());
+  const DEPUTY = "freeDeputy000000";
+  const BREATH = "freeBreath000000";
+  const gmc = () => deepFreeze({
+    schemaVersion: 1, kindId: MINOR_GMC, traits: {},
+    freeTraits: [{ id: DEPUTY, name: "Crooked Deputy", dice: [8] }, { id: BREATH, name: "Short of Breath", dice: [] }]
+  });
+
+  it("lists a kind's free traits in stored order, each with its name and rating inputs (CS-11)", () => {
+    const view = characterSheetView(gmc(), config);
+    expect(view.sets).toEqual([]);
+    expect(view.freeTraits.map(t => [t.entryId, t.name, t.dice])).toEqual([
+      [DEPUTY, "Crooked Deputy", [8]], [BREATH, "Short of Breath", []]
+    ]);
+    const [deputy, breath] = view.freeTraits;
+    expect(deputy).toMatchObject({
+      editable: true, rollable: true, poolTraitId: DEPUTY, unrated: false, fallbackDie: null, noDice: false,
+      canHinder: false, canChallenge: false, newSlot: null, nameInput: `${FREE_NAME_INPUTS}.${DEPUTY}`
+    });
+    expect(deputy.slots.map(s => [s.inputName, s.value, s.adds])).toEqual([[`${FREE_RATING_INPUTS}.${DEPUTY}.0`, 8, false]]);
+    // No set, so no fallback die: an empty rating is unrated and gives no die to add.
+    expect(breath).toMatchObject({ unrated: true, rollable: false, fallbackDie: null });
+    expect(breath.slots.map(s => [s.inputName, s.value, s.adds])).toEqual([[`${FREE_RATING_INPUTS}.${BREATH}.0`, null, true]]);
+    expect(view.others).toEqual({ sets: [], freeTraits: [], count: 0 });
+  });
+
+  it("has no free-trait section for a kind without free traits", () => {
+    expect(characterSheetView(pcSystem(), config).freeTraits).toBeNull();
+  });
+
+  it("changes a free trait's rating and name and returns the whole list", () => {
+    const changed = freeTraitChanges(gmc(), {
+      ratings: { [DEPUTY]: { 0: "10" }, [BREATH]: { 0: "4" }, goneTrait0000000: { 0: "6" } },
+      names: { [DEPUTY]: "  Honest Deputy ", [BREATH]: "Short of Breath" }
+    });
+    expect(changed).toEqual({ ok: true, value: [
+      { id: DEPUTY, name: "Honest Deputy", dice: [10] }, { id: BREATH, name: "Short of Breath", dice: [4] }
+    ] });
+  });
+
+  it("reports no change for the stored values, a blank name and missing inputs", () => {
+    expect(freeTraitChanges(gmc(), {})).toEqual({ ok: true, value: null });
+    expect(freeTraitChanges(gmc(), { ratings: { [DEPUTY]: { 0: "8" }, [BREATH]: { 0: "" } }, names: { [DEPUTY]: "  " } }))
+      .toEqual({ ok: true, value: null });
+  });
+
+  it("empties a rating when its die is blanked", () => {
+    const changed = freeTraitChanges(gmc(), { ratings: { [DEPUTY]: { 0: "" } } });
+    expect(changed.value[0]).toEqual({ id: DEPUTY, name: "Crooked Deputy", dice: [] });
+  });
+
+  it("refuses inputs it can't read", () => {
+    expect(freeTraitChanges(gmc(), null)).toEqual({ ok: false, code: "INVALID_TRAIT_DATA" });
+    expect(freeTraitChanges(gmc(), { ratings: [] })).toEqual({ ok: false, code: "INVALID_TRAIT_DATA" });
+    expect(freeTraitChanges(gmc(), { names: "x" })).toEqual({ ok: false, code: "INVALID_TRAIT_DATA" });
+    expect(freeTraitChanges(gmc(), { ratings: { [DEPUTY]: { 0: "7" } } })).toEqual({ ok: false, code: "INVALID_DIE_SIZE" });
+  });
+
+  it("adds a free trait at the end with a trimmed name and no rating", () => {
+    const added = addFreeTrait(gmc(), "freeNew000000000", " Sawed-off ");
+    expect(added.ok).toBe(true);
+    expect(added.value).toHaveLength(3);
+    expect(added.value[2]).toEqual({ id: "freeNew000000000", name: "Sawed-off", dice: [] });
+    expect(addFreeTrait({ kindId: MINOR_GMC, traits: {} }, "freeNew000000000", "First").value).toHaveLength(1);
+    expect(addFreeTrait(gmc(), "freeNew000000000", " ")).toEqual({ ok: false, code: "INVALID_TRAIT_DATA" });
+    expect(addFreeTrait(gmc(), 5, "Name")).toEqual({ ok: false, code: "INVALID_TRAIT_DATA" });
+  });
+
+  it("removes a free trait by id, and refuses one the actor doesn't hold", () => {
+    expect(removeFreeTrait(gmc(), DEPUTY)).toEqual({ ok: true, value: [{ id: BREATH, name: "Short of Breath", dice: [] }] });
+    expect(removeFreeTrait(gmc(), "goneTrait0000000")).toEqual({ ok: false, code: "UNKNOWN_TRAIT" });
+    expect(removeFreeTrait(gmc(), null)).toEqual({ ok: false, code: "INVALID_TRAIT_DATA" });
+  });
+});
+
+describe("other stored traits (Character Sheets behaviour 10, CS-D5, ADR-051)", () => {
+  const config = deepFreeze(defaultGameConfig());
+
+  it("lists an entry no definition matches under its set", () => {
+    const { others } = characterSheetView(pcSystem(), config);
+    expect(others).toEqual({
+      sets: [{ setId: ATTRIBUTES, name: "Attributes", reason: "noDefinition", traits: [
+        { entryId: ENTRY_ORPHAN, name: "Gone", dice: [6] }
+      ] }],
+      freeTraits: [],
+      count: 1
+    });
+  });
+
+  it("lists a second entry for a definition that already has one", () => {
+    const system = pcSystem();
+    system.traits[ATTRIBUTES].entries.push({ id: "entryPhysical002", defId: PHYSICAL, name: "Physical", dice: [10], sfx: [] });
+    const { others } = characterSheetView(system, config);
+    expect(others.sets[0].traits.map(t => t.entryId)).toEqual([ENTRY_ORPHAN, "entryPhysical002"]);
+  });
+
+  it("lists sets outside the kind, sets the configuration lacks, and free traits of a kind without them", () => {
+    const system = pcSystem();
+    system.traits[MOB_TRAIT] = { shutDown: false, sfx: [], entries: [{ id: ENTRY_MOB, defId: null, name: "Mob", dice: [6, 6], sfx: [] }] };
+    system.traits.goneSet000000000 = { shutDown: false, sfx: [], entries: [{ id: "entryGone0000000", defId: null, name: "Relic", dice: [], sfx: [] }] };
+    system.traits[SKILLS] = { shutDown: false, sfx: [], entries: [] };
+    system.freeTraits = [{ id: "freeLeft00000000", name: "Left over", dice: [6] }];
+    const { others } = characterSheetView(system, config);
+    expect(others.sets.map(g => [g.setId, g.name, g.reason, g.traits.map(t => t.name)])).toEqual([
+      [ATTRIBUTES, "Attributes", "noDefinition", ["Gone"]],
+      [MOB_TRAIT, traitSetById(config, MOB_TRAIT).name, "notInKind", ["Mob"]],
+      ["goneSet000000000", null, "unknownSet", ["Relic"]]
+    ]);
+    expect(others.freeTraits).toEqual([{ entryId: "freeLeft00000000", name: "Left over", dice: [6] }]);
+    expect(others.count).toBe(4);
+  });
+
+  it("lists everything stored for a character without a known kind", () => {
+    for ( const kindId of [null, "noSuchKind000000"] ) {
+      const { others } = characterSheetView({ ...pcSystem(), kindId, freeTraits: [{ id: "freeLeft00000000", name: "Left over", dice: [] }] }, config);
+      expect(others.sets.map(g => [g.setId, g.reason, g.traits.length])).toEqual([
+        [ATTRIBUTES, "notInKind", 3], [DISTINCTIONS, "notInKind", 1]
+      ]);
+      expect(others.count).toBe(5);
+    }
+  });
+
+  it("removes a listed entry through removeTraitEntry and keeps the set's key", () => {
+    const system = pcSystem();
+    system.traits[MOB_TRAIT] = { shutDown: false, sfx: [], entries: [{ id: ENTRY_MOB, defId: null, name: "Mob", dice: [6, 6], sfx: [] }] };
+    expect(removeTraitEntry(system, MOB_TRAIT, ENTRY_MOB)).toEqual({ ok: true, value: { entries: [] } });
+    expect(removeTraitEntry(system, ATTRIBUTES, ENTRY_ORPHAN).value.entries.map(e => e.id)).toEqual([ENTRY_PHYSICAL, ENTRY_SOCIAL]);
   });
 });
 

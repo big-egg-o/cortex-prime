@@ -278,6 +278,30 @@ export function registerSheetPoolBatch(quench) {
         });
       });
 
+      describe("free traits (TS-22)", () => {
+        it("a free trait's add button puts its die into the pool, in no set and at no cost", async () => {
+          const deputy = newId();
+          const actor = await createCharacter({
+            kindId: "cpKindMinorGmc00", freeTraits: [{ id: deputy, name: "Crooked Deputy", dice: [8] }]
+          }, "free trait");
+          const sheet = await openSheet(actor);
+          const buttons = sheet.element.querySelectorAll(`fieldset[data-free-traits] [data-pool-trait-id="${deputy}"] button[data-action="addToPool"]`);
+          assert.lengthOf(buttons, 1, "a free trait has neither Hinder nor a challenge");
+          const rendered = nextBuilderRender();
+          buttons[0].click();
+          await rendered;
+
+          const pool = userPool();
+          assert.lengthOf(pool, 1);
+          assert.equal(pool[0].size, 8);
+          assert.deepEqual(pool[0].source, {
+            kind: "trait", actorId: actor.id, traitId: deputy, label: "Crooked Deputy", actorRef: actor.uuid
+          });
+          assert.include(builderApp().element.textContent, game.i18n.format("CORTEX.Builder.Cost", { cost: 0 }));
+          assert.isFalse(await addTraitToPool(actor, null, deputy, "hinder"), "Hinder is a set's feature");
+        });
+      });
+
       describe("adding traits to the pool", () => {
         it("CS-13 Hinder adds one d4, and the builder shows the plot point it gains, unpaid", async () => {
           const { system, smuggler, optimist } = pcSystem();

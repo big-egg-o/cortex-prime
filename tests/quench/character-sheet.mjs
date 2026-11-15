@@ -17,6 +17,7 @@ import { defaultGameConfig, traitSetById } from "../../module/rules/index.mjs";
 // Ids from the ADR-036 defaults, which the batch stores as the world's configuration while it runs.
 const PC_KIND = "cpKindPlayerChar";
 const MOB_KIND = "cpKindMob0000000";
+const MINOR_GMC_KIND = "cpKindMinorGmc00";
 const DISTINCTIONS = "cpSetDistinction";
 const ATTRIBUTES = "cpSetAttributes0";
 const SKILLS = "cpSetSkills00000";
@@ -409,6 +410,149 @@ export function registerCharacterSheetBatch(quench) {
           name.dispatchEvent(new Event("change", { bubbles: true }));
           await updated;
           assert.equal(storedSystem(actor).kindId, unknown);
+        });
+      });
+
+      describe("free traits and other stored traits (behaviours 9 and 10, CS-D5)", () => {
+        /** Turns the sheet's edit mode on or off through its header button. */
+        async function toggleEdit(sheet) {
+          const rendered = nextRender(sheet);
+          sheet.element.querySelector('button[data-action="toggleEdit"]').click();
+          await rendered;
+        }
+
+        /** Clicks a remove button and answers the confirmation that follows. */
+        async function clickRemove(button, answer) {
+          button.click();
+          const started = Date.now();
+          let dialog = null;
+          while ( !dialog && ((Date.now() - started) < WAIT_MS) ) {
+            await new Promise(resolve => setTimeout(resolve, 50));
+            dialog = [...foundry.applications.instances.values()]
+              .find(app => (app instanceof foundry.applications.api.DialogV2) && app.rendered) ?? null;
+          }
+          assert.isNotNull(dialog, "the remove button asks first");
+          dialog.element.querySelector(`button[data-action="${answer}"]`).click();
+        }
+
+        const freeSection = sheet => sheet.element.querySelector("fieldset[data-free-traits]");
+
+        it("CS-11 a minor GMC gets a free-traits section: add, name, rate, kept after reopening, remove", async () => {
+          const actor = await createCharacter({ kindId: MINOR_GMC_KIND });
+          const sheet = await openSheet(actor);
+          assert.deepEqual(setNames(sheet), [game.i18n.localize("CORTEX.Sheet.FreeTraits")], "no set section (TS-22)");
+          assert.isNull(sheet.element.querySelector(".notification"), "a kind with only free traits shows no notice");
+          assert.isNull(freeSection(sheet).querySelector('[data-action="addTrait"]'), "adding is for edit mode");
+
+          await toggleEdit(sheet);
+          let updated = nextUpdate(actor);
+          freeSection(sheet).querySelector('[data-action="addTrait"]').click();
+          await updated;
+          const free = storedSystem(actor).freeTraits;
+          assert.lengthOf(free, 1);
+          const id = free[0].id;
+          assert.deepEqual(free[0], { id, name: game.i18n.localize("CORTEX.Sheet.NewTrait"), dice: [] });
+
+          await nextRenderOrNow(sheet);
+          updated = nextUpdate(actor);
+          const nameInput = sheet.element.querySelector(`input[name="freeNames.${id}"]`);
+          nameInput.value = "Crooked Deputy";
+          nameInput.dispatchEvent(new Event("change", { bubbles: true }));
+          await updated;
+          await nextRenderOrNow(sheet);
+          assert.isNull(freeSection(sheet).querySelector('button[data-action="addToPool"]'), "an unrated trait gives no die");
+
+          updated = nextUpdate(actor);
+          const die = sheet.element.querySelector(`select[name="freeRatings.${id}.0"]`);
+          die.value = "8";
+          die.dispatchEvent(new Event("change", { bubbles: true }));
+          await updated;
+          assert.deepEqual(storedSystem(actor).freeTraits, [{ id, name: "Crooked Deputy", dice: [8] }]);
+
+          await sheet.close();
+          const reopened = await openSheet(actor);
+          assert.equal(reopened.element.querySelector(`select[name="freeRatings.${id}.0"]`).value, "8");
+          assert.include(freeSection(reopened).textContent, "Crooked Deputy");
+          assert.isNotNull(freeSection(reopened).querySelector(`[data-pool-trait-id="${id}"] button[data-action="addToPool"]`));
+
+          // The remove button asks first: "no" keeps the trait, "yes" removes it.
+          await toggleEdit(reopened);
+          await clickRemove(freeSection(reopened).querySelector('[data-action="removeTrait"]'), "no");
+          await new Promise(resolve => setTimeout(resolve, 200));
+          assert.lengthOf(storedSystem(actor).freeTraits, 1);
+          updated = nextUpdate(actor);
+          await clickRemove(freeSection(reopened).querySelector('[data-action="removeTrait"]'), "yes");
+          await updated;
+          assert.deepEqual(storedSystem(actor).freeTraits, []);
+        });
+
+        it("a kind without free traits has no free-traits section", async () => {
+          const sheet = await openSheet(await createCharacter(pcSystem().system));
+          assert.isNull(freeSection(sheet));
+        });
+
+        it("CS-D5 edit mode lists the stored traits no section shows; each is removed only by hand", async () => {
+          const { system, orphan, physical, social } = pcSystem();
+          const thugs = newId();
+          const leftOver = newId();
+          system.traits[MOB_TRAIT] = { entries: [{ id: thugs, defId: null, name: "Thugs", dice: [6, 6], sfx: [] }] };
+          system.freeTraits = [{ id: leftOver, name: "Left over", dice: [6] }];
+          const actor = await createCharacter(system);
+          const sheet = await openSheet(actor);
+          const others = () => sheet.element.querySelector("fieldset.cp-other-traits");
+          assert.isNull(others(), "play mode doesn't list them");
+          assert.isNull(freeSection(sheet));
+
+          await toggleEdit(sheet);
+          const groups = () => [...others().querySelectorAll(".cp-other-group")].map(group => ({
+            setId: group.dataset.setId ?? null,
+            free: "freeTraits" in group.dataset,
+            title: group.querySelector("h4").textContent.trim(),
+            traits: [...group.querySelectorAll(".cp-trait")].map(row => row.dataset.entryId)
+          }));
+          const mobName = traitSetById(getGameConfig(), MOB_TRAIT).name;
+          assert.deepEqual(groups(), [
+            { setId: ATTRIBUTES, free: false, title: game.i18n.format("CORTEX.Sheet.Others.noDefinition", { set: "Attributes" }), traits: [orphan] },
+            { setId: MOB_TRAIT, free: false, title: game.i18n.format("CORTEX.Sheet.Others.notInKind", { set: mobName }), traits: [thugs] },
+            { setId: null, free: true, title: game.i18n.localize("CORTEX.Sheet.Others.freeTraits"), traits: [leftOver] }
+          ]);
+          assert.include(others().textContent, "Gone");
+          assert.include(others().textContent, "d6 d6");
+
+          // An unrelated edit keeps all of them (ADR-051: nothing is removed automatically).
+          let updated = nextUpdate(actor);
+          dieInput(sheet, ATTRIBUTES, physical, 0).value = "10";
+          dieInput(sheet, ATTRIBUTES, physical, 0).dispatchEvent(new Event("change", { bubbles: true }));
+          await updated;
+          let stored = storedSystem(actor);
+          assert.deepEqual(stored.traits[ATTRIBUTES].entries.map(e => e.id), [physical, orphan, social]);
+          assert.lengthOf(stored.traits[MOB_TRAIT].entries, 1);
+          assert.lengthOf(stored.freeTraits, 1);
+          await nextRenderOrNow(sheet);
+
+          // Removing through the list's button, after its confirmation.
+          updated = nextUpdate(actor);
+          await clickRemove(others().querySelector(`[data-entry-id="${orphan}"] [data-action="removeTrait"]`), "yes");
+          await updated;
+          assert.deepEqual(storedSystem(actor).traits[ATTRIBUTES].entries.map(e => e.id), [physical, social]);
+
+          assert.isTrue(await sheet.removeTrait(MOB_TRAIT, thugs));
+          assert.deepEqual(storedSystem(actor).traits[MOB_TRAIT].entries, [], "the set keeps its key, emptied (ADR-044)");
+          assert.isTrue(await sheet.removeFreeTrait(leftOver));
+          stored = storedSystem(actor);
+          assert.deepEqual(stored.freeTraits, []);
+          await nextRenderOrNow(sheet);
+          assert.isNull(others(), "nothing is left to list");
+        });
+
+        it("lists a character's stored traits when it has no kind", async () => {
+          const { system, distinction } = pcSystem();
+          const actor = await createCharacter({ ...system, kindId: null });
+          const sheet = await openSheet(actor);
+          await toggleEdit(sheet);
+          const rows = sheet.element.querySelectorAll("fieldset.cp-other-traits .cp-trait");
+          assert.lengthOf(rows, 4);
+          assert.isNotNull(sheet.element.querySelector(`fieldset.cp-other-traits [data-entry-id="${distinction}"]`));
         });
       });
 

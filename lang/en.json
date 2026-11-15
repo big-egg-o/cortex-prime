@@ -179,6 +179,8 @@
       "UnknownKind": "This character's actor kind isn't in the game configuration, so its trait sets can't be shown. Its traits are kept as stored.",
       "NoSets": "This character's actor kind has no trait sets.",
       "NoTraits": "No traits in this set yet.",
+      "FreeTraits": "Free traits",
+      "NoFreeTraits": "No free traits yet.",
       "EditMode": "Edit this character's traits",
       "Kind": "Actor kind",
       "ChooseKind": "Choose an actor kind…",
@@ -190,6 +192,14 @@
       "RemoveTitle": "Remove this trait?",
       "RemoveConfirm": "{trait} and everything it holds is removed from this character.",
       "NewRating": "{trait}: set a rating",
+      "Others": {
+        "Title": "Other stored traits",
+        "Hint": "Stored on this character but not shown above. They are kept until you remove them.",
+        "noDefinition": "{set}: not among this set's traits",
+        "notInKind": "{set}: not a set of this actor kind",
+        "unknownSet": "A trait set the game configuration doesn't have ({id})",
+        "freeTraits": "Free traits: this actor kind has none"
+      },
       "Pool": {
         "Add": "Add {trait} to your dice pool",
         "Hinder": "Add {trait} with Hinder: one d4, gains 1 PP",
