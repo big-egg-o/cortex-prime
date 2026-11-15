@@ -36,6 +36,17 @@
         {{/if}}
       </legend>
       {{#if this.shutDown}}<p class="hint cp-shut-down-note">{{ localize "CORTEX.Sheet.ShutDown.Set" }}</p>{{/if}}
+      {{#if this.showSetSfx}}
+      <div class="cp-set-sfx">
+        <h4>{{ localize "CORTEX.Sheet.Details.SetSfx" }}</h4>
+        {{> "systems/cortex-prime/templates/actor/sfx-list.hbs" sfx=this.sfx edit=this.sfxEdit removeAction="removeSetSfx"}}
+        {{#if this.sfxEdit}}
+        <button type="button" class="cp-add-detail" data-action="addSetSfx" aria-label="{{ this.addSetSfxLabel }}">
+          <i class="fa-solid fa-plus" inert></i><span>{{ localize "CORTEX.Sheet.Details.AddSfx" }}</span>
+        </button>
+        {{/if}}
+      </div>
+      {{/if}}
       {{#unless this.traits.length}}<p class="hint">{{ this.emptyText }}</p>{{/unless}}
       {{#each this.traits}}
       <div class="form-group cp-trait{{#if this.shutDown}} cp-shut-down{{/if}}"
@@ -96,6 +107,12 @@
             data-tooltip="{{ this.removeLabel }}" aria-label="{{ this.removeLabel }}"><i class="fa-solid fa-trash" inert></i></button>
           {{/if}}
         </div>
+        {{#if this.descriptionInput}}
+        <input type="text" class="cp-description-input" name="{{ this.descriptionInput }}" value="{{ this.description }}"
+          placeholder="{{ localize "CORTEX.Sheet.Details.Description" }}" aria-label="{{ this.descriptionLabel }}">
+        {{else if this.description}}
+        <p class="cp-description">{{ this.description }}</p>
+        {{/if}}
         {{#if this.statementInput}}
         <input type="text" class="cp-statement-input" name="{{ this.statementInput }}" value="{{ this.statement }}"
           placeholder="{{ localize "CORTEX.Sheet.Statement.Placeholder" }}" aria-label="{{ this.statementLabel }}">
@@ -110,6 +127,50 @@
             data-tooltip="{{ this.resolveLabels.rewritten }}" aria-label="{{ this.resolveLabels.rewritten }}">{{ localize "CORTEX.Sheet.Statement.RewrittenButton" }}</button>
           <button type="button" data-action="resolveChallenge" data-rewritten="false"
             data-tooltip="{{ this.resolveLabels.kept }}" aria-label="{{ this.resolveLabels.kept }}">{{ localize "CORTEX.Sheet.Statement.KeptButton" }}</button>
+          {{/if}}
+        </div>
+        {{/if}}
+        {{#if this.tagsInput}}
+        <string-tags class="cp-tags-input" name="{{ this.tagsInput }}" value="{{ this.tagsValue }}"
+          aria-label="{{ this.tagsLabel }}"></string-tags>
+        {{else if this.tags.length}}
+        <ul class="cp-tags">{{#each this.tags}}<li>{{ this }}</li>{{/each}}</ul>
+        {{/if}}
+        {{#if (or this.sfx.length this.sfxEdit)}}
+        <div class="cp-trait-sfx">
+          {{> "systems/cortex-prime/templates/actor/sfx-list.hbs" sfx=this.sfx edit=this.sfxEdit removeAction="removeSfx"}}
+          {{#if this.sfxEdit}}
+          <button type="button" class="cp-add-detail" data-action="addSfx" aria-label="{{ this.addSfxLabel }}">
+            <i class="fa-solid fa-plus" inert></i><span>{{ localize "CORTEX.Sheet.Details.AddSfx" }}</span>
+          </button>
+          {{/if}}
+        </div>
+        {{/if}}
+        {{#if (or this.subTraits.length this.subEdit)}}
+        <div class="cp-sub-traits">
+          {{#each this.subTraits}}
+          <div class="cp-sub-trait" {{#if this.id}}data-sub-id="{{ this.id }}"{{/if}}>
+            {{#if (and ../subEdit this.nameInput)}}
+            <input type="text" class="cp-sub-name" name="{{ this.nameInput }}" value="{{ this.name }}" aria-label="{{ this.nameLabel }}">
+            {{#each this.slots}}
+            <select name="{{ this.inputName }}" class="cp-die{{#if this.adds}} cp-die-add{{/if}}"
+              aria-label="{{ this.ariaLabel }}" data-tooltip="{{ this.ariaLabel }}">
+              <option value="">{{#if this.adds}}+{{else}}–{{/if}}</option>
+              {{#each this.options}}<option value="{{ this.value }}" {{#if this.selected}}selected{{/if}}>{{ this.label }}</option>{{/each}}
+            </select>
+            {{/each}}
+            <button type="button" class="ui-control icon" data-action="removeSubTrait"
+              data-tooltip="{{ this.removeLabel }}" aria-label="{{ this.removeLabel }}"><i class="fa-solid fa-trash" inert></i></button>
+            {{else}}
+            <span class="cp-sub-name">{{ this.label }}</span>
+            <span class="cp-rating-note">{{ this.ratingText }}</span>
+            {{/if}}
+          </div>
+          {{/each}}
+          {{#if this.subEdit}}
+          <button type="button" class="cp-add-detail" data-action="addSubTrait" aria-label="{{ this.addSubLabel }}">
+            <i class="fa-solid fa-plus" inert></i><span>{{ localize "CORTEX.Sheet.Details.AddSub" }}</span>
+          </button>
           {{/if}}
         </div>
         {{/if}}

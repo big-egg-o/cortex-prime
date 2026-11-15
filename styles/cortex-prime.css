@@ -437,3 +437,91 @@
 .cortex-prime.character-sheet .window-content .cp-shut-down-toggle.active {
   outline: 2px solid var(--color-warm-1);
 }
+
+/* Trait details (Character Sheets behaviours 8 and 16): description, tags, SFX and sub-traits, each
+   on a line of its own under the trait; a set's own SFX under its name. */
+.cortex-prime.character-sheet .window-content .cp-trait > .cp-description,
+.cortex-prime.character-sheet .window-content .cp-trait > .cp-description-input,
+.cortex-prime.character-sheet .window-content .cp-trait > .cp-tags,
+.cortex-prime.character-sheet .window-content .cp-trait > .cp-tags-input,
+.cortex-prime.character-sheet .window-content .cp-trait > .cp-trait-sfx,
+.cortex-prime.character-sheet .window-content .cp-trait > .cp-sub-traits {
+  flex: 0 0 100%;
+  margin: 0;
+}
+
+.cortex-prime.character-sheet .window-content .cp-description {
+  color: var(--color-text-secondary);
+}
+
+.cortex-prime.character-sheet .window-content .cp-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  padding: 0;
+  list-style: none;
+}
+
+.cortex-prime.character-sheet .window-content .cp-tags > li {
+  padding: 0 0.4rem;
+  border: 1px solid var(--color-border);
+  border-radius: 3px;
+  font-size: var(--font-size-12);
+}
+
+.cortex-prime.character-sheet .window-content .cp-sfx-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cortex-prime.character-sheet .window-content .cp-sfx {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  margin: 0.15rem 0;
+}
+
+.cortex-prime.character-sheet .window-content .cp-sfx > i {
+  flex: none;
+  line-height: 1.4;
+}
+
+.cortex-prime.character-sheet .window-content .cp-sfx > textarea {
+  flex: 1;
+  resize: vertical;
+}
+
+.cortex-prime.character-sheet .window-content .cp-sfx > label.checkbox,
+.cortex-prime.character-sheet .window-content .cp-sfx > button {
+  flex: none;
+}
+
+.cortex-prime.character-sheet .window-content .cp-sub-traits {
+  padding-left: 1rem;
+}
+
+.cortex-prime.character-sheet .window-content .cp-sub-trait {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.cortex-prime.character-sheet .window-content .cp-sub-trait > .cp-sub-name {
+  flex: 1;
+}
+
+.cortex-prime.character-sheet .window-content .cp-sub-trait > select,
+.cortex-prime.character-sheet .window-content .cp-sub-trait > button {
+  flex: none;
+}
+
+.cortex-prime.character-sheet .window-content .cp-set-sfx > h4 {
+  margin: 0.25rem 0;
+  font-size: var(--font-size-13);
+}
+
+.cortex-prime.character-sheet .window-content .cp-add-detail {
+  width: auto;
+  margin-top: 0.15rem;
+}

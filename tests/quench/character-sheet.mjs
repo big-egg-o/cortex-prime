@@ -680,6 +680,187 @@ export function registerCharacterSheetBatch(quench) {
         });
       });
 
+      describe("trait details: descriptions, SFX, tags and sub-traits (behaviours 8 and 16)", () => {
+        /** Turns the sheet's edit mode on or off through its header button. */
+        async function toggleEdit(sheet) {
+          const rendered = nextRender(sheet);
+          sheet.element.querySelector('button[data-action="toggleEdit"]').click();
+          await rendered;
+        }
+
+        /** Clicks a remove button and answers the confirmation that follows. */
+        async function clickRemove(button, answer) {
+          button.click();
+          const started = Date.now();
+          let dialog = null;
+          while ( !dialog && ((Date.now() - started) < WAIT_MS) ) {
+            await new Promise(resolve => setTimeout(resolve, 50));
+            dialog = [...foundry.applications.instances.values()]
+              .find(app => (app instanceof foundry.applications.api.DialogV2) && app.rendered) ?? null;
+          }
+          assert.isNotNull(dialog, "the remove button asks first");
+          dialog.element.querySelector(`button[data-action="${answer}"]`).click();
+        }
+
+        /** Stores the defaults with tags, sub-traits and set SFX turned on for Distinctions. */
+        async function withDetails() {
+          const config = defaultGameConfig();
+          Object.assign(traitSetById(config, DISTINCTIONS).features, { tags: true, subTraits: true, setSfx: true });
+          await storeConfig(config);
+        }
+
+        /** Sets a form control's value and fires its change event. */
+        function change(control, value) {
+          if ( control.type === "checkbox" ) control.checked = value;
+          else control.value = value;
+          control.dispatchEvent(new Event("change", { bubbles: true }));
+        }
+
+        const rowOf = (sheet, entryId) => sheet.element.querySelector(`fieldset[data-set-id="${DISTINCTIONS}"] [data-entry-id="${entryId}"]`);
+        const cultOf = actor => storedSystem(actor).traits[DISTINCTIONS].entries[0];
+
+        it("shows a distinction's description, SFX, tags and sub-traits in play mode", async () => {
+          await withDetails();
+          const { system, distinction } = pcSystem();
+          Object.assign(system.traits[DISTINCTIONS].entries[0], {
+            sfx: [{ text: "Hard to fool", unlocked: true }, { text: "Old habits", unlocked: false }],
+            tags: ["past", "cult"],
+            sub: [{ id: newId(), name: "Hiding", dice: [6] }]
+          });
+          system.traits[DISTINCTIONS].sfx = [{ text: "Set trick", unlocked: false }];
+          const sheet = await openSheet(await createCharacter(system));
+          const row = rowOf(sheet, distinction);
+          assert.equal(row.querySelector(".cp-description").textContent.trim(), "Saw too much");
+          assert.deepEqual([...row.querySelectorAll(".cp-sfx span")].map(s => s.textContent.trim()), ["Hard to fool", "Old habits"]);
+          assert.isNotNull(row.querySelector(".cp-sfx.cp-unlocked .fa-lock-open"));
+          assert.deepEqual([...row.querySelectorAll(".cp-tags li")].map(li => li.textContent.trim()), ["past", "cult"]);
+          assert.include(row.querySelector(".cp-sub-traits").textContent, "Hiding");
+          assert.include(row.querySelector(".cp-sub-traits").textContent, "d6");
+          assert.isNull(sheet.element.querySelector("textarea, string-tags, .cp-description-input"), "nothing is edited in play mode");
+          const setSfx = sheet.element.querySelector(`fieldset[data-set-id="${DISTINCTIONS}"] .cp-set-sfx`);
+          assert.include(setSfx.textContent, "Set trick");
+        });
+
+        it("shows no tags, sub-traits or set SFX where the set lacks the feature", async () => {
+          const { system, distinction } = pcSystem();
+          system.traits[DISTINCTIONS].entries[0].tags = ["past"];
+          const sheet = await openSheet(await createCharacter(system));
+          await toggleEdit(sheet);
+          const row = rowOf(sheet, distinction);
+          assert.isNull(row.querySelector(".cp-tags, string-tags, .cp-sub-traits"));
+          assert.isNull(sheet.element.querySelector(".cp-set-sfx"));
+          assert.isNotNull(row.querySelector('[data-action="addSfx"]'), "distinctions have SFX by default");
+          assert.isNull(sheet.element.querySelector(`fieldset[data-set-id="${ATTRIBUTES}"] [data-action="addSfx"]`));
+        });
+
+        it("edits a description, adds an SFX unlocked (CS-D6), edits and removes it, kept after reopening", async () => {
+          await withDetails();
+          const { system, distinction } = pcSystem();
+          const actor = await createCharacter(system);
+          let sheet = await openSheet(actor);
+          await toggleEdit(sheet);
+
+          let updated = nextUpdate(actor);
+          change(rowOf(sheet, distinction).querySelector("input.cp-description-input"), "  Saw far too much ");
+          await updated;
+          assert.equal(cultOf(actor).description, "Saw far too much");
+
+          await nextRenderOrNow(sheet);
+          updated = nextUpdate(actor);
+          rowOf(sheet, distinction).querySelector('[data-action="addSfx"]').click();
+          await updated;
+          assert.deepEqual(cultOf(actor).sfx, [{ text: "", unlocked: true }]);
+
+          await nextRenderOrNow(sheet);
+          updated = nextUpdate(actor);
+          change(rowOf(sheet, distinction).querySelector(".cp-sfx textarea"), "Spend a PP to know the cult's sign");
+          await updated;
+          await nextRenderOrNow(sheet);
+          updated = nextUpdate(actor);
+          change(rowOf(sheet, distinction).querySelector('.cp-sfx input[type="checkbox"]'), false);
+          await updated;
+          assert.deepEqual(cultOf(actor).sfx, [{ text: "Spend a PP to know the cult's sign", unlocked: false }]);
+
+          await sheet.close();
+          sheet = await openSheet(actor);
+          assert.include(rowOf(sheet, distinction).querySelector(".cp-sfx").textContent, "know the cult's sign");
+          assert.isNotNull(rowOf(sheet, distinction).querySelector(".cp-sfx .fa-lock"));
+
+          await toggleEdit(sheet);
+          await clickRemove(rowOf(sheet, distinction).querySelector('[data-action="removeSfx"]'), "no");
+          await new Promise(resolve => setTimeout(resolve, 200));
+          assert.lengthOf(cultOf(actor).sfx, 1, "no keeps the SFX");
+          updated = nextUpdate(actor);
+          await clickRemove(rowOf(sheet, distinction).querySelector('[data-action="removeSfx"]'), "yes");
+          await updated;
+          assert.deepEqual(cultOf(actor).sfx, []);
+          assert.equal(cultOf(actor).description, "Saw far too much", "the rest of the entry is kept");
+        });
+
+        it("edits tags and a sub-trait's name and rating, and removes the sub-trait", async () => {
+          await withDetails();
+          const { system, distinction } = pcSystem();
+          const actor = await createCharacter(system);
+          const sheet = await openSheet(actor);
+          await toggleEdit(sheet);
+
+          let updated = nextUpdate(actor);
+          const tags = rowOf(sheet, distinction).querySelector("string-tags");
+          // Setting the element's value fires its own change event, which submits the form.
+          tags.value = ["cult", "past"];
+          await updated;
+          assert.deepEqual(cultOf(actor).tags, ["cult", "past"]);
+
+          await nextRenderOrNow(sheet);
+          updated = nextUpdate(actor);
+          rowOf(sheet, distinction).querySelector('[data-action="addSubTrait"]').click();
+          await updated;
+          const sub = cultOf(actor).sub[0];
+          assert.deepEqual(sub, { id: sub.id, name: game.i18n.localize("CORTEX.Sheet.NewTrait"), dice: [] });
+
+          await nextRenderOrNow(sheet);
+          updated = nextUpdate(actor);
+          change(rowOf(sheet, distinction).querySelector(`[data-sub-id="${sub.id}"] input.cp-sub-name`), "Hiding");
+          await updated;
+          await nextRenderOrNow(sheet);
+          updated = nextUpdate(actor);
+          change(rowOf(sheet, distinction).querySelector(`[data-sub-id="${sub.id}"] select`), "6");
+          await updated;
+          assert.deepEqual(cultOf(actor).sub, [{ id: sub.id, name: "Hiding", dice: [6] }]);
+
+          await nextRenderOrNow(sheet);
+          updated = nextUpdate(actor);
+          await clickRemove(rowOf(sheet, distinction).querySelector(`[data-sub-id="${sub.id}"] [data-action="removeSubTrait"]`), "yes");
+          await updated;
+          assert.deepEqual(cultOf(actor).sub, []);
+          assert.deepEqual(cultOf(actor).tags, ["cult", "past"]);
+        });
+
+        it("adds, edits and removes a set's own SFX", async () => {
+          await withDetails();
+          const { system } = pcSystem();
+          const actor = await createCharacter(system);
+          const sheet = await openSheet(actor);
+          await toggleEdit(sheet);
+          const setSfx = () => sheet.element.querySelector(`fieldset[data-set-id="${DISTINCTIONS}"] .cp-set-sfx`);
+
+          let updated = nextUpdate(actor);
+          setSfx().querySelector('[data-action="addSetSfx"]').click();
+          await updated;
+          assert.deepEqual(storedSystem(actor).traits[DISTINCTIONS].sfx, [{ text: "", unlocked: true }]);
+
+          await nextRenderOrNow(sheet);
+          updated = nextUpdate(actor);
+          change(setSfx().querySelector("textarea"), "Once per session");
+          await updated;
+          assert.deepEqual(storedSystem(actor).traits[DISTINCTIONS].sfx, [{ text: "Once per session", unlocked: true }]);
+          assert.lengthOf(storedSystem(actor).traits[DISTINCTIONS].entries, 1, "the set's traits are kept");
+
+          assert.isTrue(await sheet.removeSetSfx(DISTINCTIONS, 0));
+          assert.deepEqual(storedSystem(actor).traits[DISTINCTIONS].sfx, []);
+        });
+      });
+
       describe("editing a rating", () => {
         it("saves an edited rating through Actor#update, and it is there when the sheet is opened again", async () => {
           const { system, physical, social, orphan } = pcSystem();
