@@ -337,7 +337,7 @@ export function registerContestModelBatch(quench) {
         // (common/data/fields.mjs, DataField#clean and DataField#getInitialValue), and no schema-version
         // step is needed (Decisions, ADR-021, Step 4.4 S3 proposal review).
         it("RQ-035 a test stored before oppositionTakeOut existed reads it as null, created or loaded strictly", async () => {
-          const { system } = tc44Test();
+          const { system, state } = tc44Test();
           delete system.flow.oppositionTakeOut;
           const message = await create("contest", system);
           assert.isDefined(message, "Foundry stores the message");
@@ -347,7 +347,7 @@ export function registerContestModelBatch(quench) {
           delete source.system.flow.oppositionTakeOut;
           const loaded = ChatMessage.implementation.fromSource(source, { strict: true, clean: { expand: false } });
           assert.isNull(loaded.system.toObject().flow.oppositionTakeOut);
-          assert.deepEqual(unwrap(engineStateOf(loaded.system.toObject().flow), "engineStateOf"), tc44Test().state);
+          assert.deepEqual(unwrap(engineStateOf(loaded.system.toObject().flow), "engineStateOf"), state);
         });
 
         it("migrateData leaves a current source, a partial update source and an empty source unchanged", () => {
