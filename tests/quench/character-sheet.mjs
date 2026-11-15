@@ -93,6 +93,16 @@ function nextRender(sheet) {
 }
 
 /**
+ * Lets a render that an update has just started finish: Foundry renders a document's sheets
+ * after the update hook, so a test that reads the sheet right after the hook waits for it.
+ * @param {CharacterSheet} sheet
+ * @returns {Promise<void>}
+ */
+async function nextRenderOrNow(sheet) {
+  await Promise.race([nextRender(sheet).catch(() => {}), new Promise(resolve => setTimeout(resolve, 500))]);
+}
+
+/**
  * Waits for the next stored update of an actor.
  * @param {Actor} actor
  * @returns {Promise<object>} the update's changes; rejects after WAIT_MS
@@ -258,13 +268,15 @@ export function registerCharacterSheetBatch(quench) {
           assert.deepEqual(setNames(sheet), ["Distinctions", "Approaches", "Skills"]);
         });
 
-        it("shows a fixed set's trait the actor holds no entry for with its fallback die and no input", async () => {
+        it("shows a fixed set's trait the actor holds no entry for with its fallback die and an input that creates the entry", async () => {
           const actor = await createCharacter(pcSystem().system);
           const sheet = await openSheet(actor);
           const fight = traitRow(sheet, SKILLS, "Fight");
           assert.isNotNull(fight);
-          assert.isNull(fight.querySelector("select"));
           assert.include(fight.textContent, "d4");
+          const input = fight.querySelector("select");
+          assert.match(input.name, /^newRatings\./);
+          assert.equal(input.value, "", "nothing is chosen until the user chooses");
         });
 
         it("says when the character has no actor kind, and shows no sets", async () => {
@@ -273,6 +285,130 @@ export function registerCharacterSheetBatch(quench) {
           assert.deepEqual(setNames(sheet), []);
           assert.include(sheet.element.querySelector(".notification")?.textContent ?? "",
             game.i18n.localize("CORTEX.Sheet.NoKind"));
+        });
+      });
+
+      describe("trait management (behaviours 13 and 14, CS-D1, CS-D3)", () => {
+        /** Turns the sheet's edit mode on or off through its header button. */
+        async function toggleEdit(sheet) {
+          const rendered = nextRender(sheet);
+          sheet.element.querySelector('button[data-action="toggleEdit"]').click();
+          await rendered;
+        }
+
+        it("CS-09 choosing a rating for a fixed-set trait without an entry creates the entry, kept after reopening", async () => {
+          const { system } = pcSystem();
+          const actor = await createCharacter(system);
+          const sheet = await openSheet(actor);
+          const mental = traitRow(sheet, ATTRIBUTES, "Mental").querySelector("select");
+          const updated = nextUpdate(actor);
+          mental.value = "10";
+          mental.dispatchEvent(new Event("change", { bubbles: true }));
+          await updated;
+
+          const entries = storedSystem(actor).traits[ATTRIBUTES].entries;
+          assert.lengthOf(entries, 4);
+          const created = entries.at(-1);
+          assert.deepInclude(created, { defId: "cpAttrMental0000", name: "Mental", dice: [10] });
+          assert.match(created.id, /^[a-zA-Z0-9]{16}$/);
+
+          await sheet.close();
+          const reopened = await openSheet(actor);
+          assert.equal(dieInput(reopened, ATTRIBUTES, created.id, 0).value, "10");
+        });
+
+        it("opens in play mode; the edit toggle shows name inputs, remove buttons and Add on open sets only", async () => {
+          const actor = await createCharacter(pcSystem().system);
+          const sheet = await openSheet(actor);
+          const count = selector => sheet.element.querySelectorAll(selector).length;
+          assert.equal(count("input.cp-trait-name") + count('[data-action="removeTrait"]') + count('[data-action="addTrait"]'), 0);
+
+          await toggleEdit(sheet);
+          assert.equal(count(`fieldset[data-set-id="${DISTINCTIONS}"] input.cp-trait-name`), 1);
+          assert.equal(count(`fieldset[data-set-id="${DISTINCTIONS}"] [data-action="addTrait"]`), 1);
+          assert.equal(count(`fieldset[data-set-id="${ATTRIBUTES}"] input.cp-trait-name`), 0, "a fixed set's traits aren't renamed");
+          assert.equal(count(`fieldset[data-set-id="${ATTRIBUTES}"] [data-action="addTrait"]`), 0);
+
+          await toggleEdit(sheet);
+          assert.equal(count("input.cp-trait-name"), 0);
+        });
+
+        it("CS-10 adds a distinction at the set's starting rating, renames it and removes it", async () => {
+          const { system, distinction } = pcSystem();
+          const actor = await createCharacter(system);
+          const sheet = await openSheet(actor);
+          await toggleEdit(sheet);
+
+          let updated = nextUpdate(actor);
+          sheet.element.querySelector(`fieldset[data-set-id="${DISTINCTIONS}"] [data-action="addTrait"]`).click();
+          await updated;
+          let entries = storedSystem(actor).traits[DISTINCTIONS].entries;
+          assert.lengthOf(entries, 2);
+          const added = entries[1];
+          assert.deepInclude(added, { defId: null, name: game.i18n.localize("CORTEX.Sheet.NewTrait"), dice: [8] });
+
+          await nextRenderOrNow(sheet);
+          const nameInput = sheet.element.querySelector(`input[name="names.${DISTINCTIONS}.${added.id}"]`);
+          assert.isNotNull(nameInput, "edit mode stays on after the add");
+          updated = nextUpdate(actor);
+          nameInput.value = "Retired Smuggler";
+          nameInput.dispatchEvent(new Event("change", { bubbles: true }));
+          await updated;
+          entries = storedSystem(actor).traits[DISTINCTIONS].entries;
+          assert.deepEqual(entries.map(e => e.name), ["Cult Survivor", "Retired Smuggler"]);
+          assert.equal(entries[0].description, "Saw too much", "the other entry is untouched");
+
+          assert.isTrue(await sheet.removeTrait(DISTINCTIONS, distinction));
+          assert.deepEqual(storedSystem(actor).traits[DISTINCTIONS].entries.map(e => e.id), [added.id]);
+          assert.isTrue(await sheet.removeTrait(DISTINCTIONS, added.id));
+          assert.deepEqual(storedSystem(actor).traits[DISTINCTIONS], { shutDown: false, sfx: [], entries: [] },
+            "an emptied set keeps its key (ADR-044)");
+        });
+
+        it("CS-D3 a character without a kind offers the choice in play mode; choosing one shows its sets", async () => {
+          const actor = await createCharacter({});
+          const sheet = await openSheet(actor);
+          const select = sheet.element.querySelector('select[name="system.kindId"]');
+          assert.isNotNull(select);
+          assert.equal(select.value, "");
+          const updated = nextUpdate(actor);
+          select.value = PC_KIND;
+          select.dispatchEvent(new Event("change", { bubbles: true }));
+          await updated;
+          assert.equal(storedSystem(actor).kindId, PC_KIND);
+          await nextRenderOrNow(sheet);
+          assert.deepEqual(setNames(sheet), ["Distinctions", "Attributes", "Skills"]);
+          assert.isNull(sheet.element.querySelector('select[name="system.kindId"]'), "a set kind isn't offered in play mode");
+        });
+
+        it("CS-D3 a GM changes a set kind in edit mode, and the stored traits are kept (CS-E02)", async () => {
+          const { system } = pcSystem();
+          const actor = await createCharacter(system);
+          const before = storedSystem(actor).traits;
+          const sheet = await openSheet(actor);
+          await toggleEdit(sheet);
+          const select = sheet.element.querySelector('select[name="system.kindId"]');
+          assert.equal(select.value, PC_KIND);
+          const updated = nextUpdate(actor);
+          select.value = MOB_KIND;
+          select.dispatchEvent(new Event("change", { bubbles: true }));
+          await updated;
+          assert.equal(storedSystem(actor).kindId, MOB_KIND);
+          assert.deepEqual(storedSystem(actor).traits, before);
+        });
+
+        it("keeps a kind the configuration doesn't have when another field is submitted in edit mode", async () => {
+          const unknown = newId();
+          const actor = await createCharacter({ kindId: unknown });
+          const sheet = await openSheet(actor);
+          await toggleEdit(sheet);
+          assert.equal(sheet.element.querySelector('select[name="system.kindId"]').value, unknown);
+          const updated = nextUpdate(actor);
+          const name = sheet.element.querySelector('input[name="name"]');
+          name.value = "[Quench] renamed";
+          name.dispatchEvent(new Event("change", { bubbles: true }));
+          await updated;
+          assert.equal(storedSystem(actor).kindId, unknown);
         });
       });
 

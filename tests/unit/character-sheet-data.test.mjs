@@ -2,7 +2,8 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
-  RATING_INPUTS, characterSheetView, traitChangesFromInputs
+  NAME_INPUTS, NEW_RATING_INPUTS, RATING_INPUTS, addTraitEntry, characterSheetView, removeTraitEntry, sheetTraitChanges,
+  traitChangesFromInputs
 } from "../../module/apps/character-sheet-data.mjs";
 import { defaultGameConfig, traitSetById } from "../../module/rules/game-config.mjs";
 
@@ -305,6 +306,114 @@ describe("traitChangesFromInputs", () => {
     expect(traitChangesFromInputs(pcSystem(), { [ATTRIBUTES]: "8" }).code).toBe("INVALID_TRAIT_DATA");
     expect(traitChangesFromInputs(pcSystem(), { [ATTRIBUTES]: { [ENTRY_PHYSICAL]: "8" } }).code).toBe("INVALID_TRAIT_DATA");
     expect(traitChangesFromInputs(pcSystem(), { [ATTRIBUTES]: { [ENTRY_PHYSICAL]: { first: "8" } } }).code).toBe("INVALID_TRAIT_DATA");
+  });
+});
+
+describe("trait management (Character Sheets behaviours 13 and 14)", () => {
+  const NEW_ID = "newEntry00000001";
+  const makeId = () => NEW_ID;
+
+  it("gives a fixed-set trait without an entry an input that creates it, and an open-set trait a name input", () => {
+    const view = characterSheetView(pcSystem(), defaultGameConfig());
+    const attributes = view.sets.find(s => s.id === ATTRIBUTES);
+    expect(attributes.open).toBe(false);
+    expect(attributes.traits.map(t => t.newSlot?.inputName ?? null)).toEqual([
+      null, `${NEW_RATING_INPUTS}.${ATTRIBUTES}.cpAttrMental0000.0`, null
+    ]);
+    expect(attributes.traits.map(t => t.nameInput)).toEqual([null, null, null]);
+    const distinctions = view.sets.find(s => s.id === DISTINCTIONS);
+    expect(distinctions.open).toBe(true);
+    expect(distinctions.traits.map(t => [t.nameInput, t.newSlot])).toEqual([[`${NAME_INPUTS}.${DISTINCTIONS}.${ENTRY_CULT}`, null]]);
+
+    // A set without dice has nothing to rate.
+    const config = defaultGameConfig();
+    traitSetById(config, ATTRIBUTES).hasDice = false;
+    expect(characterSheetView(pcSystem(), config).sets.find(s => s.id === ATTRIBUTES).traits[1].newSlot).toBeNull();
+  });
+
+  it("CS-09 a rating chosen for Mental creates its entry: new id, definition id, name snapshot, the rating", () => {
+    const result = sheetTraitChanges(deepFreeze(pcSystem()), deepFreeze(defaultGameConfig()),
+      { newRatings: { [ATTRIBUTES]: { cpAttrMental0000: { 0: "8" } } } }, makeId);
+    expect(Object.keys(result.value)).toEqual([ATTRIBUTES]);
+    expect(result.value[ATTRIBUTES].entries).toEqual([
+      ...pcSystem().traits[ATTRIBUTES].entries,
+      { id: NEW_ID, defId: "cpAttrMental0000", name: "Mental", dice: [8], sfx: [] }
+    ]);
+  });
+
+  it("creates an entry in a set the actor holds nothing in yet, together with a rating change elsewhere", () => {
+    const result = sheetTraitChanges(pcSystem(), defaultGameConfig(), {
+      ratings: { [ATTRIBUTES]: { [ENTRY_PHYSICAL]: { 0: "10" } } },
+      newRatings: { [SKILLS]: { cpSkillFight0000: { 0: 6 } } }
+    }, makeId);
+    expect(result.value[SKILLS]).toEqual({ entries: [{ id: NEW_ID, defId: "cpSkillFight0000", name: "Fight", dice: [6], sfx: [] }] });
+    expect(result.value[ATTRIBUTES].entries[0].dice).toEqual([10]);
+  });
+
+  it("ignores a blank choice, a definition the set doesn't have, an open set, and a definition that has an entry by now", () => {
+    const form = newRatings => sheetTraitChanges(pcSystem(), defaultGameConfig(), { newRatings }, makeId);
+    expect(form({ [ATTRIBUTES]: { cpAttrMental0000: { 0: "" } } })).toEqual({ ok: true, value: {} });
+    expect(form({ [ATTRIBUTES]: { noSuchDef0000000: { 0: "8" } } })).toEqual({ ok: true, value: {} });
+    expect(form({ [DISTINCTIONS]: { cpAttrMental0000: { 0: "8" } } })).toEqual({ ok: true, value: {} });
+    expect(form({ [ATTRIBUTES]: { cpAttrPhysical00: { 0: "8" } } })).toEqual({ ok: true, value: {} });
+    expect(form({ [ATTRIBUTES]: { cpAttrMental0000: { 0: "7" } } })).toEqual({ ok: false, code: "INVALID_DIE_SIZE" });
+    expect(form("x")).toEqual({ ok: false, code: "INVALID_TRAIT_DATA" });
+  });
+
+  it("renames an open-set trait, trimmed, and keeps everything else it holds", () => {
+    const result = sheetTraitChanges(deepFreeze(pcSystem()), defaultGameConfig(),
+      { names: { [DISTINCTIONS]: { [ENTRY_CULT]: "  Reformed Cultist " } } }, makeId);
+    expect(result.value[DISTINCTIONS].entries).toEqual([
+      { ...pcSystem().traits[DISTINCTIONS].entries[0], name: "Reformed Cultist" }
+    ]);
+  });
+
+  it("changes nothing for the same name, a blank name, a name that isn't text, or a fixed set's trait", () => {
+    const form = names => sheetTraitChanges(pcSystem(), defaultGameConfig(), { names }, makeId);
+    expect(form({ [DISTINCTIONS]: { [ENTRY_CULT]: "Cult Survivor" } })).toEqual({ ok: true, value: {} });
+    expect(form({ [DISTINCTIONS]: { [ENTRY_CULT]: "   " } })).toEqual({ ok: true, value: {} });
+    expect(form({ [DISTINCTIONS]: { [ENTRY_CULT]: 7 } })).toEqual({ ok: true, value: {} });
+    expect(form({ [ATTRIBUTES]: { [ENTRY_PHYSICAL]: "Body" } })).toEqual({ ok: true, value: {} });
+    expect(form({ [DISTINCTIONS]: "x" })).toEqual({ ok: false, code: "INVALID_TRAIT_DATA" });
+  });
+
+  it("applies a rename and a rating change of one entry together", () => {
+    const result = sheetTraitChanges(pcSystem(), defaultGameConfig(), {
+      ratings: { [DISTINCTIONS]: { [ENTRY_CULT]: { 0: "10" } } }, names: { [DISTINCTIONS]: { [ENTRY_CULT]: "Reformed" } }
+    }, makeId);
+    expect(result.value[DISTINCTIONS].entries[0]).toMatchObject({ name: "Reformed", dice: [10], description: "Saw too much" });
+  });
+
+  it("CS-10 adds a distinction at the set's starting rating, and a trait without a rating where the set has none", () => {
+    const added = addTraitEntry(deepFreeze(pcSystem()), defaultGameConfig(), DISTINCTIONS, NEW_ID, " Retired Smuggler ");
+    expect(added.value.entries).toEqual([
+      ...pcSystem().traits[DISTINCTIONS].entries,
+      { id: NEW_ID, defId: null, name: "Retired Smuggler", dice: [8], sfx: [] }
+    ]);
+    // The mob trait has no starting rating; the actor holds nothing in that set yet.
+    expect(addTraitEntry(pcSystem(), defaultGameConfig(), MOB_TRAIT, NEW_ID, "Thugs").value)
+      .toEqual({ entries: [{ id: NEW_ID, defId: null, name: "Thugs", dice: [], sfx: [] }] });
+  });
+
+  it("refuses adding to a fixed set, an unknown set, or with a blank name", () => {
+    const config = defaultGameConfig();
+    expect(addTraitEntry(pcSystem(), config, ATTRIBUTES, NEW_ID, "Luck")).toEqual({ ok: false, code: "TRAIT_SET_NOT_OPEN" });
+    expect(addTraitEntry(pcSystem(), config, "noSuchSet0000000", NEW_ID, "Luck")).toEqual({ ok: false, code: "UNKNOWN_TRAIT_SET" });
+    expect(addTraitEntry(pcSystem(), config, DISTINCTIONS, NEW_ID, "  ")).toEqual({ ok: false, code: "INVALID_TRAIT_DATA" });
+  });
+
+  it("removes one trait and keeps the others; an emptied set keeps an empty list (ADR-044)", () => {
+    const removed = removeTraitEntry(deepFreeze(pcSystem()), ATTRIBUTES, ENTRY_ORPHAN);
+    expect(removed.value.entries.map(e => e.id)).toEqual([ENTRY_PHYSICAL, ENTRY_SOCIAL]);
+    expect(removeTraitEntry(pcSystem(), DISTINCTIONS, ENTRY_CULT)).toEqual({ ok: true, value: { entries: [] } });
+    expect(removeTraitEntry(pcSystem(), DISTINCTIONS, "noSuchEntry00000")).toEqual({ ok: false, code: "UNKNOWN_TRAIT" });
+    expect(removeTraitEntry(pcSystem(), 5, ENTRY_CULT)).toEqual({ ok: false, code: "INVALID_TRAIT_DATA" });
+  });
+
+  it("has a refusal string for every code the trait-management functions return", () => {
+    for ( const code of ["INVALID_TRAIT_DATA", "INVALID_DIE_SIZE", "UNKNOWN_TRAIT_SET", "UNKNOWN_TRAIT", "TRAIT_SET_NOT_OPEN"] ) {
+      expect(lang.CORTEX.Character.Errors[code], code).toBeTypeOf("string");
+    }
   });
 });
 

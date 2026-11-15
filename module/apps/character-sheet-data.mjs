@@ -11,13 +11,22 @@
  */
 
 import { fail, ok } from "../rules/result.mjs";
-import { actorKindById, traitSetById } from "../rules/game-config.mjs";
+import { actorKindById, traitDefById, traitSetById } from "../rules/game-config.mjs";
 import { ratingGuidance } from "../rules/sheet-hints.mjs";
 import { effectiveRating } from "../rules/trait-pool.mjs";
 import { DIE_SIZES } from "../rules/types.mjs";
 
 /** The top-level name of the sheet's rating inputs: `ratings.<setId>.<entryId>.<dieIndex>`. */
 export const RATING_INPUTS = "ratings";
+
+/**
+ * The top-level name of the rating inputs of fixed-set traits the actor holds no entry for:
+ * `newRatings.<setId>.<defId>.<dieIndex>`. Choosing a die there creates the entry.
+ */
+export const NEW_RATING_INPUTS = "newRatings";
+
+/** The top-level name of the name inputs of open-set traits: `names.<setId>.<entryId>`. */
+export const NAME_INPUTS = "names";
 
 /**
  * @typedef {object} RatingSlot
@@ -44,6 +53,10 @@ export const RATING_INPUTS = "ratings";
  * @property {boolean} noDice - the set has no dice (rule 3)
  * @property {string[]} hints - ratingGuidance's codes (rule 9, ADR-037 point 5)
  * @property {boolean} shutDown - the trait or its whole set is flagged shut down (rule 15)
+ * @property {{inputName: string, options: {value: number, label: string}[]}|null} newSlot - for a
+ *   fixed set's trait the actor holds no entry for, in a set with dice: the input whose choice
+ *   creates the entry (Character Sheets behaviour 13); null otherwise
+ * @property {string|null} nameInput - the name of an open-set trait's name input, for edit mode
  * @property {string|null} poolTraitId - the id the pool knows the trait by: a fixed set's
  *   definition id, an open set's entry id (module/rules/pool-traits.mjs)
  * @property {boolean} rollable - the trait gives a die, its rating or its set's fallback, so it
@@ -60,6 +73,8 @@ export const RATING_INPUTS = "ratings";
  * @property {boolean} hasDice
  * @property {boolean} multiDice
  * @property {boolean} shutDown - the whole set is flagged shut down (rule 15)
+ * @property {boolean} open - each actor adds its own traits (ADR-034), so the sheet's edit mode
+ *   offers adding, renaming and removing them
  * @property {SheetTrait[]} traits
  */
 
@@ -143,6 +158,11 @@ function traitRow(set, def, entry, setShutDown) {
     noDice: set.hasDice !== true,
     hints: hints.ok ? hints.value : [],
     shutDown: setShutDown || isPlainObject(entry?.shutDown),
+    newSlot: ((entry === null) && (set.list === "fixed") && (set.hasDice === true) && (typeof def?.id === "string"))
+      ? { inputName: `${NEW_RATING_INPUTS}.${set.id}.${def.id}.0`,
+        options: DIE_SIZES.map(size => ({ value: size, label: `d${size}` })) }
+      : null,
+    nameInput: ((set.list !== "fixed") && (typeof entry?.id === "string")) ? `${NAME_INPUTS}.${set.id}.${entry.id}` : null,
     poolTraitId,
     rollable,
     canHinder: rollable && (set.features?.hinder === true),
@@ -155,9 +175,9 @@ function traitRow(set, def, entry, setShutDown) {
  * What the sheet shows: the trait sets of the character's actor kind, in the kind's order and
  * named as the configuration names them (ADR-031). A fixed set lists its definitions in the
  * configuration's order, each with the actor's entry for it (by definition id, ADR-034) or none;
- * a definition without an entry shows its fallback die or that it is unrated, and gets no input
- * in this slice. An open set lists the actor's entries in stored order. Only stored entries are
- * edited, and only their rating. Not shown yet: free traits (TS-22), sets the kind doesn't
+ * a definition without an entry shows its fallback die or that it is unrated, with an input that
+ * creates the entry when a die is chosen. An open set lists the actor's entries in stored order.
+ * Not shown yet: free traits (TS-22), sets the kind doesn't
  * include, and entries no definition matches (TS-E03); they are kept as stored when the sheet
  * writes.
  * @param {import("../rules/types.mjs").CharacterTraitData} system - the actor's system data
@@ -184,7 +204,7 @@ export function characterSheetView(system, config) {
         : entries.map(entry => traitRow(set, null, entry, setShutDown));
       return {
         id: set.id, name: set.name, hasDice: set.hasDice === true, multiDice: set.multiDice === true,
-        shutDown: setShutDown, traits
+        shutDown: setShutDown, open: set.list !== "fixed", traits
       };
     });
   return { kindStatus: "assigned", kind: { id: kind.id, name: kind.name }, sets };
@@ -268,4 +288,127 @@ export function traitChangesFromInputs(system, inputs) {
     if ( changed ) changes[setId] = { entries: updated };
   }
   return ok(changes);
+}
+
+
+/**
+ * A set's stored entries as a list of copies, [] for a set the actor doesn't hold yet.
+ * @param {object} system
+ * @param {string} setId
+ * @returns {object[]}
+ */
+function storedEntries(system, setId) {
+  const entries = system?.traits?.[setId]?.entries;
+  return Array.isArray(entries) ? entries.map(copyStored) : [];
+}
+
+/**
+ * Turns everything the sheet's form holds about traits into the trait changes of an update:
+ * the ratings of stored entries (traitChangesFromInputs), the names of open-set traits, and the
+ * ratings chosen for fixed-set traits the actor holds no entry for, which create those entries
+ * (Character Sheets behaviours 11, 13 and 14). As there, every changed set gets its whole entries
+ * list back, and what an entry holds beside the changed field is kept as stored.
+ *
+ * A name is trimmed; a blank name, a name that isn't text, and a name for an entry of a fixed set
+ * (whose traits are named by their definitions, ADR-034) change nothing. A new entry gets a new
+ * id, its definition's id, the definition's name as a snapshot, the chosen rating and no SFX; it
+ * goes at the end of its set's entries. A choice for a set that isn't fixed, a definition the set
+ * doesn't have, or a definition the actor has an entry for by now is ignored, and so is a blank
+ * choice. Whether the result fits the configuration is checkCharacterUpdate's job.
+ * @param {import("../rules/types.mjs").CharacterTraitData} system - the stored system data, read
+ *   when the form is submitted
+ * @param {import("../rules/types.mjs").GameConfig} config
+ * @param {{ratings?: unknown, newRatings?: unknown, names?: unknown}} form - the form's three
+ *   groups of trait inputs, each as its inputs name it or undefined
+ * @param {() => string} makeId - makes the id of a new entry
+ * @returns {import("../rules/types.mjs").EngineResult<Record<string, {entries: object[]}>>} the
+ *   changed sets by id; refuses INVALID_TRAIT_DATA (inputs not shaped as the sheet names them) and
+ *   INVALID_DIE_SIZE
+ */
+export function sheetTraitChanges(system, config, form, makeId) {
+  if ( !isPlainObject(form) || (typeof makeId !== "function") ) return fail("INVALID_TRAIT_DATA");
+  const rated = traitChangesFromInputs(system, form.ratings);
+  if ( !rated.ok ) return rated;
+  const changes = rated.value;
+  const entriesOf = setId => changes[setId]?.entries ?? storedEntries(system, setId);
+
+  if ( form.names !== undefined ) {
+    if ( !isPlainObject(form.names) ) return fail("INVALID_TRAIT_DATA");
+    for ( const [setId, byEntry] of Object.entries(form.names) ) {
+      if ( !isPlainObject(byEntry) ) return fail("INVALID_TRAIT_DATA");
+      const set = Array.isArray(config?.traitSets) ? traitSetById(config, setId) : null;
+      if ( set?.list === "fixed" ) continue;
+      const entries = entriesOf(setId);
+      let changed = false;
+      for ( const entry of entries ) {
+        const name = isPlainObject(entry) ? byEntry[entry.id] : undefined;
+        if ( (typeof name !== "string") || (name.trim() === "") || (name.trim() === entry.name) ) continue;
+        entry.name = name.trim();
+        changed = true;
+      }
+      if ( changed ) changes[setId] = { entries };
+    }
+  }
+
+  if ( form.newRatings !== undefined ) {
+    if ( !isPlainObject(form.newRatings) ) return fail("INVALID_TRAIT_DATA");
+    for ( const [setId, byDef] of Object.entries(form.newRatings) ) {
+      if ( !isPlainObject(byDef) ) return fail("INVALID_TRAIT_DATA");
+      const set = Array.isArray(config?.traitSets) ? traitSetById(config, setId) : null;
+      const entries = entriesOf(setId);
+      let changed = false;
+      for ( const [defId, dieInputs] of Object.entries(byDef) ) {
+        const rating = inputRating(dieInputs);
+        if ( !rating.ok ) return rating;
+        const def = (set?.list === "fixed") ? traitDefById(set, defId) : null;
+        if ( !def || (rating.value.length === 0) ) continue;
+        if ( entries.some(entry => isPlainObject(entry) && (entry.defId === defId)) ) continue;
+        entries.push({ id: makeId(), defId, name: def.name, dice: rating.value, sfx: [] });
+        changed = true;
+      }
+      if ( changed ) changes[setId] = { entries };
+    }
+  }
+  return ok(changes);
+}
+
+/**
+ * A set's entries with a new trait at the end, for an open set (ADR-034; Character Sheets
+ * behaviour 14). The trait starts at its set's starting rating where the set has dice and one is
+ * configured, otherwise with no rating (CS-D9; rule 9: guidance, never enforced), and with no SFX.
+ * @param {import("../rules/types.mjs").CharacterTraitData} system - the stored system data
+ * @param {import("../rules/types.mjs").GameConfig} config
+ * @param {string} setId
+ * @param {string} id - the new entry's id, made by the caller
+ * @param {string} name
+ * @returns {import("../rules/types.mjs").EngineResult<{entries: object[]}>} refuses
+ *   INVALID_TRAIT_DATA (ids or a name that aren't text, a blank name), UNKNOWN_TRAIT_SET, or
+ *   TRAIT_SET_NOT_OPEN (a fixed set's traits are defined in the game configuration)
+ */
+export function addTraitEntry(system, config, setId, id, name) {
+  if ( !isPlainObject(system) || (typeof setId !== "string") || (typeof id !== "string")
+    || (typeof name !== "string") || (name.trim() === "") ) return fail("INVALID_TRAIT_DATA");
+  const set = Array.isArray(config?.traitSets) ? traitSetById(config, setId) : null;
+  if ( !isPlainObject(set) ) return fail("UNKNOWN_TRAIT_SET");
+  if ( set.list === "fixed" ) return fail("TRAIT_SET_NOT_OPEN");
+  const dice = ((set.hasDice === true) && DIE_SIZES.includes(set.startingRating)) ? [set.startingRating] : [];
+  return ok({ entries: [...storedEntries(system, setId), { id, defId: null, name: name.trim(), dice, sfx: [] }] });
+}
+
+/**
+ * A set's entries without one trait (Character Sheets behaviour 14). The set keeps its key even
+ * when it ends up empty: the sheet never removes a set (ADR-044 point 4).
+ * @param {import("../rules/types.mjs").CharacterTraitData} system - the stored system data
+ * @param {string} setId
+ * @param {string} entryId
+ * @returns {import("../rules/types.mjs").EngineResult<{entries: object[]}>} refuses
+ *   INVALID_TRAIT_DATA, or UNKNOWN_TRAIT when the set holds no entry with that id
+ */
+export function removeTraitEntry(system, setId, entryId) {
+  if ( !isPlainObject(system) || (typeof setId !== "string") || (typeof entryId !== "string") ) {
+    return fail("INVALID_TRAIT_DATA");
+  }
+  const entries = storedEntries(system, setId);
+  if ( !entries.some(entry => isPlainObject(entry) && (entry.id === entryId)) ) return fail("UNKNOWN_TRAIT");
+  return ok({ entries: entries.filter(entry => !(isPlainObject(entry) && (entry.id === entryId))) });
 }

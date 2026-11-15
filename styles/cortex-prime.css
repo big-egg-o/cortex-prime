@@ -360,3 +360,27 @@
   margin: 0;
   font-style: italic;
 }
+
+
+/* Edit mode (Character Sheets CS-D1): the toggle in the header, name inputs and the add button. */
+.cortex-prime.character-sheet .window-content .cp-edit-toggle {
+  flex: none;
+  align-self: flex-start;
+}
+
+.cortex-prime.character-sheet .window-content .cp-edit-toggle.active {
+  outline: 2px solid var(--color-warm-1);
+}
+
+.cortex-prime.character-sheet .window-content .cp-trait > label > input.cp-trait-name {
+  width: 100%;
+}
+
+.cortex-prime.character-sheet .window-content .cp-remove-trait {
+  flex: none;
+}
+
+.cortex-prime.character-sheet .window-content .cp-add-trait {
+  align-self: flex-start;
+  width: auto;
+}

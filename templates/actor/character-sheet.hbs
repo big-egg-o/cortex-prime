@@ -5,8 +5,20 @@
     <div class="cp-sheet-title">
       <input class="cp-actor-name" type="text" name="name" value="{{ source.name }}"
         placeholder="{{ localize "CORTEX.Sheet.Name" }}" aria-label="{{ localize "CORTEX.Sheet.Name" }}">
+      {{#if kindPicker}}
+      <select class="cp-kind-select" name="system.kindId" aria-label="{{ localize "CORTEX.Sheet.Kind" }}">
+        {{#if kindPicker.unassigned}}<option value="">{{ localize "CORTEX.Sheet.ChooseKind" }}</option>{{/if}}
+        {{#each kindPicker.options}}<option value="{{ this.value }}" {{#if this.selected}}selected{{/if}}>{{ this.label }}</option>{{/each}}
+      </select>
+      {{else}}
       {{#if kindName}}<p class="hint cp-kind">{{ kindName }}</p>{{/if}}
+      {{/if}}
     </div>
+    {{#if canEdit}}
+    <button type="button" class="ui-control icon cp-edit-toggle{{#if editMode}} active{{/if}}" data-action="toggleEdit"
+      aria-pressed="{{#if editMode}}true{{else}}false{{/if}}"
+      data-tooltip="{{ localize "CORTEX.Sheet.EditMode" }}" aria-label="{{ localize "CORTEX.Sheet.EditMode" }}"><i class="fa-solid fa-pen-to-square" inert></i></button>
+    {{/if}}
   </header>
 
   <section class="cp-sheet-body scrollable">
@@ -20,7 +32,12 @@
       <div class="form-group cp-trait{{#if this.shutDown}} cp-shut-down{{/if}}"
         {{#if this.entryId}}data-entry-id="{{ this.entryId }}"{{/if}}
         {{#if this.poolTraitId}}data-pool-trait-id="{{ this.poolTraitId }}"{{/if}}>
+        {{#if this.nameInput}}
+        <label><input type="text" class="cp-trait-name" name="{{ this.nameInput }}" value="{{ this.name }}"
+          aria-label="{{ localize "CORTEX.Sheet.TraitName" }}"></label>
+        {{else}}
         <label>{{ this.label }}</label>
+        {{/if}}
         <div class="form-fields">
           {{#if this.editable}}
             {{#each this.slots}}
@@ -32,6 +49,13 @@
             {{/each}}
             {{#unless this.dice.length}}<span class="cp-rating-note">{{ this.ratingText }}</span>{{/unless}}
           {{else}}
+            {{#if this.newSlot}}
+            <select name="{{ this.newSlot.inputName }}" class="cp-die cp-die-add"
+              aria-label="{{ this.newSlot.ariaLabel }}" data-tooltip="{{ this.newSlot.ariaLabel }}">
+              <option value="">+</option>
+              {{#each this.newSlot.options}}<option value="{{ this.value }}">{{ this.label }}</option>{{/each}}
+            </select>
+            {{/if}}
             <span class="cp-rating-note">{{ this.ratingText }}</span>
           {{/if}}
           {{#if this.rollable}}
@@ -52,10 +76,19 @@
             {{/if}}
           </span>
           {{/if}}
+          {{#if this.nameInput}}
+          <button type="button" class="ui-control icon cp-remove-trait" data-action="removeTrait"
+            data-tooltip="{{ this.removeLabel }}" aria-label="{{ this.removeLabel }}"><i class="fa-solid fa-trash" inert></i></button>
+          {{/if}}
         </div>
         {{#each this.hintTexts}}<p class="hint">{{ this }}</p>{{/each}}
       </div>
       {{/each}}
+      {{#if @root.editMode}}{{#if this.open}}
+      <button type="button" class="cp-add-trait" data-action="addTrait">
+        <i class="fa-solid fa-plus" inert></i><span>{{ localize "CORTEX.Sheet.AddTrait" }}</span>
+      </button>
+      {{/if}}{{/if}}
     </fieldset>
     {{/each}}
   </section>
