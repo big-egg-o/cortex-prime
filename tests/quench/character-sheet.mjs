@@ -46,11 +46,15 @@ function testScenes() {
   return game.scenes.filter(s => s.getFlag(SYSTEM_ID, FLAG_KEY));
 }
 
-/** Closes the sheets of this batch's actors and tokens, and deletes its scenes and actors. */
+/**
+ * Closes the sheets of this batch's actors and tokens, and deletes its scenes and actors. The batch
+ * closes windows without their closing animation: a page in the background never finishes one, so
+ * each close would wait a full second and a test or hook could pass Mocha's two-second limit.
+ */
 async function cleanUp() {
   const tokenActors = testScenes().flatMap(scene => scene.tokens.map(token => token.actor)).filter(Boolean);
   for ( const actor of [...tokenActors, ...testActors()] ) {
-    for ( const app of Object.values(actor.apps) ) await app.close();
+    for ( const app of Object.values(actor.apps) ) await app.close({ animate: false });
   }
   const sceneIds = testScenes().map(s => s.id);
   if ( sceneIds.length ) await getDocumentClass("Scene").deleteDocuments(sceneIds);
@@ -261,7 +265,7 @@ export function registerCharacterSheetBatch(quench) {
           const second = `Quench Virtues ${newId()}`;
           traitSetById(config, setId).name = second;
           await storeConfig(config);
-          await sheet.close();
+          await sheet.close({ animate: false });
           sheet = await openSheet(actor);
           assert.deepEqual(setNames(sheet), [second]);
           assert.notInclude(sheet.element.textContent, first);
@@ -322,7 +326,7 @@ export function registerCharacterSheetBatch(quench) {
           assert.deepInclude(created, { defId: "cpAttrMental0000", name: "Mental", dice: [10] });
           assert.match(created.id, /^[a-zA-Z0-9]{16}$/);
 
-          await sheet.close();
+          await sheet.close({ animate: false });
           const reopened = await openSheet(actor);
           assert.equal(dieInput(reopened, ATTRIBUTES, created.id, 0).value, "10");
         });
@@ -478,7 +482,7 @@ export function registerCharacterSheetBatch(quench) {
           await updated;
           assert.deepEqual(storedSystem(actor).freeTraits, [{ id, name: "Crooked Deputy", dice: [8] }]);
 
-          await sheet.close();
+          await sheet.close({ animate: false });
           const reopened = await openSheet(actor);
           assert.equal(reopened.element.querySelector(`select[name="freeRatings.${id}.0"]`).value, "8");
           assert.include(freeSection(reopened).textContent, "Crooked Deputy");
@@ -668,7 +672,7 @@ export function registerCharacterSheetBatch(quench) {
           assert.deepEqual(storedSystem(actor).traits[SKILLS], { shutDown: true, sfx: [], entries: [] },
             "a set the actor held nothing in gets its flag and an empty list");
 
-          await sheet.close();
+          await sheet.close({ animate: false });
           const reopened = await openSheet(actor);
           assert.isTrue(reopened.element.querySelector(`fieldset[data-set-id="${SKILLS}"]`).classList.contains("cp-shut-down"));
           assert.isTrue(row(reopened, physical).classList.contains("cp-shut-down"));
@@ -790,7 +794,7 @@ export function registerCharacterSheetBatch(quench) {
           await updated;
           assert.deepEqual(cultOf(actor).sfx, [{ text: "Spend a PP to know the cult's sign", unlocked: false }]);
 
-          await sheet.close();
+          await sheet.close({ animate: false });
           sheet = await openSheet(actor);
           assert.include(rowOf(sheet, distinction).querySelector(".cp-sfx").textContent, "know the cult's sign");
           assert.isNotNull(rowOf(sheet, distinction).querySelector(".cp-sfx .fa-lock"));
@@ -899,7 +903,7 @@ export function registerCharacterSheetBatch(quench) {
           assert.deepEqual(after, expected);
           assert.deepEqual(after.traits[ATTRIBUTES].entries.map(e => e.id), [physical, orphan, social]);
 
-          await sheet.close();
+          await sheet.close({ animate: false });
           assert.isFalse(sheet.rendered);
           const reopened = await openSheet(actor);
           assert.equal(dieInput(reopened, ATTRIBUTES, physical, 0).value, "10");
@@ -911,7 +915,7 @@ export function registerCharacterSheetBatch(quench) {
             assert.equal(dieInput(fresh, ATTRIBUTES, physical, 0).value, "10");
           }
           finally {
-            await fresh.close();
+            await fresh.close({ animate: false });
           }
         });
 
@@ -1051,7 +1055,7 @@ export function registerCharacterSheetBatch(quench) {
           assert.deepEqual(storedSystem(actor).traits[DISTINCTIONS].entries.map(e => e.id), [distinction]);
 
           // Opened again, the token's sheet still shows the set, now without traits.
-          await sheet.close();
+          await sheet.close({ animate: false });
           const reopened = await openSheet(token.actor);
           assert.deepEqual(setNames(reopened), ["Distinctions", "Attributes", "Skills"]);
           assert.lengthOf(reopened.element.querySelectorAll(`fieldset[data-set-id="${DISTINCTIONS}"] .cp-trait`), 0);

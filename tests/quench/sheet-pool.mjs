@@ -69,11 +69,15 @@ function configWithStatements(...setIds) {
   return config;
 }
 
-/** Closes the builder and this batch's sheets, and deletes its scenes and actors. */
+/**
+ * Closes the builder and this batch's sheets, and deletes its scenes and actors. The batch closes
+ * windows without their closing animation: a page in the background never finishes one, so each
+ * close would wait a full second and a test or hook could pass Mocha's two-second limit.
+ */
 async function cleanUp() {
-  await builderApp()?.close();
+  await builderApp()?.close({ animate: false });
   for ( const actor of game.actors.filter(a => a.getFlag(SYSTEM_ID, TEST_FLAG)) ) {
-    for ( const app of Object.values(actor.apps) ) await app.close();
+    for ( const app of Object.values(actor.apps) ) await app.close({ animate: false });
   }
   const sceneIds = game.scenes.filter(s => s.getFlag(SYSTEM_ID, TEST_FLAG)).map(s => s.id);
   if ( sceneIds.length ) await getDocumentClass("Scene").deleteDocuments(sceneIds);
@@ -255,7 +259,7 @@ export function registerSheetPoolBatch(quench) {
             assert.deepEqual(userPool().map(d => d.source.traitId), [crowd]);
           }
           finally {
-            await sheet.close();
+            await sheet.close({ animate: false });
           }
         });
 
