@@ -20,8 +20,9 @@
  *
  * The sheet opens in play mode. Its edit toggle, for users who can edit the actor, adds what
  * changes the character's structure (Character Sheets CS-D1): renaming, adding and removing the
- * traits of open sets, and, for a GM, changing the actor kind. A character without a kind offers
- * the choice to anyone who can edit it, in either mode (CS-D3). A fixed set's trait the actor
+ * traits of open sets, and, for a GM, changing the actor kind. A character without a kind, or one
+ * that stores no traits yet, offers the choice to anyone who can edit it, in either mode (CS-D3),
+ * so a wrong first choice doesn't need the GM. A fixed set's trait the actor
  * holds no entry for gets an entry when a rating is chosen for it (behaviour 13).
  *
  * A kind with free traits gets a section for them after its sets: name and dice, in no set
@@ -34,8 +35,9 @@
  * editing it never resolves a challenge (behaviour 15, TS-15c). A challenged statement is marked
  * on the row whatever the set's features say, and a user who can edit the actor resolves it as
  * rewritten or kept, in either mode (rule 16; RQ-021, RQ-022). A shut-down trait shows its reason
- * (RQ-034). In edit mode, a set's and a trait's shut-down flags are set where the set has the
- * shut-down feature and cleared whatever their reason (behaviour 17, rule 15).
+ * (RQ-034). In either mode, like a rating, a user who can edit the actor sets a set's and a
+ * trait's shut-down flags where the set has the shut-down feature and clears them whatever their
+ * reason, since shutting down and restoring happen in play (behaviour 17, rule 15, CS-D16).
  *
  * The rest of a row follows its set's features (behaviours 8 and 16, rule 13): a description, SFX
  * with their locked or unlocked state, tags and sub-traits, and, under the set's name, the set's own
@@ -56,7 +58,8 @@ import {
   DESCRIPTION_INPUTS, FREE_NAME_INPUTS, FREE_RATING_INPUTS, NAME_INPUTS, NEW_RATING_INPUTS, RATING_INPUTS, SET_SFX_INPUTS,
   SFX_INPUTS, STATEMENT_INPUTS, SUB_NAME_INPUTS, SUB_RATING_INPUTS, TAG_INPUTS, addFreeTrait, addSetSfx, addSubTrait,
   addTraitEntry, addTraitSfx, characterSheetView, freeTraitChanges, removeFreeTrait, removeSetSfx, removeSubTrait,
-  removeTraitEntry, removeTraitSfx, resolveTraitChallenge, setShutDownChange, setTraitShutDown, sheetTraitChanges
+  removeTraitEntry, removeTraitSfx, resolveTraitChallenge, setShutDownChange, setTraitShutDown, sheetTraitChanges,
+  storesNoTraits
 } from "./character-sheet-data.mjs";
 import { addTraitToPool } from "./pool-builder.mjs";
 
@@ -164,7 +167,7 @@ export default class CharacterSheet extends HandlebarsApplicationMixin(ActorShee
         kept: i18n.format("CORTEX.Sheet.Statement.Kept", { trait: trait.name })
       },
       shutDownText: trait.shutDownReason ? i18n.localize(`CORTEX.Sheet.ShutDown.${trait.shutDownReason}`) : null,
-      canShutDown: trait.canShutDown && editMode,
+      canShutDown: trait.canShutDown && this.isEditable,
       shutDownLabel: i18n.format(trait.ownShutDown ? "CORTEX.Sheet.ShutDown.ClearTrait" : "CORTEX.Sheet.ShutDown.SetTrait",
         { trait: trait.name }),
       removeLabel: i18n.format("CORTEX.Sheet.RemoveTrait", { trait: trait.name }),
@@ -204,7 +207,7 @@ export default class CharacterSheet extends HandlebarsApplicationMixin(ActorShee
     // The sheet's sections: the kind's sets, then its free traits, which belong to no set (TS-22).
     const sections = view.sets.map(set => ({
       ...set, free: false, emptyText: i18n.localize("CORTEX.Sheet.NoTraits"), traits: set.traits.map(row),
-      canShutDown: set.canShutDown && editMode,
+      canShutDown: set.canShutDown && this.isEditable,
       shutDownLabel: i18n.format(set.shutDown ? "CORTEX.Sheet.ShutDown.ClearSet" : "CORTEX.Sheet.ShutDown.SetSet",
         { set: set.name }),
       sfx: CharacterSheet.#sfxContext(set.sfx, set.name),
@@ -231,10 +234,11 @@ export default class CharacterSheet extends HandlebarsApplicationMixin(ActorShee
   }
 
   /**
-   * The actor-kind choice, or null where it isn't offered (CS-D3): a character without a kind
-   * offers it to anyone who can edit it; a kind that is set, known or not, is changed by a GM in
-   * edit mode. A kind the configuration doesn't have stays selectable as itself, so submitting
-   * another change never clears it.
+   * The actor-kind choice, or null where it isn't offered (CS-D3): a character without a kind, or
+   * one that stores no traits yet (storesNoTraits), offers it to anyone who can edit it, in either
+   * mode; otherwise a kind that is set, known or not, is changed by a GM in edit mode. A kind the
+   * configuration doesn't have stays selectable as itself, so submitting another change never
+   * clears it.
    * @param {import("./character-sheet-data.mjs").SheetView} view
    * @param {object} system
    * @param {import("../rules/types.mjs").GameConfig} config
@@ -243,7 +247,8 @@ export default class CharacterSheet extends HandlebarsApplicationMixin(ActorShee
   #kindPicker(view, system, config) {
     if ( !this.isEditable ) return null;
     const unassigned = view.kindStatus === "unassigned";
-    if ( !unassigned && !(this.editMode && game.user.isGM) ) return null;
+    const openToEditors = unassigned || storesNoTraits(system);
+    if ( !openToEditors && !(this.editMode && game.user.isGM) ) return null;
     const options = config.actorKinds.map(kind => ({ value: kind.id, label: kind.name, selected: kind.id === system.kindId }));
     if ( view.kindStatus === "unknown" ) {
       options.unshift({ value: system.kindId, label: game.i18n.localize("CORTEX.Sheet.UnknownKindOption"), selected: true });

@@ -6,7 +6,7 @@ import {
   SFX_INPUTS, STATEMENT_INPUTS, SUB_NAME_INPUTS, SUB_RATING_INPUTS, TAG_INPUTS, addFreeTrait, addSetSfx, addSubTrait,
   addTraitEntry, addTraitSfx, characterSheetView, freeTraitChanges, removeFreeTrait, removeSetSfx, removeSubTrait,
   removeTraitEntry, removeTraitSfx, resolveTraitChallenge, setShutDownChange, setTraitShutDown, sheetTraitChanges,
-  traitChangesFromInputs
+  storesNoTraits, traitChangesFromInputs
 } from "../../module/apps/character-sheet-data.mjs";
 import { defaultGameConfig, traitSetById } from "../../module/rules/game-config.mjs";
 
@@ -870,6 +870,38 @@ describe("trait details: descriptions, SFX, tags and sub-traits (behaviours 8 an
       .toEqual({ ok: false, code: "TRAIT_FEATURE_NOT_OFFERED" });
     expect(removeSubTrait(system, DISTINCTIONS, ENTRY_CULT, SUB).value.entries[0].sub).toEqual([]);
     expect(removeSubTrait(system, DISTINCTIONS, ENTRY_CULT, "nope000000000000")).toEqual({ ok: false, code: "UNKNOWN_TRAIT" });
+  });
+});
+
+describe("storesNoTraits (Character Sheets CS-D3)", () => {
+  const emptySet = () => ({ shutDown: false, sfx: [], entries: [] });
+
+  it("is true for a character without traits, and for sets kept with empty lists", () => {
+    expect(storesNoTraits(deepFreeze({ kindId: null }))).toBe(true);
+    expect(storesNoTraits(deepFreeze({ kindId: PC, traits: {}, freeTraits: [] }))).toBe(true);
+    expect(storesNoTraits(deepFreeze({ kindId: PC, traits: { [DISTINCTIONS]: emptySet(), [SKILLS]: emptySet() } })))
+      .toBe(true);
+  });
+
+  it("is false once a set holds an entry, whether or not the kind includes the set", () => {
+    const entry = { id: ENTRY_PHYSICAL, defId: PHYSICAL, name: "Physical", dice: [8], sfx: [] };
+    expect(storesNoTraits(deepFreeze({ kindId: PC, traits: { [ATTRIBUTES]: { ...emptySet(), entries: [entry] } } })))
+      .toBe(false);
+    expect(storesNoTraits(deepFreeze({ kindId: PC, traits: { [MOB_TRAIT]: { ...emptySet(), entries: [entry] } } })))
+      .toBe(false);
+  });
+
+  it("is false for a set's own SFX, a set's shut-down flag and a free trait", () => {
+    expect(storesNoTraits(deepFreeze({ kindId: PC, traits: {
+      [DISTINCTIONS]: { ...emptySet(), sfx: [{ text: "", unlocked: true }] } } }))).toBe(false);
+    expect(storesNoTraits(deepFreeze({ kindId: PC, traits: { [SKILLS]: { ...emptySet(), shutDown: true } } })))
+      .toBe(false);
+    expect(storesNoTraits(deepFreeze({ kindId: MINOR_GMC, freeTraits: [{ id: ENTRY_CULT, name: "Cult", dice: [8] }] })))
+      .toBe(false);
+  });
+
+  it("counts a set value it can't read as stored", () => {
+    expect(storesNoTraits(deepFreeze({ kindId: PC, traits: { [SKILLS]: "broken" } }))).toBe(false);
   });
 });
 

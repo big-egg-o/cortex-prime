@@ -423,7 +423,21 @@ export function registerCharacterSheetBatch(quench) {
           assert.equal(storedSystem(actor).kindId, PC_KIND);
           await nextRenderOrNow(sheet);
           assert.deepEqual(setNames(sheet), ["Distinctions", "Attributes", "Skills"]);
-          assert.isNull(sheet.element.querySelector('select[name="system.kindId"]'), "a set kind isn't offered in play mode");
+          const again = sheet.element.querySelector('select[name="system.kindId"]');
+          assert.isNotNull(again, "the kind stays open while the character stores no traits");
+          assert.isNull(again.querySelector('option[value=""]'), "a chosen kind can't be cleared");
+
+          const changed = nextUpdate(actor);
+          again.value = MOB_KIND;
+          again.dispatchEvent(new Event("change", { bubbles: true }));
+          await changed;
+          assert.equal(storedSystem(actor).kindId, MOB_KIND, "a wrong first choice is changed without the GM's edit mode");
+
+          await nextRenderOrNow(sheet);
+          assert.isTrue(await sheet.addTrait(MOB_TRAIT));
+          await nextRenderOrNow(sheet);
+          assert.isNull(sheet.element.querySelector('select[name="system.kindId"]'),
+            "once the character stores a trait, a set kind isn't offered in play mode");
         });
 
         it("CS-D3 a GM changes a set kind in edit mode, and the stored traits are kept (CS-E02)", async () => {
@@ -676,12 +690,11 @@ export function registerCharacterSheetBatch(quench) {
           assert.deepEqual(stored.preChallengeDice, [8]);
         });
 
-        it("sets and clears a trait's and a set's shut-down in edit mode, kept after reopening", async () => {
+        it("CS-D16 sets and clears a trait's and a set's shut-down in play mode, kept after reopening", async () => {
           const { system, social, physical } = pcSystem();
           const actor = await createCharacter(system);
           const sheet = await openSheet(actor);
-          assert.isNull(sheet.element.querySelector('[data-action="toggleShutDown"]'), "play mode has no shut-down toggles");
-          await toggleEdit(sheet);
+          assert.isFalse(sheet.editMode, "the sheet opens in play mode");
 
           let updated = nextUpdate(actor);
           row(sheet, physical).querySelector('[data-action="toggleShutDown"]').click();
@@ -709,6 +722,11 @@ export function registerCharacterSheetBatch(quench) {
           assert.isTrue(row(reopened, physical).classList.contains("cp-shut-down"));
           assert.isTrue(await reopened.setSetShutDown(SKILLS, false));
           assert.isFalse(storedSystem(actor).traits[SKILLS].shutDown);
+
+          await nextRenderOrNow(reopened);
+          await toggleEdit(reopened);
+          assert.isNotNull(row(reopened, physical).querySelector('[data-action="toggleShutDown"]'), "edit mode offers them too");
+          assert.isNotNull(reopened.element.querySelector(`fieldset[data-set-id="${SKILLS}"] [data-action="toggleSetShutDown"]`));
         });
 
         it("clears a shut-down a challenged d4 left (RQ-034)", async () => {
