@@ -485,6 +485,22 @@ export function characterSheetView(system, config) {
 }
 
 /**
+ * Whether a character stores nothing that a change of its actor kind could hide (Character Sheets
+ * CS-D3): no set holds an entry, an SFX of its own or a shut-down flag, and there are no free
+ * traits. Sets kept with empty lists count as empty. A set value that isn't a plain object counts
+ * as stored, since what it holds can't be read. The sheet offers such a character's kind to anyone
+ * who can edit it, so a wrong first choice doesn't need the GM.
+ * @param {import("../rules/types.mjs").CharacterTraitData} system - the actor's system data
+ * @returns {boolean}
+ */
+export function storesNoTraits(system) {
+  const nonEmpty = list => Array.isArray(list) && (list.length > 0);
+  if ( nonEmpty(system?.freeTraits) ) return false;
+  const sets = isPlainObject(system?.traits) ? Object.values(system.traits) : [];
+  return sets.every(set => isPlainObject(set) && !nonEmpty(set.entries) && !nonEmpty(set.sfx) && (set.shutDown !== true));
+}
+
+/**
  * Reads one rating input: blank means no die in that place.
  * @param {unknown} value - a select's value as the form gives it: text, a number or null
  * @returns {import("../rules/types.mjs").EngineResult<number|null>}
