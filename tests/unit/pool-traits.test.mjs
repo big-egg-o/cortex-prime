@@ -458,6 +458,20 @@ describe("rolling: the dice as stored, and the challenges that follow the roll (
     expect(result).toEqual({ ok: true, value: expected });
   });
 
+  it("TS-25 a challenged d8 with one die doubled rolls four d8 and is stepped down once", () => {
+    // An SFX that doubles a die is applied by hand with the builder's Double (Dice & Pools);
+    // automating SFX is Roadmap M5, and the growth TS-25 mentions is M6.
+    const config = configWithStatements(ATTRIBUTES);
+    const pool = doubleDie(poolOf(config, [[pcSystem(), ATTRIBUTES, SOCIAL, "challenge"]]), "d2");
+    expect(rollablePool(pool).value.map(d => [d.size, d.source.traitId]))
+      .toEqual([[8, SOCIAL], [8, SOCIAL], [8, SOCIAL], [8, SOCIAL]]);
+    const challenged = challengedPoolTraits(pool).value;
+    expect(challenged.map(t => t.traitId)).toEqual([SOCIAL]);
+    expect(withoutPoolTraits(pool, challenged.map(t => t.key)).value).toEqual([]);
+    expect(entriesAfterChallenge(pcSystem(), config, ATTRIBUTES, SOCIAL).value[1])
+      .toMatchObject({ dice: [6], challenged: true, preChallengeDice: [8] });
+  });
+
   it("TS-16 a d4 stays a d4 and is shut down; TS-14b a second challenge keeps the first rating", () => {
     const config = configWithStatements(ATTRIBUTES);
     const system = pcSystem();
