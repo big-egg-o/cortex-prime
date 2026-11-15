@@ -35,8 +35,9 @@ export {
 } from "./statements.mjs";
 export { effectiveRating, poolTraitCost, traitPoolEntries } from "./trait-pool.mjs";
 export {
-  POOL_TRAIT_OPTIONS, addTraitDice, challengedPoolTraits, entriesAfterChallenge, poolDieGroupKey, poolTraitReport,
-  poolTraits, rollablePool, traitPoolDice, withoutPoolTraits
+  POOL_TRAIT_OPTIONS, addTraitDice, challengedPoolTraits, entriesAfterChallenge, groupPoolTraitsByActor,
+  poolDieGroupKey, poolTraitReport, poolTraits, rollablePool, stepDownsAfterChallenge, traitPoolDice,
+  withoutPoolTraits
 } from "./pool-traits.mjs";
 export {
   checkCharacterEdit, checkCharacterUpdate, diffCharacterTraits, proposedTraitData, validateEntryFields, validateRating,

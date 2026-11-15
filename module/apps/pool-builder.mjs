@@ -15,8 +15,8 @@
  */
 
 import {
-  DIE_SIZES, addTraitDice, buildPool, challengedPoolTraits, doubleDie, entriesAfterChallenge, poolDieGroupKey,
-  poolTraitReport, poolTraits, rollablePool, stepPoolDie, traitPoolDice, withoutPoolTraits
+  DIE_SIZES, addTraitDice, buildPool, challengedPoolTraits, doubleDie, groupPoolTraitsByActor, poolDieGroupKey,
+  poolTraitReport, poolTraits, rollablePool, stepDownsAfterChallenge, stepPoolDie, traitPoolDice, withoutPoolTraits
 } from "../rules/index.mjs";
 import { getGameConfig } from "../config/settings.mjs";
 import { postPoolRoll } from "../dice/post-pool-roll.mjs";
@@ -105,10 +105,13 @@ function refusePoolTrait(code) {
 
 /**
  * Writes the step-down of every challenged statement in a pool that has just been rolled, and
- * takes their dice out of the user's kept pool so a re-roll can't reuse them (ADR-048). Each
- * write goes through Actor#update, where the character model's backstop checks it. A trait whose
- * actor can't be found, or that the user may no longer update, isn't stepped down and the user is
- * told; its dice still leave the pool.
+ * takes their dice out of the user's kept pool so a re-roll can't reuse them (ADR-048). All of
+ * one actor's step-downs go into one Actor#update, where the character model's backstop checks
+ * them: Foundry 14.369 keeps only the last update of an unlinked token whose delta has no name of
+ * its own, so one roll must not become several updates of one actor (ADR-054). An actor that
+ * can't be found, or that the user may no longer update, isn't stepped down and the user is told
+ * once; a trait whose step-down is refused is told of and the actor's others are still written.
+ * The dice of every challenged trait leave the pool either way.
  * @param {import("../rules/types.mjs").PoolDie[]} pool - the pool as it was rolled
  * @returns {Promise<boolean>} whether the pool had challenged traits
  */
@@ -116,8 +119,8 @@ async function stepDownChallenges(pool) {
   const challenged = challengedPoolTraits(pool);
   if ( !challenged.ok || !challenged.value.length ) return false;
   const config = getGameConfig();
-  for ( const trait of challenged.value ) {
-    const actor = findPoolActor(trait);
+  for ( const traits of groupPoolTraitsByActor(challenged.value).value ) {
+    const actor = findPoolActor(traits[0]);
     if ( !actor ) {
       refusePoolTrait("ACTOR_NOT_FOUND");
       continue;
@@ -126,13 +129,19 @@ async function stepDownChallenges(pool) {
       refusePoolTrait("CHALLENGE_NEEDS_OWNER");
       continue;
     }
-    const entries = entriesAfterChallenge(actor.system.toObject(), config, trait.setId, trait.traitId);
-    if ( !entries.ok ) {
-      refusePoolTrait(entries.code);
+    const result = stepDownsAfterChallenge(actor.system.toObject(), config, traits);
+    if ( !result.ok ) {
+      refusePoolTrait(result.code);
       continue;
     }
-    const updated = await actor.update({ [`system.traits.${trait.setId}.entries`]: entries.value });
-    if ( updated ) ui.notifications.info(game.i18n.format("CORTEX.Builder.SteppedDown", { trait: trait.label }));
+    for ( const { code } of result.value.refused ) refusePoolTrait(code);
+    if ( !result.value.stepped.length ) continue;
+    const update = {};
+    for ( const [setId, entries] of Object.entries(result.value.sets) ) update[`system.traits.${setId}.entries`] = entries;
+    if ( !(await actor.update(update)) ) continue;
+    for ( const trait of result.value.stepped ) {
+      ui.notifications.info(game.i18n.format("CORTEX.Builder.SteppedDown", { trait: trait.label }));
+    }
   }
   const kept = withoutPoolTraits(userPool(), challenged.value.map(trait => trait.key));
   if ( kept.ok ) await game.user.setFlag(FLAG_SCOPE, FLAG_KEY, kept.value);
