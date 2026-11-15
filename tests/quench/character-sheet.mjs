@@ -222,6 +222,37 @@ export function registerCharacterSheetBatch(quench) {
         });
       });
 
+      describe("a limited user (CS-D4)", () => {
+        it("sees the name and portrait only, and an owner the whole sheet again", async () => {
+          const actor = await createCharacter(pcSystem().system, "limited");
+          // The batch runs as a GM, who owns every actor; this actor reports limited permission
+          // until the override is removed.
+          Object.defineProperty(actor, "limited", { get: () => true, configurable: true });
+          const sheet = new CharacterSheet({ document: actor });
+          try {
+            await sheet.render({ force: true });
+            const content = sheet.element.querySelector(".window-content");
+            assert.equal(content.querySelector(".cp-limited .cp-actor-name")?.textContent.trim(), actor.name);
+            assert.equal(content.querySelector(".cp-limited img.cp-portrait")?.getAttribute("src"), actor.img);
+            assert.isNull(content.querySelector("[data-action]"), "the portrait and the rest are no controls");
+            assert.lengthOf(content.querySelectorAll("fieldset, input, select, textarea, button"), 0);
+            for ( const text of ["Cult Survivor", "Saw too much", "Physical", "I trust no one", "Hard to fool"] ) {
+              assert.notInclude(content.textContent, text);
+            }
+            assert.equal(sheet.options.position.height, "auto", "the window fits the name and portrait");
+
+            delete actor.limited;
+            await sheet.render();
+            assert.isNull(sheet.element.querySelector(".cp-limited"), "the limited view is replaced, not kept");
+            assert.deepEqual(setNames(sheet), ["Distinctions", "Attributes", "Skills"]);
+          }
+          finally {
+            delete actor.limited;
+            await sheet.close({ animate: false });
+          }
+        });
+      });
+
       describe("trait sets from the game configuration", () => {
         it("shows the sets of the actor's kind, in the kind's order, by their configured names", async () => {
           const actor = await createCharacter(pcSystem().system);
