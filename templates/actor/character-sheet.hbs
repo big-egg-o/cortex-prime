@@ -1,3 +1,13 @@
+{{#if limited}}
+<div class="cp-sheet cp-limited">
+  <header class="cp-sheet-header">
+    <img class="cp-portrait" src="{{ actor.img }}" alt="{{ actor.name }}">
+    <div class="cp-sheet-title">
+      <h2 class="cp-actor-name">{{ actor.name }}</h2>
+    </div>
+  </header>
+</div>
+{{else}}
 <div class="cp-sheet">
   <header class="cp-sheet-header">
     <img class="cp-portrait" src="{{ actor.img }}" alt="{{ actor.name }}" data-edit="img" data-action="editImage"
@@ -212,3 +222,4 @@
     {{/if}}
   </section>
 </div>
+{{/if}}

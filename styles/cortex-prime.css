@@ -259,6 +259,16 @@
   margin: 0;
 }
 
+/* A limited user's view: the portrait is not a control, and the name is a heading (CS-D4). */
+.cortex-prime.character-sheet .window-content .cp-limited .cp-portrait {
+  cursor: default;
+}
+
+.cortex-prime.character-sheet .window-content .cp-limited .cp-actor-name {
+  margin: 0;
+  border: none;
+}
+
 .cortex-prime.character-sheet .window-content .cp-sheet-body {
   display: flex;
   flex-direction: column;

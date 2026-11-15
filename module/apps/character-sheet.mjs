@@ -42,6 +42,10 @@
  * SFX. Play mode shows them; edit mode edits, adds and removes them (CS-D1), a new SFX starting
  * unlocked (CS-D6), and asks before removing one. Sub-traits are shown and edited only: how they go
  * into a pool is mod behaviour (Roadmap M5).
+ *
+ * A user with limited permission on the actor sees its name and portrait only (CS-D4): the sheet
+ * prepares nothing else for them, so no trait reaches the page. An observer sees the whole sheet
+ * read-only, with its pool buttons.
  * @module apps/character-sheet
  */
 
@@ -103,6 +107,17 @@ export default class CharacterSheet extends HandlebarsApplicationMixin(ActorShee
   }
 
   /**
+   * A sheet opened by a user with limited permission shows only a name and a portrait (CS-D4),
+   * so its window fits that content instead of the full sheet's height.
+   * @override
+   */
+  _initializeApplicationOptions(options) {
+    const initialized = super._initializeApplicationOptions(options);
+    if ( initialized.document?.limited ) initialized.position = { ...initialized.position, height: "auto" };
+    return initialized;
+  }
+
+  /**
    * A sheet that is closed opens in play mode the next time (CS-D1).
    * @override
    */
@@ -129,6 +144,8 @@ export default class CharacterSheet extends HandlebarsApplicationMixin(ActorShee
   /** @override */
   async _prepareContext(options) {
     const context = await super._prepareContext(options);
+    // A limited user gets the name and portrait only (CS-D4); nothing about the traits is prepared.
+    if ( this.actor.limited ) return Object.assign(context, { actor: this.actor, limited: true });
     const config = getGameConfig();
     const system = this.actor.system.toObject();
     const view = characterSheetView(system, config);
