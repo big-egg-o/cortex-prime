@@ -32,6 +32,27 @@ export const NAME_INPUTS = "names";
 /** The top-level name of the statement inputs of set traits: `statements.<setId>.<entryId>`. */
 export const STATEMENT_INPUTS = "statements";
 
+/** The top-level name of the description inputs of set traits: `descriptions.<setId>.<entryId>`. */
+export const DESCRIPTION_INPUTS = "descriptions";
+
+/**
+ * The top-level name of the SFX inputs of set traits:
+ * `sfx.<setId>.<entryId>.<index>.text` and `….unlocked`.
+ */
+export const SFX_INPUTS = "sfx";
+
+/** The top-level name of the tag inputs of set traits: `tags.<setId>.<entryId>`, a list of text. */
+export const TAG_INPUTS = "tags";
+
+/** The top-level name of the sub-trait name inputs: `subNames.<setId>.<entryId>.<subId>`. */
+export const SUB_NAME_INPUTS = "subNames";
+
+/** The top-level name of the sub-trait rating inputs: `subRatings.<setId>.<entryId>.<subId>.<dieIndex>`. */
+export const SUB_RATING_INPUTS = "subRatings";
+
+/** The top-level name of a set's own SFX inputs: `setSfx.<setId>.<index>.text` and `….unlocked`. */
+export const SET_SFX_INPUTS = "setSfx";
+
 /** The top-level name of the rating inputs of free traits: `freeRatings.<entryId>.<dieIndex>`. */
 export const FREE_RATING_INPUTS = "freeRatings";
 
@@ -75,6 +96,18 @@ export const FREE_NAME_INPUTS = "freeNames";
  *   in a set with the statements feature
  * @property {boolean} challenged - the statement is challenged and not yet resolved (rule 16,
  *   TS-15); shown whatever the set's features say, so an open challenge is never hidden
+ * @property {string|null} description - the trait's description where its set has the description
+ *   feature (rules 13 and 20), "" for none yet; null in a set without the feature
+ * @property {string|null} descriptionInput - the name of the description's input, for a stored entry
+ * @property {SheetSfx[]|null} sfx - the trait's SFX where its set has the SFX feature (ADR-035), in
+ *   stored order; null in a set without the feature
+ * @property {boolean} canAddSfx - a stored entry in a set with the SFX feature
+ * @property {string[]|null} tags - the trait's tags where its set has the tags feature (rules 18 and
+ *   20); null in a set without the feature
+ * @property {string|null} tagsInput - the name of the tags' input, for a stored entry
+ * @property {SheetSubTrait[]|null} subTraits - the trait's sub-traits where its set has the
+ *   sub-traits feature (rule 19, ADR-046 point 1); null in a set without the feature
+ * @property {boolean} canAddSubTrait - a stored entry in a set with the sub-traits feature
  * @property {{inputName: string, options: {value: number, label: string}[]}|null} newSlot - for a
  *   fixed set's trait the actor holds no entry for, in a set with dice: the input whose choice
  *   creates the entry (Character Sheets behaviour 13); null otherwise
@@ -89,6 +122,26 @@ export const FREE_NAME_INPUTS = "freeNames";
  */
 
 /**
+ * One SFX as the sheet shows it, a trait's or a set's (ADR-035, ADR-046 points 3 and 5).
+ * @typedef {object} SheetSfx
+ * @property {number} index - its place in the stored list
+ * @property {string} text
+ * @property {boolean} unlocked
+ * @property {string|null} textInput - the name of its text input; null where the trait has no id
+ * @property {string|null} unlockedInput - the name of its unlocked checkbox; null likewise
+ */
+
+/**
+ * One sub-trait as the sheet shows it (rule 19).
+ * @typedef {object} SheetSubTrait
+ * @property {string|null} id - null for a stored sub-trait without an id, which gets no inputs
+ * @property {string} name
+ * @property {import("../rules/types.mjs").DieSize[]} dice
+ * @property {string|null} nameInput
+ * @property {RatingSlot[]} slots - a select per stored die, and a blank one while the rating is empty
+ */
+
+/**
  * @typedef {object} SheetSet
  * @property {string} id
  * @property {string} name - as the game configuration names it
@@ -97,6 +150,8 @@ export const FREE_NAME_INPUTS = "freeNames";
  * @property {boolean} shutDown - the whole set is flagged shut down (rule 15)
  * @property {boolean} canShutDown - the sheet offers the set's flag: to set where the set has the
  *   shut-down feature, to clear whenever it is set (behaviour 17)
+ * @property {SheetSfx[]|null} sfx - the set's own SFX where it has the set-SFX feature (rule 14,
+ *   ADR-046 point 5); null without the feature
  * @property {boolean} open - each actor adds its own traits (ADR-034), so the sheet's edit mode
  *   offers adding, renaming and removing them
  * @property {SheetTrait[]} traits
@@ -188,6 +243,62 @@ function ratingSlots(prefix, dice, multiDice) {
 }
 
 /**
+ * The SFX of a trait or a set as the sheet shows them, with their inputs.
+ * @param {unknown} stored - the stored list
+ * @param {string|null} prefix - the inputs' name up to the SFX's index; null for no inputs
+ * @returns {SheetSfx[]}
+ */
+function sfxRows(stored, prefix) {
+  return (Array.isArray(stored) ? stored : []).map((sfx, index) => ({
+    index,
+    text: (typeof sfx?.text === "string") ? sfx.text : "",
+    unlocked: sfx?.unlocked === true,
+    textInput: prefix ? `${prefix}.${index}.text` : null,
+    unlockedInput: prefix ? `${prefix}.${index}.unlocked` : null
+  }));
+}
+
+/** @returns {string[]} a stored tag list's text values, [] for anything else */
+function storedTags(entry) {
+  return Array.isArray(entry?.tags) ? entry.tags.filter(tag => typeof tag === "string") : [];
+}
+
+/**
+ * What a trait row shows of its set's per-set features beside the rating (Character Sheets
+ * behaviours 8 and 16; rule 13): a description, SFX, tags and sub-traits, each only where the set
+ * has its feature. Inputs exist only for a stored entry; a fixed set's trait without an entry gets
+ * them once it is rated.
+ * @param {object} set
+ * @param {object|null} entry
+ * @returns {object}
+ */
+function traitDetails(set, entry) {
+  const features = isPlainObject(set.features) ? set.features : {};
+  const id = (typeof entry?.id === "string") ? entry.id : null;
+  const subs = Array.isArray(entry?.sub) ? entry.sub.filter(isPlainObject) : [];
+  return {
+    description: (features.description === true) ? ((typeof entry?.description === "string") ? entry.description : "") : null,
+    descriptionInput: ((features.description === true) && id) ? `${DESCRIPTION_INPUTS}.${set.id}.${id}` : null,
+    sfx: (features.sfx === true) ? sfxRows(entry?.sfx, id ? `${SFX_INPUTS}.${set.id}.${id}` : null) : null,
+    canAddSfx: (features.sfx === true) && (id !== null),
+    tags: (features.tags === true) ? storedTags(entry) : null,
+    tagsInput: ((features.tags === true) && id) ? `${TAG_INPUTS}.${set.id}.${id}` : null,
+    subTraits: (features.subTraits === true) ? subs.map(sub => {
+      const subId = (typeof sub.id === "string") ? sub.id : null;
+      const dice = storedDice(sub);
+      return {
+        id: subId,
+        name: (typeof sub.name === "string") ? sub.name : "",
+        dice: [...dice],
+        nameInput: (subId && id) ? `${SUB_NAME_INPUTS}.${set.id}.${id}.${subId}` : null,
+        slots: (subId && id) ? ratingSlots(`${SUB_RATING_INPUTS}.${set.id}.${id}.${subId}`, dice, false) : []
+      };
+    }) : null,
+    canAddSubTrait: (features.subTraits === true) && (id !== null)
+  };
+}
+
+/**
  * One trait row of the sheet.
  * @param {object} set - the set's definition
  * @param {object|null} def - a fixed set's definition, null in an open set
@@ -222,6 +333,7 @@ function traitRow(set, def, entry, setShutDown) {
     statementInput: ((set.features?.statements === true) && (typeof entry?.id === "string"))
       ? `${STATEMENT_INPUTS}.${set.id}.${entry.id}` : null,
     challenged: entry?.challenged === true,
+    ...traitDetails(set, entry),
     newSlot: ((entry === null) && (set.list === "fixed") && (set.hasDice === true) && (typeof def?.id === "string"))
       ? { inputName: `${NEW_RATING_INPUTS}.${set.id}.${def.id}.0`,
         options: DIE_SIZES.map(size => ({ value: size, label: `d${size}` })) }
@@ -264,6 +376,14 @@ function freeTraitRow(entry) {
     statement: null,
     statementInput: null,
     challenged: false,
+    description: null,
+    descriptionInput: null,
+    sfx: null,
+    canAddSfx: false,
+    tags: null,
+    tagsInput: null,
+    subTraits: null,
+    canAddSubTrait: false,
     newSlot: null,
     nameInput: hasId ? `${FREE_NAME_INPUTS}.${entry.id}` : null,
     poolTraitId: hasId ? entry.id : null,
@@ -352,6 +472,7 @@ export function characterSheetView(system, config) {
       return {
         id: set.id, name: set.name, hasDice: set.hasDice === true, multiDice: set.multiDice === true,
         shutDown: setShutDown, canShutDown: (set.features?.shutDown === true) || setShutDown,
+        sfx: (set.features?.setSfx === true) ? sfxRows(stored.sfx, `${SET_SFX_INPUTS}.${set.id}`) : null,
         open: set.list !== "fixed", traits
       };
     });
@@ -380,9 +501,8 @@ function inputDie(value) {
  * @returns {import("../rules/types.mjs").EngineResult<number[]>}
  */
 function inputRating(inputs) {
-  const pairs = Array.isArray(inputs) ? inputs.map((value, index) => [index, value])
-    : isPlainObject(inputs) ? Object.entries(inputs).map(([index, value]) => [Number(index), value]) : null;
-  if ( !pairs || pairs.some(([index]) => !Number.isInteger(index) || (index < 0)) ) return fail("INVALID_TRAIT_DATA");
+  const pairs = indexedInputs(inputs);
+  if ( !pairs ) return fail("INVALID_TRAIT_DATA");
   const dice = [];
   for ( const [, value] of pairs.sort((a, b) => a[0] - b[0]) ) {
     const die = inputDie(value);
@@ -477,15 +597,24 @@ function trimmedText(value) {
  * for an entry that has no statement changes nothing. Changing the text never resolves a challenge
  * (TS-15c, editStatement). Whether the result fits the configuration is checkCharacterUpdate's
  * job.
+ *
+ * The details of a set trait (Character Sheets behaviour 16) are read the same way: a description
+ * is trimmed and may be blank; an SFX's text is trimmed and its unlocked flag taken from its
+ * checkbox; tags are trimmed, split at commas, blanks dropped and each kept once (cleanTags); a
+ * sub-trait's name and rating as for a trait. A set's own SFX come back as the set's `sfx` list
+ * beside or instead of its entries. Inputs for an SFX, a sub-trait or an entry the actor no longer
+ * holds are ignored.
  * @param {import("../rules/types.mjs").CharacterTraitData} system - the stored system data, read
  *   when the form is submitted
  * @param {import("../rules/types.mjs").GameConfig} config
- * @param {{ratings?: unknown, newRatings?: unknown, names?: unknown, statements?: unknown}} form -
- *   the form's groups of trait inputs, each as its inputs name it or undefined
+ * @param {{ratings?: unknown, newRatings?: unknown, names?: unknown, statements?: unknown,
+ *   descriptions?: unknown, sfx?: unknown, tags?: unknown, subNames?: unknown,
+ *   subRatings?: unknown, setSfx?: unknown}} form - the form's groups of trait inputs, each as its
+ *   inputs name it or undefined
  * @param {() => string} makeId - makes the id of a new entry
- * @returns {import("../rules/types.mjs").EngineResult<Record<string, {entries: object[]}>>} the
- *   changed sets by id; refuses INVALID_TRAIT_DATA (inputs not shaped as the sheet names them) and
- *   INVALID_DIE_SIZE
+ * @returns {import("../rules/types.mjs").EngineResult<Record<string, {entries?: object[],
+ *   sfx?: object[]}>>} the changed sets by id; refuses INVALID_TRAIT_DATA (inputs not shaped as the
+ *   sheet names them) and INVALID_DIE_SIZE
  */
 export function sheetTraitChanges(system, config, form, makeId) {
   if ( !isPlainObject(form) || (typeof makeId !== "function") ) return fail("INVALID_TRAIT_DATA");
@@ -493,6 +622,9 @@ export function sheetTraitChanges(system, config, form, makeId) {
   if ( !rated.ok ) return rated;
   const changes = rated.value;
   const entriesOf = setId => changes[setId]?.entries ?? storedEntries(system, setId);
+  const put = (setId, patch) => {
+    changes[setId] = { ...changes[setId], ...patch };
+  };
 
   if ( form.names !== undefined ) {
     if ( !isPlainObject(form.names) ) return fail("INVALID_TRAIT_DATA");
@@ -508,7 +640,7 @@ export function sheetTraitChanges(system, config, form, makeId) {
         entry.name = name.trim();
         changed = true;
       }
-      if ( changed ) changes[setId] = { entries };
+      if ( changed ) put(setId, { entries });
     }
   }
 
@@ -528,7 +660,7 @@ export function sheetTraitChanges(system, config, form, makeId) {
         entries[index] = edited.value;
         changed = true;
       }
-      if ( changed ) changes[setId] = { entries };
+      if ( changed ) put(setId, { entries });
     }
   }
 
@@ -548,10 +680,173 @@ export function sheetTraitChanges(system, config, form, makeId) {
         entries.push({ id: makeId(), defId, name: def.name, dice: rating.value, sfx: [] });
         changed = true;
       }
-      if ( changed ) changes[setId] = { entries };
+      if ( changed ) put(setId, { entries });
+    }
+  }
+
+  for ( const [group, change] of [
+    [form.descriptions, descriptionChange], [form.sfx, entrySfxChange], [form.tags, tagsChange],
+    [form.subNames, subNamesChange], [form.subRatings, subRatingsChange]
+  ] ) {
+    const applied = eachEntryInput(group, entriesOf, put, change);
+    if ( !applied.ok ) return applied;
+  }
+
+  if ( form.setSfx !== undefined ) {
+    if ( !isPlainObject(form.setSfx) ) return fail("INVALID_TRAIT_DATA");
+    for ( const [setId, inputs] of Object.entries(form.setSfx) ) {
+      const stored = system?.traits?.[setId];
+      if ( !isPlainObject(stored) ) continue;
+      const next = sfxFromInputs(stored.sfx, inputs);
+      if ( !next.ok ) return next;
+      if ( next.value ) put(setId, { sfx: next.value });
     }
   }
   return ok(changes);
+}
+
+/**
+ * Applies one group of per-entry inputs (set id → entry id → input) to the entries they name. An
+ * input for an entry the set doesn't hold is ignored.
+ * @param {unknown} group - the group as the form gives it, or undefined
+ * @param {(setId: string) => object[]} entriesOf - a set's entries, as changed so far
+ * @param {(setId: string, patch: object) => void} put - records a set's change
+ * @param {(entry: object, input: unknown) => import("../rules/types.mjs").EngineResult<object|null>} change -
+ *   the entry after its input, or null when the input changes nothing
+ * @returns {import("../rules/types.mjs").EngineResult<null>} refuses INVALID_TRAIT_DATA or change's code
+ */
+function eachEntryInput(group, entriesOf, put, change) {
+  if ( group === undefined ) return ok(null);
+  if ( !isPlainObject(group) ) return fail("INVALID_TRAIT_DATA");
+  for ( const [setId, byEntry] of Object.entries(group) ) {
+    if ( !isPlainObject(byEntry) ) return fail("INVALID_TRAIT_DATA");
+    const entries = entriesOf(setId);
+    let changed = false;
+    for ( const [index, entry] of entries.entries() ) {
+      if ( !isPlainObject(entry) || (typeof entry.id !== "string") || !Object.hasOwn(byEntry, entry.id) ) continue;
+      const next = change(entry, byEntry[entry.id]);
+      if ( !next.ok ) return next;
+      if ( next.value === null ) continue;
+      entries[index] = next.value;
+      changed = true;
+    }
+    if ( changed ) put(setId, { entries });
+  }
+  return ok(null);
+}
+
+/** @returns {import("../rules/types.mjs").EngineResult<object|null>} the entry with its description input */
+function descriptionChange(entry, input) {
+  if ( typeof input !== "string" ) return fail("INVALID_TRAIT_DATA");
+  const description = input.trim();
+  if ( description === trimmedText(entry.description) ) return ok(null);
+  return ok({ ...entry, description });
+}
+
+/** @returns {Array<[number, unknown]>|null} an input group keyed by index, as pairs; null if unreadable */
+function indexedInputs(inputs) {
+  const pairs = Array.isArray(inputs) ? inputs.map((value, index) => [index, value])
+    : isPlainObject(inputs) ? Object.entries(inputs).map(([index, value]) => [Number(index), value]) : null;
+  if ( !pairs || pairs.some(([index]) => !Number.isInteger(index) || (index < 0)) ) return null;
+  return pairs;
+}
+
+/**
+ * A list of SFX after its inputs: each SFX whose index has an input gets the input's trimmed text
+ * and unlocked flag; the others, and an input for an index the list doesn't have, are left alone.
+ * Text that differs from the stored text only by surrounding spaces counts as unchanged.
+ * @param {unknown} stored - the stored list
+ * @param {unknown} inputs - index → {text, unlocked}
+ * @returns {import("../rules/types.mjs").EngineResult<object[]|null>} the new list, or null when
+ *   nothing changed; refuses INVALID_TRAIT_DATA
+ */
+function sfxFromInputs(stored, inputs) {
+  const pairs = indexedInputs(inputs);
+  if ( !pairs ) return fail("INVALID_TRAIT_DATA");
+  const list = Array.isArray(stored) ? stored.map(copyStored) : [];
+  let changed = false;
+  for ( const [index, input] of pairs ) {
+    if ( !isPlainObject(input) ) return fail("INVALID_TRAIT_DATA");
+    if ( (input.text !== undefined) && (typeof input.text !== "string") ) return fail("INVALID_TRAIT_DATA");
+    if ( (input.unlocked !== undefined) && (typeof input.unlocked !== "boolean") ) return fail("INVALID_TRAIT_DATA");
+    const sfx = list[index];
+    if ( !isPlainObject(sfx) ) continue;
+    if ( (typeof input.text === "string") && (input.text.trim() !== trimmedText(sfx.text)) ) {
+      sfx.text = input.text.trim();
+      changed = true;
+    }
+    if ( (typeof input.unlocked === "boolean") && (input.unlocked !== sfx.unlocked) ) {
+      sfx.unlocked = input.unlocked;
+      changed = true;
+    }
+  }
+  return ok(changed ? list : null);
+}
+
+/** @returns {import("../rules/types.mjs").EngineResult<object|null>} the entry with its SFX inputs */
+function entrySfxChange(entry, input) {
+  const next = sfxFromInputs(entry.sfx, input);
+  if ( !next.ok || (next.value === null) ) return next;
+  return ok({ ...entry, sfx: next.value });
+}
+
+/**
+ * Tags as the sheet stores them: trimmed, without blanks, each once, in their first order. A tag
+ * holding a comma is split there, as Foundry's tag input splits its value when the sheet renders, so
+ * what is stored is what the input shows and a later submit never rewrites it.
+ * @param {string[]} tags
+ * @returns {string[]}
+ */
+function cleanTags(tags) {
+  return [...new Set(tags.flatMap(tag => tag.split(",")).map(tag => tag.trim()).filter(tag => tag !== ""))];
+}
+
+/** @returns {import("../rules/types.mjs").EngineResult<object|null>} the entry with its tags input */
+function tagsChange(entry, input) {
+  const list = (typeof input === "string") ? input.split(",") : input;
+  if ( !Array.isArray(list) || list.some(tag => typeof tag !== "string") ) return fail("INVALID_TRAIT_DATA");
+  const tags = cleanTags(list);
+  const stored = cleanTags(storedTags(entry));
+  if ( (tags.length === stored.length) && tags.every((tag, i) => tag === stored[i]) ) return ok(null);
+  return ok({ ...entry, tags });
+}
+
+/** @returns {import("../rules/types.mjs").EngineResult<object|null>} the entry with its sub-trait name inputs */
+function subNamesChange(entry, input) {
+  if ( !isPlainObject(input) ) return fail("INVALID_TRAIT_DATA");
+  if ( !Array.isArray(entry.sub) ) return ok(null);
+  let changed = false;
+  const sub = entry.sub.map(trait => {
+    const name = isPlainObject(trait) ? input[trait.id] : undefined;
+    if ( (typeof name !== "string") || (name.trim() === "") || (name.trim() === trimmedText(trait.name)) ) return trait;
+    changed = true;
+    return { ...trait, name: name.trim() };
+  });
+  return ok(changed ? { ...entry, sub } : null);
+}
+
+/** @returns {import("../rules/types.mjs").EngineResult<object|null>} the entry with its sub-trait rating inputs */
+function subRatingsChange(entry, input) {
+  if ( !isPlainObject(input) ) return fail("INVALID_TRAIT_DATA");
+  if ( !Array.isArray(entry.sub) ) return ok(null);
+  let changed = false;
+  const sub = [];
+  for ( const trait of entry.sub ) {
+    const dieInputs = isPlainObject(trait) ? input[trait.id] : undefined;
+    if ( dieInputs === undefined ) {
+      sub.push(trait);
+      continue;
+    }
+    const rating = inputRating(dieInputs);
+    if ( !rating.ok ) return rating;
+    if ( sameDice(rating.value, storedDice(trait)) ) {
+      sub.push(trait);
+      continue;
+    }
+    changed = true;
+    sub.push({ ...trait, dice: rating.value });
+  }
+  return ok(changed ? { ...entry, sub } : null);
 }
 
 /**
@@ -715,16 +1010,17 @@ export function resolveTraitChallenge(system, setId, entryId, rewritten) {
 }
 
 /**
- * Whether a set's shut-down flags may be set: only where the game configuration gives the set the
- * shut-down feature (rule 13). Clearing a flag is always allowed, so a stored flag is never stuck
- * (ADR-029; Character Sheets CS-D16).
+ * Whether a set has a per-set feature turned on in the game configuration (rule 13). Adding needs
+ * the feature; clearing a shut-down flag or removing a detail never does, so nothing stored is
+ * stuck (ADR-029; Character Sheets CS-D16).
  * @param {import("../rules/types.mjs").GameConfig} config
  * @param {string} setId
+ * @param {string} feature - a key of TRAIT_SET_FEATURES
  * @returns {boolean}
  */
-function shutDownOffered(config, setId) {
+function featureOffered(config, setId, feature) {
   const set = Array.isArray(config?.traitSets) ? traitSetById(config, setId) : null;
-  return isPlainObject(set) && (set.features?.shutDown === true);
+  return isPlainObject(set) && (set.features?.[feature] === true);
 }
 
 /**
@@ -744,7 +1040,7 @@ function shutDownOffered(config, setId) {
  */
 export function setTraitShutDown(system, config, setId, entryId, shutDown) {
   if ( typeof shutDown !== "boolean" ) return fail("INVALID_TRAIT_DATA");
-  if ( shutDown && (typeof setId === "string") && !shutDownOffered(config, setId) ) return fail("SHUT_DOWN_NOT_OFFERED");
+  if ( shutDown && (typeof setId === "string") && !featureOffered(config, setId, "shutDown") ) return fail("SHUT_DOWN_NOT_OFFERED");
   return withEntryChanged(system, setId, entryId, entry => {
     const next = { ...entry };
     if ( !shutDown ) delete next.shutDown;
@@ -769,7 +1065,115 @@ export function setShutDownChange(system, config, setId, shutDown) {
   if ( !isPlainObject(system) || (typeof setId !== "string") || (typeof shutDown !== "boolean") ) {
     return fail("INVALID_TRAIT_DATA");
   }
-  if ( shutDown && !shutDownOffered(config, setId) ) return fail("SHUT_DOWN_NOT_OFFERED");
+  if ( shutDown && !featureOffered(config, setId, "shutDown") ) return fail("SHUT_DOWN_NOT_OFFERED");
   const held = isPlainObject(system.traits) && Object.hasOwn(system.traits, setId);
   return ok(held ? { shutDown } : { shutDown, sfx: [], entries: [] });
+}
+
+/**
+ * A set's entries with a new SFX on one trait: no text yet and unlocked (Character Sheets
+ * behaviour 16, CS-D6), where the set has the SFX feature.
+ * @param {import("../rules/types.mjs").CharacterTraitData} system - the stored system data
+ * @param {import("../rules/types.mjs").GameConfig} config
+ * @param {string} setId
+ * @param {string} entryId
+ * @returns {import("../rules/types.mjs").EngineResult<{entries: object[]}>} refuses
+ *   INVALID_TRAIT_DATA, TRAIT_FEATURE_NOT_OFFERED and UNKNOWN_TRAIT
+ */
+export function addTraitSfx(system, config, setId, entryId) {
+  if ( (typeof setId === "string") && !featureOffered(config, setId, "sfx") ) return fail("TRAIT_FEATURE_NOT_OFFERED");
+  return withEntryChanged(system, setId, entryId, entry => ok({
+    ...entry, sfx: [...(Array.isArray(entry.sfx) ? entry.sfx : []), { text: "", unlocked: true }]
+  }));
+}
+
+/**
+ * A set's entries without one SFX of one trait. Removing is allowed whatever the set's features.
+ * @param {import("../rules/types.mjs").CharacterTraitData} system - the stored system data
+ * @param {string} setId
+ * @param {string} entryId
+ * @param {number} index - the SFX's place in the trait's list
+ * @returns {import("../rules/types.mjs").EngineResult<{entries: object[]}>} refuses
+ *   INVALID_TRAIT_DATA, UNKNOWN_TRAIT and UNKNOWN_SFX
+ */
+export function removeTraitSfx(system, setId, entryId, index) {
+  if ( !Number.isInteger(index) ) return fail("INVALID_TRAIT_DATA");
+  return withEntryChanged(system, setId, entryId, entry => {
+    const sfx = Array.isArray(entry.sfx) ? entry.sfx : [];
+    if ( (index < 0) || (index >= sfx.length) ) return fail("UNKNOWN_SFX");
+    return ok({ ...entry, sfx: sfx.filter((_, i) => i !== index) });
+  });
+}
+
+/**
+ * A set's change with a new SFX of its own: no text yet and unlocked (rule 14, ADR-046 point 5,
+ * CS-D6), where the set has the set-SFX feature. A set the actor holds nothing in yet gets an empty
+ * entries list beside its SFX.
+ * @param {import("../rules/types.mjs").CharacterTraitData} system - the stored system data
+ * @param {import("../rules/types.mjs").GameConfig} config
+ * @param {string} setId
+ * @returns {import("../rules/types.mjs").EngineResult<{sfx: object[], entries?: []}>} refuses
+ *   INVALID_TRAIT_DATA and TRAIT_FEATURE_NOT_OFFERED
+ */
+export function addSetSfx(system, config, setId) {
+  if ( !isPlainObject(system) || (typeof setId !== "string") ) return fail("INVALID_TRAIT_DATA");
+  if ( !featureOffered(config, setId, "setSfx") ) return fail("TRAIT_FEATURE_NOT_OFFERED");
+  const stored = system.traits?.[setId];
+  const sfx = [...(Array.isArray(stored?.sfx) ? stored.sfx.map(copyStored) : []), { text: "", unlocked: true }];
+  return ok(isPlainObject(stored) ? { sfx } : { sfx, entries: [] });
+}
+
+/**
+ * A set's change without one of its own SFX.
+ * @param {import("../rules/types.mjs").CharacterTraitData} system - the stored system data
+ * @param {string} setId
+ * @param {number} index
+ * @returns {import("../rules/types.mjs").EngineResult<{sfx: object[]}>} refuses INVALID_TRAIT_DATA
+ *   and UNKNOWN_SFX
+ */
+export function removeSetSfx(system, setId, index) {
+  if ( !isPlainObject(system) || (typeof setId !== "string") || !Number.isInteger(index) ) return fail("INVALID_TRAIT_DATA");
+  const sfx = system.traits?.[setId]?.sfx;
+  if ( !Array.isArray(sfx) || (index < 0) || (index >= sfx.length) ) return fail("UNKNOWN_SFX");
+  return ok({ sfx: sfx.filter((_, i) => i !== index).map(copyStored) });
+}
+
+/**
+ * A set's entries with a new sub-trait on one trait, such as a specialty (rule 19, ADR-046 point 1):
+ * a name and no rating yet, where the set has the sub-traits feature.
+ * @param {import("../rules/types.mjs").CharacterTraitData} system - the stored system data
+ * @param {import("../rules/types.mjs").GameConfig} config
+ * @param {string} setId
+ * @param {string} entryId
+ * @param {string} id - the new sub-trait's id, made by the caller
+ * @param {string} name
+ * @returns {import("../rules/types.mjs").EngineResult<{entries: object[]}>} refuses
+ *   INVALID_TRAIT_DATA (an id or a name that isn't text, a blank name), TRAIT_FEATURE_NOT_OFFERED
+ *   and UNKNOWN_TRAIT
+ */
+export function addSubTrait(system, config, setId, entryId, id, name) {
+  if ( (typeof id !== "string") || (typeof name !== "string") || (name.trim() === "") ) return fail("INVALID_TRAIT_DATA");
+  if ( (typeof setId === "string") && !featureOffered(config, setId, "subTraits") ) return fail("TRAIT_FEATURE_NOT_OFFERED");
+  return withEntryChanged(system, setId, entryId, entry => ok({
+    ...entry, sub: [...(Array.isArray(entry.sub) ? entry.sub : []), { id, name: name.trim(), dice: [] }]
+  }));
+}
+
+/**
+ * A set's entries without one sub-trait of one trait. Removing is allowed whatever the set's
+ * features.
+ * @param {import("../rules/types.mjs").CharacterTraitData} system - the stored system data
+ * @param {string} setId
+ * @param {string} entryId
+ * @param {string} subId
+ * @returns {import("../rules/types.mjs").EngineResult<{entries: object[]}>} refuses
+ *   INVALID_TRAIT_DATA and UNKNOWN_TRAIT (the trait or the sub-trait)
+ */
+export function removeSubTrait(system, setId, entryId, subId) {
+  if ( typeof subId !== "string" ) return fail("INVALID_TRAIT_DATA");
+  return withEntryChanged(system, setId, entryId, entry => {
+    const sub = Array.isArray(entry.sub) ? entry.sub : [];
+    if ( !sub.some(trait => isPlainObject(trait) && (trait.id === subId)) ) return fail("UNKNOWN_TRAIT");
+    return ok({ ...entry, sub: sub.filter(trait => !(isPlainObject(trait) && (trait.id === subId))) });
+  });
 }

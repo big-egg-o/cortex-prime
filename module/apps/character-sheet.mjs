@@ -37,7 +37,11 @@
  * (RQ-034). In edit mode, a set's and a trait's shut-down flags are set where the set has the
  * shut-down feature and cleared whatever their reason (behaviour 17, rule 15).
  *
- * Not in this slice: descriptions, SFX, tags and sub-traits.
+ * The rest of a row follows its set's features (behaviours 8 and 16, rule 13): a description, SFX
+ * with their locked or unlocked state, tags and sub-traits, and, under the set's name, the set's own
+ * SFX. Play mode shows them; edit mode edits, adds and removes them (CS-D1), a new SFX starting
+ * unlocked (CS-D6), and asks before removing one. Sub-traits are shown and edited only: how they go
+ * into a pool is mod behaviour (Roadmap M5).
  * @module apps/character-sheet
  */
 
@@ -45,9 +49,10 @@ import CharacterData from "../data/actor/character.mjs";
 import { getGameConfig } from "../config/settings.mjs";
 import { checkCharacterUpdate } from "../rules/traits.mjs";
 import {
-  FREE_NAME_INPUTS, FREE_RATING_INPUTS, NAME_INPUTS, NEW_RATING_INPUTS, RATING_INPUTS, STATEMENT_INPUTS, addFreeTrait,
-  addTraitEntry, characterSheetView, freeTraitChanges, removeFreeTrait, removeTraitEntry, resolveTraitChallenge,
-  setShutDownChange, setTraitShutDown, sheetTraitChanges
+  DESCRIPTION_INPUTS, FREE_NAME_INPUTS, FREE_RATING_INPUTS, NAME_INPUTS, NEW_RATING_INPUTS, RATING_INPUTS, SET_SFX_INPUTS,
+  SFX_INPUTS, STATEMENT_INPUTS, SUB_NAME_INPUTS, SUB_RATING_INPUTS, TAG_INPUTS, addFreeTrait, addSetSfx, addSubTrait,
+  addTraitEntry, addTraitSfx, characterSheetView, freeTraitChanges, removeFreeTrait, removeSetSfx, removeSubTrait,
+  removeTraitEntry, removeTraitSfx, resolveTraitChallenge, setShutDownChange, setTraitShutDown, sheetTraitChanges
 } from "./character-sheet-data.mjs";
 import { addTraitToPool } from "./pool-builder.mjs";
 
@@ -55,6 +60,9 @@ const { HandlebarsApplicationMixin } = foundry.applications.api;
 const { ActorSheetV2 } = foundry.applications.sheets;
 
 const TEMPLATE = "systems/cortex-prime/templates/actor/character-sheet.hbs";
+
+/** The list of SFX, a partial the sheet uses for a trait's SFX and a set's own. */
+const SFX_LIST = "systems/cortex-prime/templates/actor/sfx-list.hbs";
 
 /**
  * The sheet for "character" actors.
@@ -76,7 +84,13 @@ export default class CharacterSheet extends HandlebarsApplicationMixin(ActorShee
       removeTrait: CharacterSheet.#onRemoveTrait,
       resolveChallenge: CharacterSheet.#onResolveChallenge,
       toggleShutDown: CharacterSheet.#onToggleShutDown,
-      toggleSetShutDown: CharacterSheet.#onToggleSetShutDown
+      toggleSetShutDown: CharacterSheet.#onToggleSetShutDown,
+      addSfx: CharacterSheet.#onAddSfx,
+      removeSfx: CharacterSheet.#onRemoveSfx,
+      addSetSfx: CharacterSheet.#onAddSetSfx,
+      removeSetSfx: CharacterSheet.#onRemoveSetSfx,
+      addSubTrait: CharacterSheet.#onAddSubTrait,
+      removeSubTrait: CharacterSheet.#onRemoveSubTrait
     }
   };
 
@@ -99,7 +113,7 @@ export default class CharacterSheet extends HandlebarsApplicationMixin(ActorShee
 
   /** @override */
   static PARTS = {
-    sheet: { template: TEMPLATE, scrollable: [".cp-sheet-body"] }
+    sheet: { template: TEMPLATE, templates: [SFX_LIST], scrollable: [".cp-sheet-body"] }
   };
 
   /**
@@ -149,19 +163,37 @@ export default class CharacterSheet extends HandlebarsApplicationMixin(ActorShee
       },
       ratingText: CharacterSheet.#ratingText(trait),
       hintTexts: trait.hints.map(code => i18n.localize(`CORTEX.Sheet.Hints.${code}`)),
-      slots: trait.slots.map(slot => ({
-        ...slot,
-        ariaLabel: slot.adds
-          ? i18n.format("CORTEX.Sheet.AddDie", { trait: trait.name })
-          : i18n.format("CORTEX.Sheet.Die", { trait: trait.name, number: slot.index + 1 })
-      }))
+      slots: CharacterSheet.#labelledSlots(trait.slots, trait.name),
+      descriptionInput: editMode ? trait.descriptionInput : null,
+      descriptionLabel: i18n.format("CORTEX.Sheet.Details.DescriptionInput", { trait: trait.name }),
+      sfx: CharacterSheet.#sfxContext(trait.sfx, trait.name),
+      sfxEdit: editMode && trait.canAddSfx,
+      tagsInput: editMode ? trait.tagsInput : null,
+      tagsValue: (trait.tags ?? []).join(","),
+      tagsLabel: i18n.format("CORTEX.Sheet.Details.TagsInput", { trait: trait.name }),
+      subTraits: trait.subTraits?.map(sub => {
+        const name = sub.name || i18n.localize("CORTEX.Sheet.Unnamed");
+        return {
+          ...sub, label: name, ratingText: sub.dice.map(size => `d${size}`).join(" "),
+          nameLabel: i18n.format("CORTEX.Sheet.Details.SubName", { trait: trait.name }),
+          removeLabel: i18n.format("CORTEX.Sheet.Details.RemoveSub", { sub: name }),
+          slots: CharacterSheet.#labelledSlots(sub.slots, name)
+        };
+      }) ?? null,
+      subEdit: editMode && trait.canAddSubTrait,
+      addSfxLabel: i18n.format("CORTEX.Sheet.Details.AddSfxTo", { trait: trait.name }),
+      addSubLabel: i18n.format("CORTEX.Sheet.Details.AddSubTo", { trait: trait.name })
     });
     // The sheet's sections: the kind's sets, then its free traits, which belong to no set (TS-22).
     const sections = view.sets.map(set => ({
       ...set, free: false, emptyText: i18n.localize("CORTEX.Sheet.NoTraits"), traits: set.traits.map(row),
       canShutDown: set.canShutDown && editMode,
       shutDownLabel: i18n.format(set.shutDown ? "CORTEX.Sheet.ShutDown.ClearSet" : "CORTEX.Sheet.ShutDown.SetSet",
-        { set: set.name })
+        { set: set.name }),
+      sfx: CharacterSheet.#sfxContext(set.sfx, set.name),
+      sfxEdit: editMode && (set.sfx !== null),
+      showSetSfx: (set.sfx !== null) && (editMode || (set.sfx.length > 0)),
+      addSetSfxLabel: i18n.format("CORTEX.Sheet.Details.AddSetSfx", { set: set.name })
     }));
     if ( view.freeTraits ) {
       sections.push({
@@ -200,6 +232,40 @@ export default class CharacterSheet extends HandlebarsApplicationMixin(ActorShee
       options.unshift({ value: system.kindId, label: game.i18n.localize("CORTEX.Sheet.UnknownKindOption"), selected: true });
     }
     return { options, unassigned };
+  }
+
+  /**
+   * Rating slots with the labels the selects carry.
+   * @param {import("./character-sheet-data.mjs").RatingSlot[]} slots
+   * @param {string} name - the trait's or sub-trait's name
+   * @returns {object[]}
+   */
+  static #labelledSlots(slots, name) {
+    return slots.map(slot => ({
+      ...slot,
+      ariaLabel: slot.adds
+        ? game.i18n.format("CORTEX.Sheet.AddDie", { trait: name })
+        : game.i18n.format("CORTEX.Sheet.Die", { trait: name, number: slot.index + 1 })
+    }));
+  }
+
+  /**
+   * A list of SFX with the labels the sheet shows, or null where the set lacks the feature.
+   * @param {import("./character-sheet-data.mjs").SheetSfx[]|null} sfx
+   * @param {string} owner - the trait's or set's name
+   * @returns {object[]|null}
+   */
+  static #sfxContext(sfx, owner) {
+    if ( !sfx ) return null;
+    const i18n = game.i18n;
+    return sfx.map(row => ({
+      ...row,
+      label: row.text || i18n.localize("CORTEX.Sheet.Details.SfxBlank"),
+      stateLabel: i18n.localize(row.unlocked ? "CORTEX.Sheet.Details.Unlocked" : "CORTEX.Sheet.Details.Locked"),
+      textLabel: i18n.format("CORTEX.Sheet.Details.SfxText", { owner, number: row.index + 1 }),
+      unlockedLabel: i18n.format("CORTEX.Sheet.Details.SfxUnlocked", { owner, number: row.index + 1 }),
+      removeLabel: i18n.format("CORTEX.Sheet.Details.RemoveSfx", { owner, number: row.index + 1 })
+    }));
   }
 
   /**
@@ -350,13 +416,97 @@ export default class CharacterSheet extends HandlebarsApplicationMixin(ActorShee
     if ( (setId === undefined) || !row ) return;
     const name = row.querySelector("input.cp-trait-name")?.value || row.dataset.traitName
       || game.i18n.localize("CORTEX.Sheet.Unnamed");
-    const confirmed = await foundry.applications.api.DialogV2.confirm({
-      window: { title: "CORTEX.Sheet.RemoveTitle" },
-      content: `<p>${foundry.utils.escapeHTML(game.i18n.format("CORTEX.Sheet.RemoveConfirm", { trait: name }))}</p>`
-    });
-    if ( !confirmed ) return;
+    if ( !await CharacterSheet.#confirmRemoval("CORTEX.Sheet.RemoveTitle",
+      game.i18n.format("CORTEX.Sheet.RemoveConfirm", { trait: name })) ) return;
     if ( setId === null ) await this.removeFreeTrait(row.dataset.entryId);
     else await this.removeTrait(setId, row.dataset.entryId);
+  }
+
+  /**
+   * Asks before something is removed.
+   * @param {string} title - a language key
+   * @param {string} text - the question, already localized
+   * @returns {Promise<boolean>} whether the user confirmed
+   */
+  static async #confirmRemoval(title, text) {
+    return Boolean(await foundry.applications.api.DialogV2.confirm({
+      window: { title }, content: `<p>${foundry.utils.escapeHTML(text)}</p>`
+    }));
+  }
+
+  /**
+   * Adds an SFX to the clicked trait.
+   * @this {CharacterSheet}
+   * @param {PointerEvent} _event
+   * @param {HTMLElement} target
+   */
+  static async #onAddSfx(_event, target) {
+    const { setId, entryId } = CharacterSheet.#setEntryOf(target);
+    if ( setId && entryId ) await this.addSfx(setId, entryId);
+  }
+
+  /**
+   * Removes the clicked SFX of a trait, after the user confirms.
+   * @this {CharacterSheet}
+   * @param {PointerEvent} _event
+   * @param {HTMLElement} target
+   */
+  static async #onRemoveSfx(_event, target) {
+    const { setId, entryId } = CharacterSheet.#setEntryOf(target);
+    const index = Number(target.dataset.index);
+    if ( !setId || !entryId || !Number.isInteger(index) ) return;
+    if ( !await CharacterSheet.#confirmRemoval("CORTEX.Sheet.Details.RemoveSfxTitle", target.dataset.tooltip ?? "") ) return;
+    await this.removeSfx(setId, entryId, index);
+  }
+
+  /**
+   * Adds an SFX of its own to the clicked set.
+   * @this {CharacterSheet}
+   * @param {PointerEvent} _event
+   * @param {HTMLElement} target
+   */
+  static async #onAddSetSfx(_event, target) {
+    const setId = CharacterSheet.#setIdOf(target);
+    if ( setId ) await this.addSetSfx(setId);
+  }
+
+  /**
+   * Removes the clicked SFX of a set, after the user confirms.
+   * @this {CharacterSheet}
+   * @param {PointerEvent} _event
+   * @param {HTMLElement} target
+   */
+  static async #onRemoveSetSfx(_event, target) {
+    const setId = CharacterSheet.#setIdOf(target);
+    const index = Number(target.dataset.index);
+    if ( !setId || !Number.isInteger(index) ) return;
+    if ( !await CharacterSheet.#confirmRemoval("CORTEX.Sheet.Details.RemoveSfxTitle", target.dataset.tooltip ?? "") ) return;
+    await this.removeSetSfx(setId, index);
+  }
+
+  /**
+   * Adds a sub-trait to the clicked trait.
+   * @this {CharacterSheet}
+   * @param {PointerEvent} _event
+   * @param {HTMLElement} target
+   */
+  static async #onAddSubTrait(_event, target) {
+    const { setId, entryId } = CharacterSheet.#setEntryOf(target);
+    if ( setId && entryId ) await this.addSubTrait(setId, entryId);
+  }
+
+  /**
+   * Removes the clicked sub-trait, after the user confirms.
+   * @this {CharacterSheet}
+   * @param {PointerEvent} _event
+   * @param {HTMLElement} target
+   */
+  static async #onRemoveSubTrait(_event, target) {
+    const { setId, entryId } = CharacterSheet.#setEntryOf(target);
+    const subId = target.closest("[data-sub-id]")?.dataset.subId;
+    if ( !setId || !entryId || !subId ) return;
+    if ( !await CharacterSheet.#confirmRemoval("CORTEX.Sheet.Details.RemoveSubTitle", target.dataset.tooltip ?? "") ) return;
+    await this.removeSubTrait(setId, entryId, subId);
   }
 
   /**
@@ -366,10 +516,8 @@ export default class CharacterSheet extends HandlebarsApplicationMixin(ActorShee
    */
   async addTrait(setId) {
     if ( !this.isEditable ) return false;
-    const added = addTraitEntry(this.actor.system.toObject(), getGameConfig(), setId, foundry.utils.randomID(),
-      game.i18n.localize("CORTEX.Sheet.NewTrait"));
-    if ( !added.ok ) return this.#refuse(added.code);
-    return this.#writeSystem({ traits: { [setId]: added.value } });
+    return this.#writeSetChange(setId, addTraitEntry(this.actor.system.toObject(), getGameConfig(), setId, foundry.utils.randomID(),
+      game.i18n.localize("CORTEX.Sheet.NewTrait")));
   }
 
   /**
@@ -382,9 +530,7 @@ export default class CharacterSheet extends HandlebarsApplicationMixin(ActorShee
    */
   async resolveChallenge(setId, entryId, rewritten) {
     if ( !this.isEditable ) return false;
-    const resolved = resolveTraitChallenge(this.actor.system.toObject(), setId, entryId, rewritten);
-    if ( !resolved.ok ) return this.#refuse(resolved.code);
-    return this.#writeSystem({ traits: { [setId]: resolved.value } });
+    return this.#writeSetChange(setId, resolveTraitChallenge(this.actor.system.toObject(), setId, entryId, rewritten));
   }
 
   /**
@@ -396,9 +542,7 @@ export default class CharacterSheet extends HandlebarsApplicationMixin(ActorShee
    */
   async setShutDown(setId, entryId, shutDown) {
     if ( !this.isEditable ) return false;
-    const changed = setTraitShutDown(this.actor.system.toObject(), getGameConfig(), setId, entryId, shutDown);
-    if ( !changed.ok ) return this.#refuse(changed.code);
-    return this.#writeSystem({ traits: { [setId]: changed.value } });
+    return this.#writeSetChange(setId, setTraitShutDown(this.actor.system.toObject(), getGameConfig(), setId, entryId, shutDown));
   }
 
   /**
@@ -410,9 +554,75 @@ export default class CharacterSheet extends HandlebarsApplicationMixin(ActorShee
    */
   async setSetShutDown(setId, shutDown) {
     if ( !this.isEditable ) return false;
-    const changed = setShutDownChange(this.actor.system.toObject(), getGameConfig(), setId, shutDown);
-    if ( !changed.ok ) return this.#refuse(changed.code);
-    return this.#writeSystem({ traits: { [setId]: changed.value } });
+    return this.#writeSetChange(setId, setShutDownChange(this.actor.system.toObject(), getGameConfig(), setId, shutDown));
+  }
+
+  /**
+   * Adds an SFX to a trait: no text yet, unlocked (CS-D6).
+   * @param {string} setId
+   * @param {string} entryId
+   * @returns {Promise<boolean>} whether it was written
+   */
+  async addSfx(setId, entryId) {
+    if ( !this.isEditable ) return false;
+    return this.#writeSetChange(setId, addTraitSfx(this.actor.system.toObject(), getGameConfig(), setId, entryId));
+  }
+
+  /**
+   * Removes one SFX of a trait, without asking: the click handler asks first.
+   * @param {string} setId
+   * @param {string} entryId
+   * @param {number} index
+   * @returns {Promise<boolean>} whether it was written
+   */
+  async removeSfx(setId, entryId, index) {
+    if ( !this.isEditable ) return false;
+    return this.#writeSetChange(setId, removeTraitSfx(this.actor.system.toObject(), setId, entryId, index));
+  }
+
+  /**
+   * Adds an SFX of its own to a set: no text yet, unlocked (CS-D6).
+   * @param {string} setId
+   * @returns {Promise<boolean>} whether it was written
+   */
+  async addSetSfx(setId) {
+    if ( !this.isEditable ) return false;
+    return this.#writeSetChange(setId, addSetSfx(this.actor.system.toObject(), getGameConfig(), setId));
+  }
+
+  /**
+   * Removes one of a set's own SFX, without asking: the click handler asks first.
+   * @param {string} setId
+   * @param {number} index
+   * @returns {Promise<boolean>} whether it was written
+   */
+  async removeSetSfx(setId, index) {
+    if ( !this.isEditable ) return false;
+    return this.#writeSetChange(setId, removeSetSfx(this.actor.system.toObject(), setId, index));
+  }
+
+  /**
+   * Adds a sub-trait to a trait, named "New trait" and with no rating yet (rule 19).
+   * @param {string} setId
+   * @param {string} entryId
+   * @returns {Promise<boolean>} whether it was written
+   */
+  async addSubTrait(setId, entryId) {
+    if ( !this.isEditable ) return false;
+    return this.#writeSetChange(setId, addSubTrait(this.actor.system.toObject(), getGameConfig(), setId, entryId, foundry.utils.randomID(),
+      game.i18n.localize("CORTEX.Sheet.NewTrait")));
+  }
+
+  /**
+   * Removes a sub-trait, without asking: the click handler asks first.
+   * @param {string} setId
+   * @param {string} entryId
+   * @param {string} subId
+   * @returns {Promise<boolean>} whether it was written
+   */
+  async removeSubTrait(setId, entryId, subId) {
+    if ( !this.isEditable ) return false;
+    return this.#writeSetChange(setId, removeSubTrait(this.actor.system.toObject(), setId, entryId, subId));
   }
 
   /**
@@ -447,9 +657,7 @@ export default class CharacterSheet extends HandlebarsApplicationMixin(ActorShee
    */
   async removeTrait(setId, entryId) {
     if ( !this.isEditable ) return false;
-    const removed = removeTraitEntry(this.actor.system.toObject(), setId, entryId);
-    if ( !removed.ok ) return this.#refuse(removed.code);
-    return this.#writeSystem({ traits: { [setId]: removed.value } });
+    return this.#writeSetChange(setId, removeTraitEntry(this.actor.system.toObject(), setId, entryId));
   }
 
   /**
@@ -465,6 +673,17 @@ export default class CharacterSheet extends HandlebarsApplicationMixin(ActorShee
     });
     if ( !checked.ok ) return this.#refuse(checked.code);
     return Boolean(await this.actor.update({ system }));
+  }
+
+  /**
+   * Writes one set's change from a pure function, or shows why there is none.
+   * @param {string} setId
+   * @param {import("../rules/types.mjs").EngineResult<object>} changed - the set's change
+   * @returns {Promise<boolean>} whether it was written
+   */
+  async #writeSetChange(setId, changed) {
+    if ( !changed.ok ) return this.#refuse(changed.code);
+    return this.#writeSystem({ traits: { [setId]: changed.value } });
   }
 
   /** Shows a refusal's text and renders the stored state again; always returns false. */
@@ -509,10 +728,14 @@ export default class CharacterSheet extends HandlebarsApplicationMixin(ActorShee
   _processFormData(event, form, formData) {
     const {
       [RATING_INPUTS]: ratings, [NEW_RATING_INPUTS]: newRatings, [NAME_INPUTS]: names, [STATEMENT_INPUTS]: statements,
+      [DESCRIPTION_INPUTS]: descriptions, [SFX_INPUTS]: sfx, [TAG_INPUTS]: tags, [SUB_NAME_INPUTS]: subNames,
+      [SUB_RATING_INPUTS]: subRatings, [SET_SFX_INPUTS]: setSfx,
       [FREE_RATING_INPUTS]: freeRatings, [FREE_NAME_INPUTS]: freeNames, ...data
     } = super._processFormData(event, form, formData);
     const stored = this.actor.system.toObject();
-    const traits = sheetTraitChanges(stored, getGameConfig(), { ratings, newRatings, names, statements },
+    const traits = sheetTraitChanges(stored, getGameConfig(), {
+      ratings, newRatings, names, statements, descriptions, sfx, tags, subNames, subRatings, setSfx
+    },
       () => foundry.utils.randomID());
     if ( !traits.ok ) throw new Error(CharacterSheet.#refusalText(traits.code));
     const freeTraits = freeTraitChanges(stored, { ratings: freeRatings, names: freeNames });

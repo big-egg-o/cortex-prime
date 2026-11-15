@@ -164,7 +164,9 @@
         "INVALID_RATING_OPTIONS": "A trait set in the game configuration has invalid dice options.",
         "INVALID_GAME_CONFIG": "The game configuration can't be read.",
         "STATEMENT_NOT_CHALLENGED": "This trait's statement isn't challenged, so there is nothing to resolve.",
-        "SHUT_DOWN_NOT_OFFERED": "This trait set has no shut-down flags in the game configuration."
+        "SHUT_DOWN_NOT_OFFERED": "This trait set has no shut-down flags in the game configuration.",
+        "TRAIT_FEATURE_NOT_OFFERED": "This trait set doesn't have that feature in the game configuration.",
+        "UNKNOWN_SFX": "That SFX isn't on this character any more."
       }
     },
     "Sheet": {
@@ -211,6 +213,28 @@
         "ClearTrait": "Clear the shut-down of {trait}",
         "SetSet": "Shut down the whole set {set}",
         "ClearSet": "Clear the shut-down of the set {set}"
+      },
+      "Details": {
+        "Description": "Description",
+        "DescriptionInput": "{trait}: description",
+        "TagsInput": "{trait}: tags",
+        "SetSfx": "SFX of this set",
+        "AddSfx": "Add an SFX",
+        "AddSfxTo": "Add an SFX to {trait}",
+        "AddSetSfx": "Add an SFX to the set {set}",
+        "SfxPlaceholder": "What the SFX does",
+        "SfxBlank": "(SFX without text)",
+        "SfxText": "{owner}: SFX {number}",
+        "SfxUnlocked": "{owner}: SFX {number} is unlocked",
+        "Unlocked": "Unlocked",
+        "Locked": "Locked",
+        "RemoveSfx": "Remove SFX {number} of {owner}",
+        "RemoveSfxTitle": "Remove this SFX?",
+        "AddSub": "Add a sub-trait",
+        "AddSubTo": "Add a sub-trait to {trait}",
+        "SubName": "{trait}: sub-trait name",
+        "RemoveSub": "Remove the sub-trait {sub}",
+        "RemoveSubTitle": "Remove this sub-trait?"
       },
       "Others": {
         "Title": "Other stored traits",

@@ -2,9 +2,11 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
-  FREE_NAME_INPUTS, FREE_RATING_INPUTS, NAME_INPUTS, NEW_RATING_INPUTS, RATING_INPUTS, STATEMENT_INPUTS, addFreeTrait,
-  addTraitEntry, characterSheetView, freeTraitChanges, removeFreeTrait, removeTraitEntry, resolveTraitChallenge,
-  setShutDownChange, setTraitShutDown, sheetTraitChanges, traitChangesFromInputs
+  DESCRIPTION_INPUTS, FREE_NAME_INPUTS, FREE_RATING_INPUTS, NAME_INPUTS, NEW_RATING_INPUTS, RATING_INPUTS, SET_SFX_INPUTS,
+  SFX_INPUTS, STATEMENT_INPUTS, SUB_NAME_INPUTS, SUB_RATING_INPUTS, TAG_INPUTS, addFreeTrait, addSetSfx, addSubTrait,
+  addTraitEntry, addTraitSfx, characterSheetView, freeTraitChanges, removeFreeTrait, removeSetSfx, removeSubTrait,
+  removeTraitEntry, removeTraitSfx, resolveTraitChallenge, setShutDownChange, setTraitShutDown, sheetTraitChanges,
+  traitChangesFromInputs
 } from "../../module/apps/character-sheet-data.mjs";
 import { defaultGameConfig, traitSetById } from "../../module/rules/game-config.mjs";
 
@@ -705,10 +707,176 @@ describe("statements and shut-down flags (Character Sheets behaviours 8, 15 and 
   });
 });
 
+describe("trait details: descriptions, SFX, tags and sub-traits (behaviours 8 and 16)", () => {
+  /** The defaults with tags, sub-traits and set SFX turned on for Distinctions (description and SFX are on). */
+  function detailsConfig() {
+    const config = defaultGameConfig();
+    Object.assign(traitSetById(config, DISTINCTIONS).features, { tags: true, subTraits: true, setSfx: true });
+    return deepFreeze(config);
+  }
+  const SUB = "subSmuggling0000";
+  /** A player character whose distinction has an SFX, tags and a sub-trait, and whose set has an SFX. */
+  function detailedSystem() {
+    const system = pcSystem();
+    system.traits[DISTINCTIONS].sfx = [{ text: "Set trick", unlocked: false }];
+    Object.assign(system.traits[DISTINCTIONS].entries[0], {
+      sfx: [{ text: "Hinder", unlocked: true }, { text: "Old habits", unlocked: false }],
+      tags: ["past", "cult"],
+      sub: [{ id: SUB, name: "Hiding", dice: [6] }]
+    });
+    return deepFreeze(system);
+  }
+  const cultRow = view => view.sets.find(s => s.id === DISTINCTIONS).traits.find(t => t.entryId === ENTRY_CULT);
+  const cultEntry = (changes) => changes[DISTINCTIONS].entries.find(e => e.id === ENTRY_CULT);
+
+  it("shows each detail where its set has the feature, with its inputs", () => {
+    const view = characterSheetView(detailedSystem(), detailsConfig());
+    const row = cultRow(view);
+    expect(row.description).toBe("Saw too much");
+    expect(row.descriptionInput).toBe(`${DESCRIPTION_INPUTS}.${DISTINCTIONS}.${ENTRY_CULT}`);
+    expect(row.sfx).toEqual([
+      { index: 0, text: "Hinder", unlocked: true, textInput: `${SFX_INPUTS}.${DISTINCTIONS}.${ENTRY_CULT}.0.text`,
+        unlockedInput: `${SFX_INPUTS}.${DISTINCTIONS}.${ENTRY_CULT}.0.unlocked` },
+      { index: 1, text: "Old habits", unlocked: false, textInput: `${SFX_INPUTS}.${DISTINCTIONS}.${ENTRY_CULT}.1.text`,
+        unlockedInput: `${SFX_INPUTS}.${DISTINCTIONS}.${ENTRY_CULT}.1.unlocked` }
+    ]);
+    expect(row).toMatchObject({ canAddSfx: true, tags: ["past", "cult"], tagsInput: `${TAG_INPUTS}.${DISTINCTIONS}.${ENTRY_CULT}`,
+      canAddSubTrait: true });
+    expect(row.subTraits).toHaveLength(1);
+    expect(row.subTraits[0]).toMatchObject({ id: SUB, name: "Hiding", dice: [6],
+      nameInput: `${SUB_NAME_INPUTS}.${DISTINCTIONS}.${ENTRY_CULT}.${SUB}` });
+    expect(row.subTraits[0].slots.map(s => [s.inputName, s.value])).toEqual([[`${SUB_RATING_INPUTS}.${DISTINCTIONS}.${ENTRY_CULT}.${SUB}.0`, 6]]);
+    expect(view.sets.find(s => s.id === DISTINCTIONS).sfx).toEqual([
+      { index: 0, text: "Set trick", unlocked: false, textInput: `${SET_SFX_INPUTS}.${DISTINCTIONS}.0.text`,
+        unlockedInput: `${SET_SFX_INPUTS}.${DISTINCTIONS}.0.unlocked` }
+    ]);
+  });
+
+  it("shows no detail where the set lacks the feature, and keeps them stored", () => {
+    const view = characterSheetView(detailedSystem(), deepFreeze(defaultGameConfig()));
+    expect(cultRow(view)).toMatchObject({ tags: null, tagsInput: null, subTraits: null, canAddSubTrait: false });
+    expect(view.sets.find(s => s.id === DISTINCTIONS).sfx).toBeNull();
+    // Attributes has neither the description nor the SFX feature.
+    const physical = view.sets.find(s => s.id === ATTRIBUTES).traits.find(t => t.entryId === ENTRY_PHYSICAL);
+    expect(physical).toMatchObject({ description: null, descriptionInput: null, sfx: null, canAddSfx: false });
+  });
+
+  it("gives a fixed-set trait without an entry no detail inputs", () => {
+    const config = defaultGameConfig();
+    Object.assign(traitSetById(config, ATTRIBUTES).features, { description: true, sfx: true, tags: true, subTraits: true });
+    const mental = characterSheetView(pcSystem(), deepFreeze(config)).sets.find(s => s.id === ATTRIBUTES).traits
+      .find(t => t.entryId === null);
+    expect(mental).toMatchObject({ description: "", descriptionInput: null, sfx: [], canAddSfx: false, tags: [],
+      tagsInput: null, subTraits: [], canAddSubTrait: false });
+  });
+
+  it("changes a description, SFX, tags and a sub-trait from the form, keeping everything else", () => {
+    const changed = sheetTraitChanges(detailedSystem(), detailsConfig(), {
+      descriptions: { [DISTINCTIONS]: { [ENTRY_CULT]: "  Saw far too much " } },
+      sfx: { [DISTINCTIONS]: { [ENTRY_CULT]: { 1: { text: " New habits ", unlocked: true }, 5: { text: "gone", unlocked: true } } } },
+      tags: { [DISTINCTIONS]: { [ENTRY_CULT]: ["cult", " past ", "", "cult", "new"] } },
+      subNames: { [DISTINCTIONS]: { [ENTRY_CULT]: { [SUB]: "Hiding out" } } },
+      subRatings: { [DISTINCTIONS]: { [ENTRY_CULT]: { [SUB]: { 0: "8" } } } },
+      setSfx: { [DISTINCTIONS]: { 0: { text: "Set trick", unlocked: true } } }
+    }, () => "unused");
+    expect(changed.ok).toBe(true);
+    expect(cultEntry(changed.value)).toEqual({
+      id: ENTRY_CULT, defId: null, name: "Cult Survivor", dice: [8], description: "Saw far too much",
+      sfx: [{ text: "Hinder", unlocked: true }, { text: "New habits", unlocked: true }],
+      tags: ["cult", "past", "new"], sub: [{ id: SUB, name: "Hiding out", dice: [8] }]
+    });
+    expect(changed.value[DISTINCTIONS].sfx).toEqual([{ text: "Set trick", unlocked: true }]);
+  });
+
+  it("reports no change when the inputs hold what is stored", () => {
+    const system = detailedSystem();
+    expect(sheetTraitChanges(system, detailsConfig(), {
+      descriptions: { [DISTINCTIONS]: { [ENTRY_CULT]: "Saw too much " } },
+      sfx: { [DISTINCTIONS]: { [ENTRY_CULT]: [{ text: "Hinder", unlocked: true }, { text: "Old habits", unlocked: false }] } },
+      tags: { [DISTINCTIONS]: { [ENTRY_CULT]: "past, cult" } },
+      subNames: { [DISTINCTIONS]: { [ENTRY_CULT]: { [SUB]: " " } } },
+      subRatings: { [DISTINCTIONS]: { [ENTRY_CULT]: { [SUB]: ["6"] } } },
+      setSfx: { [DISTINCTIONS]: [{ text: " Set trick", unlocked: false }] }
+    }, () => "unused")).toEqual({ ok: true, value: {} });
+  });
+
+  it("splits a tag at its commas, as the tag input shows it, and leaves such a stored tag alone", () => {
+    const typed = sheetTraitChanges(detailedSystem(), detailsConfig(), {
+      tags: { [DISTINCTIONS]: { [ENTRY_CULT]: ["past", "red, hot", "cult"] } }
+    }, () => "unused");
+    expect(cultEntry(typed.value).tags).toEqual(["past", "red", "hot", "cult"]);
+
+    const system = structuredClone(detailedSystem());
+    system.traits[DISTINCTIONS].entries[0].tags = ["past", "red, hot"];
+    expect(sheetTraitChanges(deepFreeze(system), detailsConfig(), {
+      tags: { [DISTINCTIONS]: { [ENTRY_CULT]: ["past", "red", "hot"] } }
+    }, () => "unused")).toEqual({ ok: true, value: {} });
+  });
+
+  it("keeps a set's own SFX change and an entry change of the same set together", () => {
+    const changed = sheetTraitChanges(detailedSystem(), detailsConfig(), {
+      setSfx: { [DISTINCTIONS]: { 0: { text: "Better trick", unlocked: false } } },
+      names: { [DISTINCTIONS]: { [ENTRY_CULT]: "Cult Escapee" } }
+    }, () => "unused");
+    expect(changed.value[DISTINCTIONS].sfx).toEqual([{ text: "Better trick", unlocked: false }]);
+    expect(cultEntry(changed.value).name).toBe("Cult Escapee");
+  });
+
+  it("refuses detail inputs it can't read", () => {
+    const system = detailedSystem();
+    const config = detailsConfig();
+    for ( const form of [
+      { descriptions: { [DISTINCTIONS]: { [ENTRY_CULT]: 5 } } },
+      { sfx: { [DISTINCTIONS]: { [ENTRY_CULT]: "x" } } },
+      { sfx: { [DISTINCTIONS]: { [ENTRY_CULT]: { 0: { unlocked: "yes" } } } } },
+      { tags: { [DISTINCTIONS]: { [ENTRY_CULT]: [1] } } },
+      { subNames: { [DISTINCTIONS]: { [ENTRY_CULT]: "x" } } },
+      { setSfx: { [DISTINCTIONS]: { "-1": { text: "x" } } } },
+      { tags: [] }
+    ] ) expect(sheetTraitChanges(system, config, form, () => "unused"), JSON.stringify(form)).toEqual({ ok: false, code: "INVALID_TRAIT_DATA" });
+    expect(sheetTraitChanges(system, config, { subRatings: { [DISTINCTIONS]: { [ENTRY_CULT]: { [SUB]: { 0: "7" } } } } }, () => "unused"))
+      .toEqual({ ok: false, code: "INVALID_DIE_SIZE" });
+  });
+
+  it("adds and removes a trait's SFX; a new one is unlocked with no text (CS-D6)", () => {
+    const system = detailedSystem();
+    const added = addTraitSfx(system, detailsConfig(), DISTINCTIONS, ENTRY_CULT);
+    expect(added.value.entries[0].sfx.at(-1)).toEqual({ text: "", unlocked: true });
+    expect(added.value.entries[0].sfx).toHaveLength(3);
+    expect(addTraitSfx(system, detailsConfig(), ATTRIBUTES, ENTRY_PHYSICAL)).toEqual({ ok: false, code: "TRAIT_FEATURE_NOT_OFFERED" });
+    expect(removeTraitSfx(system, DISTINCTIONS, ENTRY_CULT, 0).value.entries[0].sfx).toEqual([{ text: "Old habits", unlocked: false }]);
+    expect(removeTraitSfx(system, DISTINCTIONS, ENTRY_CULT, 2)).toEqual({ ok: false, code: "UNKNOWN_SFX" });
+    expect(removeTraitSfx(system, DISTINCTIONS, ENTRY_CULT, "0")).toEqual({ ok: false, code: "INVALID_TRAIT_DATA" });
+  });
+
+  it("adds and removes a set's own SFX", () => {
+    const system = detailedSystem();
+    expect(addSetSfx(system, detailsConfig(), DISTINCTIONS)).toEqual({ ok: true, value: {
+      sfx: [{ text: "Set trick", unlocked: false }, { text: "", unlocked: true }] } });
+    const config = defaultGameConfig();
+    traitSetById(config, SKILLS).features.setSfx = true;
+    expect(addSetSfx(system, deepFreeze(config), SKILLS)).toEqual({ ok: true, value: { sfx: [{ text: "", unlocked: true }], entries: [] } });
+    expect(addSetSfx(system, detailsConfig(), ATTRIBUTES)).toEqual({ ok: false, code: "TRAIT_FEATURE_NOT_OFFERED" });
+    expect(removeSetSfx(system, DISTINCTIONS, 0)).toEqual({ ok: true, value: { sfx: [] } });
+    expect(removeSetSfx(system, DISTINCTIONS, 1)).toEqual({ ok: false, code: "UNKNOWN_SFX" });
+  });
+
+  it("adds and removes a sub-trait", () => {
+    const system = detailedSystem();
+    const added = addSubTrait(system, detailsConfig(), DISTINCTIONS, ENTRY_CULT, "subNew0000000000", " Lying ");
+    expect(added.value.entries[0].sub).toEqual([{ id: SUB, name: "Hiding", dice: [6] }, { id: "subNew0000000000", name: "Lying", dice: [] }]);
+    expect(addSubTrait(system, detailsConfig(), DISTINCTIONS, ENTRY_CULT, "subNew0000000000", " ")).toEqual({ ok: false, code: "INVALID_TRAIT_DATA" });
+    expect(addSubTrait(system, detailsConfig(), ATTRIBUTES, ENTRY_PHYSICAL, "subNew0000000000", "x"))
+      .toEqual({ ok: false, code: "TRAIT_FEATURE_NOT_OFFERED" });
+    expect(removeSubTrait(system, DISTINCTIONS, ENTRY_CULT, SUB).value.entries[0].sub).toEqual([]);
+    expect(removeSubTrait(system, DISTINCTIONS, ENTRY_CULT, "nope000000000000")).toEqual({ ok: false, code: "UNKNOWN_TRAIT" });
+  });
+});
+
 describe("character sheet strings", () => {
   it("has a refusal string for every code traitChangesFromInputs can return", () => {
     for ( const code of ["INVALID_TRAIT_DATA", "INVALID_DIE_SIZE", "UNKNOWN_TRAIT", "STATEMENT_NOT_CHALLENGED",
-      "SHUT_DOWN_NOT_OFFERED"] ) {
+      "SHUT_DOWN_NOT_OFFERED", "TRAIT_FEATURE_NOT_OFFERED", "UNKNOWN_SFX"] ) {
       expect(lang.CORTEX.Character.Errors[code], code).toBeTypeOf("string");
     }
   });
@@ -722,7 +890,8 @@ describe("character sheet strings", () => {
 
   it("has every string the sheet and its template use", () => {
     const used = new Set();
-    for ( const path of ["module/apps/character-sheet.mjs", "templates/actor/character-sheet.hbs", "module/cortex-prime.mjs"] ) {
+    for ( const path of ["module/apps/character-sheet.mjs", "templates/actor/character-sheet.hbs", "templates/actor/sfx-list.hbs",
+      "module/cortex-prime.mjs"] ) {
       const source = readFileSync(resolve(ROOT, path), "utf8");
       for ( const match of source.matchAll(/"(CORTEX\.Sheet\.[A-Za-z.]+)"/g) ) used.add(match[1]);
     }

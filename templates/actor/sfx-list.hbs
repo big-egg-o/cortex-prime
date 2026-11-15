@@ -1,0 +1,21 @@
+{{!-- One list of SFX, a trait's or a set's (Character Sheets behaviour 16). Edit mode gives each
+     SFX its text, its unlocked checkbox and a remove button. --}}
+<ul class="cp-sfx-list">
+  {{#each sfx}}
+  <li class="cp-sfx{{#if this.unlocked}} cp-unlocked{{/if}}">
+    {{#if (and ../edit this.textInput)}}
+    <textarea name="{{ this.textInput }}" rows="2" aria-label="{{ this.textLabel }}"
+      placeholder="{{ localize "CORTEX.Sheet.Details.SfxPlaceholder" }}">{{ this.text }}</textarea>
+    <label class="checkbox"><input type="checkbox" name="{{ this.unlockedInput }}" {{#if this.unlocked}}checked{{/if}}
+      aria-label="{{ this.unlockedLabel }}">
+      {{ localize "CORTEX.Sheet.Details.Unlocked" }}</label>
+    <button type="button" class="ui-control icon" data-action="{{ ../removeAction }}" data-index="{{ this.index }}"
+      data-tooltip="{{ this.removeLabel }}" aria-label="{{ this.removeLabel }}"><i class="fa-solid fa-trash" inert></i></button>
+    {{else}}
+    <i class="fa-solid {{#if this.unlocked}}fa-lock-open{{else}}fa-lock{{/if}}" data-tooltip="{{ this.stateLabel }}"
+      role="img" aria-label="{{ this.stateLabel }}"></i>
+    <span>{{ this.label }}</span>
+    {{/if}}
+  </li>
+  {{/each}}
+</ul>
