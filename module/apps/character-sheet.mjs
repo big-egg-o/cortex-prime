@@ -30,7 +30,14 @@
  * under "Other stored traits", each with a remove button that asks first; nothing is ever removed
  * automatically (CS-D5, ADR-051).
  *
- * Not in this slice: statements, SFX, tags, sub-traits and shut-down controls.
+ * Where a set has the statements feature, a trait row shows its statement, editable in edit mode;
+ * editing it never resolves a challenge (behaviour 15, TS-15c). A challenged statement is marked
+ * on the row whatever the set's features say, and a user who can edit the actor resolves it as
+ * rewritten or kept, in either mode (rule 16; RQ-021, RQ-022). A shut-down trait shows its reason
+ * (RQ-034). In edit mode, a set's and a trait's shut-down flags are set where the set has the
+ * shut-down feature and cleared whatever their reason (behaviour 17, rule 15).
+ *
+ * Not in this slice: descriptions, SFX, tags and sub-traits.
  * @module apps/character-sheet
  */
 
@@ -38,8 +45,9 @@ import CharacterData from "../data/actor/character.mjs";
 import { getGameConfig } from "../config/settings.mjs";
 import { checkCharacterUpdate } from "../rules/traits.mjs";
 import {
-  FREE_NAME_INPUTS, FREE_RATING_INPUTS, NAME_INPUTS, NEW_RATING_INPUTS, RATING_INPUTS, addFreeTrait, addTraitEntry,
-  characterSheetView, freeTraitChanges, removeFreeTrait, removeTraitEntry, sheetTraitChanges
+  FREE_NAME_INPUTS, FREE_RATING_INPUTS, NAME_INPUTS, NEW_RATING_INPUTS, RATING_INPUTS, STATEMENT_INPUTS, addFreeTrait,
+  addTraitEntry, characterSheetView, freeTraitChanges, removeFreeTrait, removeTraitEntry, resolveTraitChallenge,
+  setShutDownChange, setTraitShutDown, sheetTraitChanges
 } from "./character-sheet-data.mjs";
 import { addTraitToPool } from "./pool-builder.mjs";
 
@@ -65,7 +73,10 @@ export default class CharacterSheet extends HandlebarsApplicationMixin(ActorShee
       addToPool: CharacterSheet.#onAddToPool,
       toggleEdit: CharacterSheet.#onToggleEdit,
       addTrait: CharacterSheet.#onAddTrait,
-      removeTrait: CharacterSheet.#onRemoveTrait
+      removeTrait: CharacterSheet.#onRemoveTrait,
+      resolveChallenge: CharacterSheet.#onResolveChallenge,
+      toggleShutDown: CharacterSheet.#onToggleShutDown,
+      toggleSetShutDown: CharacterSheet.#onToggleSetShutDown
     }
   };
 
@@ -114,6 +125,17 @@ export default class CharacterSheet extends HandlebarsApplicationMixin(ActorShee
       ...trait,
       label: trait.name || i18n.localize("CORTEX.Sheet.Unnamed"),
       nameInput: editMode ? trait.nameInput : null,
+      statementInput: editMode ? trait.statementInput : null,
+      statementLabel: i18n.format("CORTEX.Sheet.Statement.Input", { trait: trait.name }),
+      canResolve: trait.challenged && (trait.entryId !== null) && this.isEditable,
+      resolveLabels: {
+        rewritten: i18n.format("CORTEX.Sheet.Statement.Rewritten", { trait: trait.name }),
+        kept: i18n.format("CORTEX.Sheet.Statement.Kept", { trait: trait.name })
+      },
+      shutDownText: trait.shutDownReason ? i18n.localize(`CORTEX.Sheet.ShutDown.${trait.shutDownReason}`) : null,
+      canShutDown: trait.canShutDown && editMode,
+      shutDownLabel: i18n.format(trait.ownShutDown ? "CORTEX.Sheet.ShutDown.ClearTrait" : "CORTEX.Sheet.ShutDown.SetTrait",
+        { trait: trait.name }),
       removeLabel: i18n.format("CORTEX.Sheet.RemoveTrait", { trait: trait.name }),
       newSlot: (trait.newSlot && this.isEditable)
         ? { ...trait.newSlot, ariaLabel: i18n.format("CORTEX.Sheet.NewRating", { trait: trait.name }) } : null,
@@ -136,7 +158,10 @@ export default class CharacterSheet extends HandlebarsApplicationMixin(ActorShee
     });
     // The sheet's sections: the kind's sets, then its free traits, which belong to no set (TS-22).
     const sections = view.sets.map(set => ({
-      ...set, free: false, emptyText: i18n.localize("CORTEX.Sheet.NoTraits"), traits: set.traits.map(row)
+      ...set, free: false, emptyText: i18n.localize("CORTEX.Sheet.NoTraits"), traits: set.traits.map(row),
+      canShutDown: set.canShutDown && editMode,
+      shutDownLabel: i18n.format(set.shutDown ? "CORTEX.Sheet.ShutDown.ClearSet" : "CORTEX.Sheet.ShutDown.SetSet",
+        { set: set.name })
     }));
     if ( view.freeTraits ) {
       sections.push({
@@ -250,6 +275,49 @@ export default class CharacterSheet extends HandlebarsApplicationMixin(ActorShee
   }
 
   /**
+   * The set and the stored entry of a control on a set trait's row.
+   * @param {HTMLElement} target
+   * @returns {{setId: string|null|undefined, entryId: string|undefined}}
+   */
+  static #setEntryOf(target) {
+    return { setId: CharacterSheet.#setIdOf(target), entryId: target.closest("[data-entry-id]")?.dataset.entryId };
+  }
+
+  /**
+   * Resolves the clicked trait's challenged statement as rewritten or kept, by the button's
+   * `data-rewritten`.
+   * @this {CharacterSheet}
+   * @param {PointerEvent} _event
+   * @param {HTMLElement} target
+   */
+  static async #onResolveChallenge(_event, target) {
+    const { setId, entryId } = CharacterSheet.#setEntryOf(target);
+    if ( setId && entryId ) await this.resolveChallenge(setId, entryId, target.dataset.rewritten === "true");
+  }
+
+  /**
+   * Sets or clears the clicked trait's own shut-down flag.
+   * @this {CharacterSheet}
+   * @param {PointerEvent} _event
+   * @param {HTMLElement} target
+   */
+  static async #onToggleShutDown(_event, target) {
+    const { setId, entryId } = CharacterSheet.#setEntryOf(target);
+    if ( setId && entryId ) await this.setShutDown(setId, entryId, target.dataset.shutDown !== "true");
+  }
+
+  /**
+   * Sets or clears the clicked set's shut-down flag.
+   * @this {CharacterSheet}
+   * @param {PointerEvent} _event
+   * @param {HTMLElement} target
+   */
+  static async #onToggleSetShutDown(_event, target) {
+    const setId = CharacterSheet.#setIdOf(target);
+    if ( setId ) await this.setSetShutDown(setId, target.dataset.shutDown !== "true");
+  }
+
+  /**
    * Turns edit mode on or off and renders again.
    * @this {CharacterSheet}
    */
@@ -302,6 +370,49 @@ export default class CharacterSheet extends HandlebarsApplicationMixin(ActorShee
       game.i18n.localize("CORTEX.Sheet.NewTrait"));
     if ( !added.ok ) return this.#refuse(added.code);
     return this.#writeSystem({ traits: { [setId]: added.value } });
+  }
+
+  /**
+   * Resolves a trait's challenged statement (rule 16; TS-15, TS-16).
+   * @param {string} setId
+   * @param {string} entryId
+   * @param {boolean} rewritten - the statement was rewritten, which brings back the rating from
+   *   before the challenge; otherwise it is kept
+   * @returns {Promise<boolean>} whether it was written
+   */
+  async resolveChallenge(setId, entryId, rewritten) {
+    if ( !this.isEditable ) return false;
+    const resolved = resolveTraitChallenge(this.actor.system.toObject(), setId, entryId, rewritten);
+    if ( !resolved.ok ) return this.#refuse(resolved.code);
+    return this.#writeSystem({ traits: { [setId]: resolved.value } });
+  }
+
+  /**
+   * Sets a trait's own shut-down flag, by hand, or clears it whatever its reason (rule 15, RQ-034).
+   * @param {string} setId
+   * @param {string} entryId
+   * @param {boolean} shutDown
+   * @returns {Promise<boolean>} whether it was written
+   */
+  async setShutDown(setId, entryId, shutDown) {
+    if ( !this.isEditable ) return false;
+    const changed = setTraitShutDown(this.actor.system.toObject(), getGameConfig(), setId, entryId, shutDown);
+    if ( !changed.ok ) return this.#refuse(changed.code);
+    return this.#writeSystem({ traits: { [setId]: changed.value } });
+  }
+
+  /**
+   * Sets or clears a whole set's shut-down flag (rule 15); setShutDownChange decides what is
+   * written.
+   * @param {string} setId
+   * @param {boolean} shutDown
+   * @returns {Promise<boolean>} whether it was written
+   */
+  async setSetShutDown(setId, shutDown) {
+    if ( !this.isEditable ) return false;
+    const changed = setShutDownChange(this.actor.system.toObject(), getGameConfig(), setId, shutDown);
+    if ( !changed.ok ) return this.#refuse(changed.code);
+    return this.#writeSystem({ traits: { [setId]: changed.value } });
   }
 
   /**
@@ -397,11 +508,11 @@ export default class CharacterSheet extends HandlebarsApplicationMixin(ActorShee
    */
   _processFormData(event, form, formData) {
     const {
-      [RATING_INPUTS]: ratings, [NEW_RATING_INPUTS]: newRatings, [NAME_INPUTS]: names,
+      [RATING_INPUTS]: ratings, [NEW_RATING_INPUTS]: newRatings, [NAME_INPUTS]: names, [STATEMENT_INPUTS]: statements,
       [FREE_RATING_INPUTS]: freeRatings, [FREE_NAME_INPUTS]: freeNames, ...data
     } = super._processFormData(event, form, formData);
     const stored = this.actor.system.toObject();
-    const traits = sheetTraitChanges(stored, getGameConfig(), { ratings, newRatings, names },
+    const traits = sheetTraitChanges(stored, getGameConfig(), { ratings, newRatings, names, statements },
       () => foundry.utils.randomID());
     if ( !traits.ok ) throw new Error(CharacterSheet.#refusalText(traits.code));
     const freeTraits = freeTraitChanges(stored, { ratings: freeRatings, names: freeNames });

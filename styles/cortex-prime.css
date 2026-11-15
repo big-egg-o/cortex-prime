@@ -394,3 +394,46 @@
   margin: 0.5em 0 0.25em;
   font-size: var(--font-size-13);
 }
+
+/* Statements and shut-down flags (Character Sheets behaviours 8, 15 and 17). Core's form-group
+   already wraps, so these lines take a row of their own. */
+.cortex-prime.character-sheet .window-content .cp-trait > .cp-statement,
+.cortex-prime.character-sheet .window-content .cp-trait > .cp-statement-input,
+.cortex-prime.character-sheet .window-content .cp-trait > .cp-challenged,
+.cortex-prime.character-sheet .window-content .cp-trait > .cp-shut-down-note {
+  flex: 0 0 100%;
+  margin: 0;
+}
+
+.cortex-prime.character-sheet .window-content .cp-statement {
+  font-style: italic;
+}
+
+.cortex-prime.character-sheet .window-content .cp-challenged {
+  display: flex;
+  align-items: center;
+  gap: 0.5em;
+}
+
+.cortex-prime.character-sheet .window-content .cp-challenged > button {
+  flex: none;
+  width: auto;
+}
+
+.cortex-prime.character-sheet .window-content .cp-challenged-badge {
+  flex: 1;
+  color: var(--color-warm-1);
+}
+
+.cortex-prime.character-sheet .window-content legend > .cp-shut-down-toggle {
+  display: inline-flex;
+  margin-left: 0.25em;
+}
+
+.cortex-prime.character-sheet .window-content .cp-shut-down-toggle {
+  flex: none;
+}
+
+.cortex-prime.character-sheet .window-content .cp-shut-down-toggle.active {
+  outline: 2px solid var(--color-warm-1);
+}
