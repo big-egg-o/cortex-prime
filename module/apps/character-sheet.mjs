@@ -18,15 +18,23 @@
  * add its traits, such as a location's scene distinction (rule 12). A challenge is offered only to
  * users who can edit the actor, since its step-down is written after the roll (ADR-048).
  *
- * Not in this slice: adding or removing traits, free traits, statements, SFX, tags, sub-traits
- * and shut-down controls, and an edit or play mode.
+ * The sheet opens in play mode. Its edit toggle, for users who can edit the actor, adds what
+ * changes the character's structure (Character Sheets CS-D1): renaming, adding and removing the
+ * traits of open sets, and, for a GM, changing the actor kind. A character without a kind offers
+ * the choice to anyone who can edit it, in either mode (CS-D3). A fixed set's trait the actor
+ * holds no entry for gets an entry when a rating is chosen for it (behaviour 13).
+ *
+ * Not in this slice: free traits, the list of stored traits the sheet doesn't show, statements,
+ * SFX, tags, sub-traits and shut-down controls.
  * @module apps/character-sheet
  */
 
 import CharacterData from "../data/actor/character.mjs";
 import { getGameConfig } from "../config/settings.mjs";
 import { checkCharacterUpdate } from "../rules/traits.mjs";
-import { RATING_INPUTS, characterSheetView, traitChangesFromInputs } from "./character-sheet-data.mjs";
+import {
+  NAME_INPUTS, NEW_RATING_INPUTS, RATING_INPUTS, addTraitEntry, characterSheetView, removeTraitEntry, sheetTraitChanges
+} from "./character-sheet-data.mjs";
 import { addTraitToPool } from "./pool-builder.mjs";
 
 const { HandlebarsApplicationMixin } = foundry.applications.api;
@@ -48,9 +56,20 @@ export default class CharacterSheet extends HandlebarsApplicationMixin(ActorShee
     window: { resizable: true, contentClasses: ["standard-form"] },
     form: { submitOnChange: true },
     actions: {
-      addToPool: CharacterSheet.#onAddToPool
+      addToPool: CharacterSheet.#onAddToPool,
+      toggleEdit: CharacterSheet.#onToggleEdit,
+      addTrait: CharacterSheet.#onAddTrait,
+      removeTrait: CharacterSheet.#onRemoveTrait
     }
   };
+
+  /** Whether the sheet shows its edit controls; it opens in play mode (CS-D1). */
+  #editMode = false;
+
+  /** @returns {boolean} whether the edit controls show: edit mode, for a user who can edit the actor */
+  get editMode() {
+    return this.#editMode && this.isEditable;
+  }
 
   /** @override */
   static PARTS = {
@@ -70,14 +89,21 @@ export default class CharacterSheet extends HandlebarsApplicationMixin(ActorShee
   /** @override */
   async _prepareContext(options) {
     const context = await super._prepareContext(options);
-    const view = characterSheetView(this.actor.system.toObject(), getGameConfig());
+    const config = getGameConfig();
+    const system = this.actor.system.toObject();
+    const view = characterSheetView(system, config);
     const i18n = game.i18n;
     const mayChallenge = this.actor.isOwner;
+    const editMode = this.editMode;
     const sets = view.sets.map(set => ({
       ...set,
       traits: set.traits.map(trait => ({
         ...trait,
         label: trait.name || i18n.localize("CORTEX.Sheet.Unnamed"),
+        nameInput: editMode ? trait.nameInput : null,
+        removeLabel: i18n.format("CORTEX.Sheet.RemoveTrait", { trait: trait.name }),
+        newSlot: (trait.newSlot && this.isEditable)
+          ? { ...trait.newSlot, ariaLabel: i18n.format("CORTEX.Sheet.NewRating", { trait: trait.name }) } : null,
         canChallenge: trait.canChallenge && mayChallenge,
         canHinderChallenge: trait.canHinder && trait.canChallenge && mayChallenge,
         poolLabels: {
@@ -100,8 +126,32 @@ export default class CharacterSheet extends HandlebarsApplicationMixin(ActorShee
       actor: this.actor,
       kindName: view.kind?.name ?? null,
       notice: CharacterSheet.#notice(view),
-      sets
+      sets,
+      editMode,
+      canEdit: this.isEditable,
+      kindPicker: this.#kindPicker(view, system, config)
     });
+  }
+
+  /**
+   * The actor-kind choice, or null where it isn't offered (CS-D3): a character without a kind
+   * offers it to anyone who can edit it; a kind that is set, known or not, is changed by a GM in
+   * edit mode. A kind the configuration doesn't have stays selectable as itself, so submitting
+   * another change never clears it.
+   * @param {import("./character-sheet-data.mjs").SheetView} view
+   * @param {object} system
+   * @param {import("../rules/types.mjs").GameConfig} config
+   * @returns {{options: {value: string, label: string, selected: boolean}[], unassigned: boolean}|null}
+   */
+  #kindPicker(view, system, config) {
+    if ( !this.isEditable ) return null;
+    const unassigned = view.kindStatus === "unassigned";
+    if ( !unassigned && !(this.editMode && game.user.isGM) ) return null;
+    const options = config.actorKinds.map(kind => ({ value: kind.id, label: kind.name, selected: kind.id === system.kindId }));
+    if ( view.kindStatus === "unknown" ) {
+      options.unshift({ value: system.kindId, label: game.i18n.localize("CORTEX.Sheet.UnknownKindOption"), selected: true });
+    }
+    return { options, unassigned };
   }
 
   /**
@@ -133,6 +183,92 @@ export default class CharacterSheet extends HandlebarsApplicationMixin(ActorShee
   }
 
   /**
+   * Turns edit mode on or off and renders again.
+   * @this {CharacterSheet}
+   */
+  static #onToggleEdit() {
+    this.#editMode = !this.#editMode;
+    this.render();
+  }
+
+  /**
+   * Adds a trait to the clicked open set.
+   * @this {CharacterSheet}
+   * @param {PointerEvent} _event
+   * @param {HTMLElement} target
+   */
+  static async #onAddTrait(_event, target) {
+    const setId = target.closest("[data-set-id]")?.dataset.setId;
+    if ( setId ) await this.addTrait(setId);
+  }
+
+  /**
+   * Removes the clicked trait after the user confirms.
+   * @this {CharacterSheet}
+   * @param {PointerEvent} _event
+   * @param {HTMLElement} target
+   */
+  static async #onRemoveTrait(_event, target) {
+    const setId = target.closest("[data-set-id]")?.dataset.setId;
+    const row = target.closest("[data-entry-id]");
+    if ( !setId || !row ) return;
+    const name = row.querySelector("input.cp-trait-name")?.value || game.i18n.localize("CORTEX.Sheet.Unnamed");
+    const confirmed = await foundry.applications.api.DialogV2.confirm({
+      window: { title: "CORTEX.Sheet.RemoveTitle" },
+      content: `<p>${foundry.utils.escapeHTML(game.i18n.format("CORTEX.Sheet.RemoveConfirm", { trait: name }))}</p>`
+    });
+    if ( confirmed ) await this.removeTrait(setId, row.dataset.entryId);
+  }
+
+  /**
+   * Adds a new trait to an open set, named "New trait" and rated as CS-D9 says, then renders.
+   * @param {string} setId
+   * @returns {Promise<boolean>} whether it was written
+   */
+  async addTrait(setId) {
+    if ( !this.isEditable ) return false;
+    const added = addTraitEntry(this.actor.system.toObject(), getGameConfig(), setId, foundry.utils.randomID(),
+      game.i18n.localize("CORTEX.Sheet.NewTrait"));
+    if ( !added.ok ) return this.#refuse(added.code);
+    return this.#writeTraits({ [setId]: added.value });
+  }
+
+  /**
+   * Removes a trait from a set, without asking: the click handler asks first.
+   * @param {string} setId
+   * @param {string} entryId
+   * @returns {Promise<boolean>} whether it was written
+   */
+  async removeTrait(setId, entryId) {
+    if ( !this.isEditable ) return false;
+    const removed = removeTraitEntry(this.actor.system.toObject(), setId, entryId);
+    if ( !removed.ok ) return this.#refuse(removed.code);
+    return this.#writeTraits({ [setId]: removed.value });
+  }
+
+  /**
+   * Writes trait changes through Actor#update after the same check the form submit runs
+   * (ADR-037 point 3).
+   * @param {Record<string, {entries: object[]}>} traits - changed sets by id
+   * @returns {Promise<boolean>} whether the update was made
+   */
+  async #writeTraits(traits) {
+    const system = { traits };
+    const checked = checkCharacterUpdate(this.actor.system.toObject(), system, getGameConfig(), {
+      operatorOf: CharacterData.operatorOf, unlinkedToken: this.actor.isToken === true
+    });
+    if ( !checked.ok ) return this.#refuse(checked.code);
+    return Boolean(await this.actor.update({ system }));
+  }
+
+  /** Shows a refusal's text and renders the stored state again; always returns false. */
+  #refuse(code) {
+    ui.notifications.error(CharacterSheet.#refusalText(code));
+    this.render();
+    return false;
+  }
+
+  /**
    * What a trait row shows instead of inputs, or next to them for an empty rating.
    * @param {import("./character-sheet-data.mjs").SheetTrait} trait
    * @returns {string}
@@ -158,16 +294,21 @@ export default class CharacterSheet extends HandlebarsApplicationMixin(ActorShee
   }
 
   /**
-   * Turns the rating inputs into the trait changes of the update, from the data stored when the
-   * form is submitted; the other inputs (name, portrait) are read as Foundry reads them. A rating
+   * Turns the trait inputs (ratings, new ratings and names) into the trait changes of the update,
+   * from the data stored when the form is submitted; the other inputs (name, portrait, kind) are
+   * read as Foundry reads them. A rating
    * input that can't be read refuses the whole submit (thrown, so the form shows it as an error).
    * @override
    */
   _processFormData(event, form, formData) {
-    const { [RATING_INPUTS]: inputs, ...data } = super._processFormData(event, form, formData);
-    const traits = traitChangesFromInputs(this.actor.system.toObject(), inputs);
+    const {
+      [RATING_INPUTS]: ratings, [NEW_RATING_INPUTS]: newRatings, [NAME_INPUTS]: names, ...data
+    } = super._processFormData(event, form, formData);
+    const traits = sheetTraitChanges(this.actor.system.toObject(), getGameConfig(), { ratings, newRatings, names },
+      () => foundry.utils.randomID());
     if ( !traits.ok ) throw new Error(CharacterSheet.#refusalText(traits.code));
-    if ( Object.keys(traits.value).length ) data.system = { traits: traits.value };
+    // The kind select submits "system.kindId"; the trait changes go beside it.
+    if ( Object.keys(traits.value).length ) data.system = { ...data.system, traits: traits.value };
     return data;
   }
 
