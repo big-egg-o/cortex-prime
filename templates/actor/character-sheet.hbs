@@ -86,9 +86,9 @@
           </span>
           {{/if}}
           {{#if this.canShutDown}}
-          <button type="button" class="ui-control icon cp-shut-down-toggle{{#if this.shutDownReason}} active{{/if}}"
-            data-action="toggleShutDown" data-shut-down="{{#if this.shutDownReason}}true{{else}}false{{/if}}"
-            aria-pressed="{{#if this.shutDownReason}}true{{else}}false{{/if}}"
+          <button type="button" class="ui-control icon cp-shut-down-toggle{{#if this.ownShutDown}} active{{/if}}"
+            data-action="toggleShutDown" data-shut-down="{{#if this.ownShutDown}}true{{else}}false{{/if}}"
+            aria-pressed="{{#if this.ownShutDown}}true{{else}}false{{/if}}"
             data-tooltip="{{ this.shutDownLabel }}" aria-label="{{ this.shutDownLabel }}"><i class="fa-solid fa-power-off" inert></i></button>
           {{/if}}
           {{#if this.nameInput}}

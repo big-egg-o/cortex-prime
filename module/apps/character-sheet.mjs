@@ -47,7 +47,7 @@ import { checkCharacterUpdate } from "../rules/traits.mjs";
 import {
   FREE_NAME_INPUTS, FREE_RATING_INPUTS, NAME_INPUTS, NEW_RATING_INPUTS, RATING_INPUTS, STATEMENT_INPUTS, addFreeTrait,
   addTraitEntry, characterSheetView, freeTraitChanges, removeFreeTrait, removeTraitEntry, resolveTraitChallenge,
-  setTraitShutDown, sheetTraitChanges
+  setShutDownChange, setTraitShutDown, sheetTraitChanges
 } from "./character-sheet-data.mjs";
 import { addTraitToPool } from "./pool-builder.mjs";
 
@@ -134,7 +134,7 @@ export default class CharacterSheet extends HandlebarsApplicationMixin(ActorShee
       },
       shutDownText: trait.shutDownReason ? i18n.localize(`CORTEX.Sheet.ShutDown.${trait.shutDownReason}`) : null,
       canShutDown: trait.canShutDown && editMode,
-      shutDownLabel: i18n.format(trait.shutDownReason ? "CORTEX.Sheet.ShutDown.ClearTrait" : "CORTEX.Sheet.ShutDown.SetTrait",
+      shutDownLabel: i18n.format(trait.ownShutDown ? "CORTEX.Sheet.ShutDown.ClearTrait" : "CORTEX.Sheet.ShutDown.SetTrait",
         { trait: trait.name }),
       removeLabel: i18n.format("CORTEX.Sheet.RemoveTrait", { trait: trait.name }),
       newSlot: (trait.newSlot && this.isEditable)
@@ -275,6 +275,15 @@ export default class CharacterSheet extends HandlebarsApplicationMixin(ActorShee
   }
 
   /**
+   * The set and the stored entry of a control on a set trait's row.
+   * @param {HTMLElement} target
+   * @returns {{setId: string|null|undefined, entryId: string|undefined}}
+   */
+  static #setEntryOf(target) {
+    return { setId: CharacterSheet.#setIdOf(target), entryId: target.closest("[data-entry-id]")?.dataset.entryId };
+  }
+
+  /**
    * Resolves the clicked trait's challenged statement as rewritten or kept, by the button's
    * `data-rewritten`.
    * @this {CharacterSheet}
@@ -282,10 +291,8 @@ export default class CharacterSheet extends HandlebarsApplicationMixin(ActorShee
    * @param {HTMLElement} target
    */
   static async #onResolveChallenge(_event, target) {
-    const setId = CharacterSheet.#setIdOf(target);
-    const entryId = target.closest("[data-entry-id]")?.dataset.entryId;
-    if ( !setId || !entryId ) return;
-    await this.resolveChallenge(setId, entryId, target.dataset.rewritten === "true");
+    const { setId, entryId } = CharacterSheet.#setEntryOf(target);
+    if ( setId && entryId ) await this.resolveChallenge(setId, entryId, target.dataset.rewritten === "true");
   }
 
   /**
@@ -295,10 +302,8 @@ export default class CharacterSheet extends HandlebarsApplicationMixin(ActorShee
    * @param {HTMLElement} target
    */
   static async #onToggleShutDown(_event, target) {
-    const setId = CharacterSheet.#setIdOf(target);
-    const entryId = target.closest("[data-entry-id]")?.dataset.entryId;
-    if ( !setId || !entryId ) return;
-    await this.setShutDown(setId, entryId, target.dataset.shutDown !== "true");
+    const { setId, entryId } = CharacterSheet.#setEntryOf(target);
+    if ( setId && entryId ) await this.setShutDown(setId, entryId, target.dataset.shutDown !== "true");
   }
 
   /**
@@ -391,22 +396,23 @@ export default class CharacterSheet extends HandlebarsApplicationMixin(ActorShee
    */
   async setShutDown(setId, entryId, shutDown) {
     if ( !this.isEditable ) return false;
-    const changed = setTraitShutDown(this.actor.system.toObject(), setId, entryId, shutDown);
+    const changed = setTraitShutDown(this.actor.system.toObject(), getGameConfig(), setId, entryId, shutDown);
     if ( !changed.ok ) return this.#refuse(changed.code);
     return this.#writeSystem({ traits: { [setId]: changed.value } });
   }
 
   /**
-   * Sets or clears a whole set's shut-down flag (rule 15). A set the actor holds nothing in yet
-   * gets an empty entries list beside its flag.
+   * Sets or clears a whole set's shut-down flag (rule 15); setShutDownChange decides what is
+   * written.
    * @param {string} setId
    * @param {boolean} shutDown
    * @returns {Promise<boolean>} whether it was written
    */
   async setSetShutDown(setId, shutDown) {
-    if ( !this.isEditable || (typeof shutDown !== "boolean") ) return false;
-    const held = Object.hasOwn(this.actor.system.toObject().traits ?? {}, setId);
-    return this.#writeSystem({ traits: { [setId]: held ? { shutDown } : { shutDown, sfx: [], entries: [] } } });
+    if ( !this.isEditable ) return false;
+    const changed = setShutDownChange(this.actor.system.toObject(), getGameConfig(), setId, shutDown);
+    if ( !changed.ok ) return this.#refuse(changed.code);
+    return this.#writeSystem({ traits: { [setId]: changed.value } });
   }
 
   /**

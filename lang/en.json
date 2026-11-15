@@ -163,7 +163,8 @@
         "TRAIT_SET_NOT_OPEN": "This trait set's traits are defined in the game configuration.",
         "INVALID_RATING_OPTIONS": "A trait set in the game configuration has invalid dice options.",
         "INVALID_GAME_CONFIG": "The game configuration can't be read.",
-        "STATEMENT_NOT_CHALLENGED": "This trait's statement isn't challenged, so there is nothing to resolve."
+        "STATEMENT_NOT_CHALLENGED": "This trait's statement isn't challenged, so there is nothing to resolve.",
+        "SHUT_DOWN_NOT_OFFERED": "This trait set has no shut-down flags in the game configuration."
       }
     },
     "Sheet": {

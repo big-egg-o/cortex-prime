@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import {
   FREE_NAME_INPUTS, FREE_RATING_INPUTS, NAME_INPUTS, NEW_RATING_INPUTS, RATING_INPUTS, STATEMENT_INPUTS, addFreeTrait,
   addTraitEntry, characterSheetView, freeTraitChanges, removeFreeTrait, removeTraitEntry, resolveTraitChallenge,
-  setTraitShutDown, sheetTraitChanges, traitChangesFromInputs
+  setShutDownChange, setTraitShutDown, sheetTraitChanges, traitChangesFromInputs
 } from "../../module/apps/character-sheet-data.mjs";
 import { defaultGameConfig, traitSetById } from "../../module/rules/game-config.mjs";
 
@@ -581,7 +581,7 @@ describe("statements and shut-down flags (Character Sheets behaviours 8, 15 and 
     traitSetById(config, ATTRIBUTES).features.shutDown = false;
     const view = characterSheetView(pcSystem(), deepFreeze(config));
     expect(rowOf(view, ATTRIBUTES, ENTRY_PHYSICAL).canShutDown).toBe(false);
-    expect(rowOf(view, ATTRIBUTES, ENTRY_SOCIAL).canShutDown).toBe(true, "a stored flag can always be cleared");
+    expect(rowOf(view, ATTRIBUTES, ENTRY_SOCIAL).canShutDown, "a stored flag can always be cleared").toBe(true);
     expect(view.sets.find(s => s.id === ATTRIBUTES).canShutDown).toBe(false);
     expect(view.sets.find(s => s.id === DISTINCTIONS).canShutDown).toBe(true);
     const flagged = pcSystem();
@@ -598,7 +598,8 @@ describe("statements and shut-down flags (Character Sheets behaviours 8, 15 and 
     expect(entries.find(e => e.id === ENTRY_SOCIAL)).toMatchObject({
       statement: "I trust my crew", challenged: true, preChallengeDice: [8], dice: [6]
     });
-    expect("statement" in entries.find(e => e.id === ENTRY_PHYSICAL)).toBe(false, "a blank input for no statement changes nothing");
+    expect("statement" in entries.find(e => e.id === ENTRY_PHYSICAL), "a blank input for no statement changes nothing")
+      .toBe(false);
   });
 
   it("reports no change for the stored statement, and refuses inputs it can't read", () => {
@@ -644,25 +645,70 @@ describe("statements and shut-down flags (Character Sheets behaviours 8, 15 and 
 
   it("sets a trait's shut-down by hand, keeps an existing reason, and clears either reason (RQ-034)", () => {
     const system = deepFreeze(pcSystem());
-    const on = setTraitShutDown(system, ATTRIBUTES, ENTRY_PHYSICAL, true);
+    const config = deepFreeze(defaultGameConfig());
+    const on = setTraitShutDown(system, config, ATTRIBUTES, ENTRY_PHYSICAL, true);
     expect(on.value.entries.find(e => e.id === ENTRY_PHYSICAL).shutDown).toEqual({ reason: "manual" });
     const challenged = deepFreeze({ ...pcSystem(), traits: { [ATTRIBUTES]: { shutDown: false, sfx: [], entries: [
       { id: ENTRY_SOCIAL, defId: SOCIAL, name: "Social", dice: [4], statement: "I trust no one", challenged: true,
         preChallengeDice: [4], sfx: [], shutDown: { reason: "statementChallenged" } }
     ] } } });
-    expect(setTraitShutDown(challenged, ATTRIBUTES, ENTRY_SOCIAL, true).value.entries[0].shutDown)
+    expect(setTraitShutDown(challenged, config, ATTRIBUTES, ENTRY_SOCIAL, true).value.entries[0].shutDown)
       .toEqual({ reason: "statementChallenged" });
-    const off = setTraitShutDown(challenged, ATTRIBUTES, ENTRY_SOCIAL, false).value.entries[0];
+    const off = setTraitShutDown(challenged, config, ATTRIBUTES, ENTRY_SOCIAL, false).value.entries[0];
     expect("shutDown" in off).toBe(false);
-    expect(off.challenged).toBe(true, "clearing the flag leaves the challenge open");
-    expect(setTraitShutDown(system, ATTRIBUTES, "nope000000000000", true)).toEqual({ ok: false, code: "UNKNOWN_TRAIT" });
-    expect(setTraitShutDown(system, ATTRIBUTES, ENTRY_PHYSICAL, 1)).toEqual({ ok: false, code: "INVALID_TRAIT_DATA" });
+    expect(off.challenged, "clearing the flag leaves the challenge open").toBe(true);
+    expect(setTraitShutDown(system, config, ATTRIBUTES, "nope000000000000", true)).toEqual({ ok: false, code: "UNKNOWN_TRAIT" });
+    expect(setTraitShutDown(system, config, ATTRIBUTES, ENTRY_PHYSICAL, 1)).toEqual({ ok: false, code: "INVALID_TRAIT_DATA" });
+  });
+
+  it("sets a trait's flag only where the set has the shut-down feature, and clears it anywhere", () => {
+    const config = defaultGameConfig();
+    traitSetById(config, ATTRIBUTES).features.shutDown = false;
+    deepFreeze(config);
+    const system = deepFreeze(pcSystem());
+    expect(setTraitShutDown(system, config, ATTRIBUTES, ENTRY_PHYSICAL, true)).toEqual({ ok: false, code: "SHUT_DOWN_NOT_OFFERED" });
+    const off = setTraitShutDown(system, config, ATTRIBUTES, ENTRY_SOCIAL, false);
+    expect("shutDown" in off.value.entries.find(e => e.id === ENTRY_SOCIAL)).toBe(false);
+  });
+
+  it("offers the toggle to clear a flag that holds no reason, and clears it", () => {
+    const system = pcSystem();
+    system.traits[ATTRIBUTES].entries[0].shutDown = {};
+    deepFreeze(system);
+    const row = rowOf(characterSheetView(system, deepFreeze(defaultGameConfig())), ATTRIBUTES, ENTRY_PHYSICAL);
+    expect(row).toMatchObject({ ownShutDown: true, shutDownReason: null, canShutDown: true, shutDown: true });
+    const off = setTraitShutDown(system, deepFreeze(defaultGameConfig()), ATTRIBUTES, ENTRY_PHYSICAL, false);
+    expect("shutDown" in off.value.entries[0]).toBe(false);
+  });
+
+  it("decides a set's shut-down change: the flag alone for a held set, with an empty list otherwise", () => {
+    const config = defaultGameConfig();
+    traitSetById(config, ATTRIBUTES).features.shutDown = false;
+    deepFreeze(config);
+    const system = deepFreeze(pcSystem());
+    expect(setShutDownChange(system, config, DISTINCTIONS, true)).toEqual({ ok: true, value: { shutDown: true } });
+    expect(setShutDownChange(system, config, SKILLS, true)).toEqual({ ok: true, value: { shutDown: true, sfx: [], entries: [] } });
+    expect(setShutDownChange(system, config, ATTRIBUTES, true)).toEqual({ ok: false, code: "SHUT_DOWN_NOT_OFFERED" });
+    expect(setShutDownChange(system, config, ATTRIBUTES, false)).toEqual({ ok: true, value: { shutDown: false } });
+    expect(setShutDownChange(system, config, ATTRIBUTES, "yes")).toEqual({ ok: false, code: "INVALID_TRAIT_DATA" });
+  });
+
+  it("leaves a stored statement or name with surrounding spaces alone when its input holds the same text", () => {
+    const system = pcSystem();
+    system.traits[ATTRIBUTES].entries[2].statement = "  I trust no one ";
+    system.traits[DISTINCTIONS].entries[0].name = " Cult Survivor ";
+    deepFreeze(system);
+    expect(sheetTraitChanges(system, statementsConfig(), {
+      statements: { [ATTRIBUTES]: { [ENTRY_SOCIAL]: "I trust no one" } },
+      names: { [DISTINCTIONS]: { [ENTRY_CULT]: "Cult Survivor" } }
+    }, () => "unused")).toEqual({ ok: true, value: {} });
   });
 });
 
 describe("character sheet strings", () => {
   it("has a refusal string for every code traitChangesFromInputs can return", () => {
-    for ( const code of ["INVALID_TRAIT_DATA", "INVALID_DIE_SIZE", "UNKNOWN_TRAIT", "STATEMENT_NOT_CHALLENGED"] ) {
+    for ( const code of ["INVALID_TRAIT_DATA", "INVALID_DIE_SIZE", "UNKNOWN_TRAIT", "STATEMENT_NOT_CHALLENGED",
+      "SHUT_DOWN_NOT_OFFERED"] ) {
       expect(lang.CORTEX.Character.Errors[code], code).toBeTypeOf("string");
     }
   });

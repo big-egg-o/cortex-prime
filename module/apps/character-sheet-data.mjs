@@ -63,8 +63,10 @@ export const FREE_NAME_INPUTS = "freeNames";
  * @property {boolean} noDice - the set has no dice (rule 3)
  * @property {string[]} hints - ratingGuidance's codes (rule 9, ADR-037 point 5)
  * @property {boolean} shutDown - the trait or its whole set is flagged shut down (rule 15)
- * @property {"manual"|"statementChallenged"|null} shutDownReason - the trait's own shut-down and
- *   its reason, null when the trait itself isn't shut down (RQ-034: the sheet shows the reason)
+ * @property {boolean} ownShutDown - the trait itself is flagged shut down, whatever the flag holds
+ * @property {"manual"|"statementChallenged"|null} shutDownReason - the reason of the trait's own
+ *   shut-down, null when the trait itself isn't shut down or its flag has no readable reason
+ *   (RQ-034: the sheet shows the reason)
  * @property {boolean} canShutDown - a stored entry whose own shut-down flag the sheet offers to
  *   set, in a set with the shut-down feature, or to clear, whenever it is set (behaviour 17)
  * @property {string|null} statement - the trait's statement where its set has the statements
@@ -211,6 +213,7 @@ function traitRow(set, def, entry, setShutDown) {
     noDice: set.hasDice !== true,
     hints: hints.ok ? hints.value : [],
     shutDown: setShutDown || isPlainObject(entry?.shutDown),
+    ownShutDown: isPlainObject(entry?.shutDown),
     shutDownReason: isPlainObject(entry?.shutDown) && (typeof entry.shutDown.reason === "string")
       ? entry.shutDown.reason : null,
     canShutDown: (typeof entry?.id === "string") && ((set.features?.shutDown === true) || isPlainObject(entry.shutDown)),
@@ -255,6 +258,7 @@ function freeTraitRow(entry) {
     noDice: false,
     hints: hints.ok ? hints.value : [],
     shutDown: false,
+    ownShutDown: false,
     shutDownReason: null,
     canShutDown: false,
     statement: null,
@@ -451,6 +455,11 @@ function storedEntries(system, setId) {
   return Array.isArray(entries) ? entries.map(copyStored) : [];
 }
 
+/** @returns {string} stored text without surrounding spaces, "" for anything that isn't text */
+function trimmedText(value) {
+  return (typeof value === "string") ? value.trim() : "";
+}
+
 /**
  * Turns everything the sheet's form holds about traits into the trait changes of an update:
  * the ratings of stored entries (traitChangesFromInputs), the names of open-set traits, and the
@@ -463,12 +472,14 @@ function storedEntries(system, setId) {
  * id, its definition's id, the definition's name as a snapshot, the chosen rating and no SFX; it
  * goes at the end of its set's entries. A choice for a set that isn't fixed, a definition the set
  * doesn't have, or a definition the actor has an entry for by now is ignored, and so is a blank
- * choice. Whether the result fits the configuration is checkCharacterUpdate's job.
+ * choice. A statement is trimmed and may be blank; it changes only when its trimmed text differs
+ * from the stored text, trimmed, so a submit of another field never rewrites it, and a blank input
+ * for an entry that has no statement changes nothing. Changing the text never resolves a challenge
+ * (TS-15c, editStatement). Whether the result fits the configuration is checkCharacterUpdate's
+ * job.
  * @param {import("../rules/types.mjs").CharacterTraitData} system - the stored system data, read
  *   when the form is submitted
  * @param {import("../rules/types.mjs").GameConfig} config
- * A statement is trimmed and may be blank; a blank input for an entry that has no statement
- * changes nothing. Changing the text never resolves a challenge (TS-15c, editStatement).
  * @param {{ratings?: unknown, newRatings?: unknown, names?: unknown, statements?: unknown}} form -
  *   the form's groups of trait inputs, each as its inputs name it or undefined
  * @param {() => string} makeId - makes the id of a new entry
@@ -493,7 +504,7 @@ export function sheetTraitChanges(system, config, form, makeId) {
       let changed = false;
       for ( const entry of entries ) {
         const name = isPlainObject(entry) ? byEntry[entry.id] : undefined;
-        if ( (typeof name !== "string") || (name.trim() === "") || (name.trim() === entry.name) ) continue;
+        if ( (typeof name !== "string") || (name.trim() === "") || (name.trim() === trimmedText(entry.name)) ) continue;
         entry.name = name.trim();
         changed = true;
       }
@@ -511,7 +522,7 @@ export function sheetTraitChanges(system, config, form, makeId) {
         const text = isPlainObject(entry) ? byEntry[entry.id] : undefined;
         if ( typeof text !== "string" ) continue;
         const statement = text.trim();
-        if ( statement === ((typeof entry.statement === "string") ? entry.statement : "") ) continue;
+        if ( statement === trimmedText(entry.statement) ) continue;
         const edited = editStatement(entry, statement);
         if ( !edited.ok ) return edited;
         entries[index] = edited.value;
@@ -704,23 +715,61 @@ export function resolveTraitChallenge(system, setId, entryId, rewritten) {
 }
 
 /**
+ * Whether a set's shut-down flags may be set: only where the game configuration gives the set the
+ * shut-down feature (rule 13). Clearing a flag is always allowed, so a stored flag is never stuck
+ * (ADR-029; Character Sheets CS-D16).
+ * @param {import("../rules/types.mjs").GameConfig} config
+ * @param {string} setId
+ * @returns {boolean}
+ */
+function shutDownOffered(config, setId) {
+  const set = Array.isArray(config?.traitSets) ? traitSetById(config, setId) : null;
+  return isPlainObject(set) && (set.features?.shutDown === true);
+}
+
+/**
  * A set's entries with one trait's own shut-down flag set or cleared (Character Sheets
- * behaviour 17; rule 15). Setting it marks the trait shut down by hand; a trait that is already
- * shut down keeps its reason. Clearing it removes the flag whatever its reason, including one a
- * challenged d4 left: lifting a shut-down is the table's call (RQ-034, ADR-029 point 4).
+ * behaviour 17; rule 15). Setting it marks the trait shut down by hand, where the set has the
+ * shut-down feature; a trait that is already shut down keeps its reason. Clearing it removes the
+ * flag whatever it holds, including the reason a challenged d4 left: lifting a shut-down is the
+ * table's call (RQ-034, ADR-029 point 4).
  * @param {import("../rules/types.mjs").CharacterTraitData} system - the stored system data
+ * @param {import("../rules/types.mjs").GameConfig} config
  * @param {string} setId
  * @param {string} entryId
  * @param {boolean} shutDown
  * @returns {import("../rules/types.mjs").EngineResult<{entries: object[]}>} refuses
- *   INVALID_TRAIT_DATA and UNKNOWN_TRAIT
+ *   INVALID_TRAIT_DATA, UNKNOWN_TRAIT, and SHUT_DOWN_NOT_OFFERED (setting a flag in a set without
+ *   the shut-down feature)
  */
-export function setTraitShutDown(system, setId, entryId, shutDown) {
+export function setTraitShutDown(system, config, setId, entryId, shutDown) {
   if ( typeof shutDown !== "boolean" ) return fail("INVALID_TRAIT_DATA");
+  if ( shutDown && (typeof setId === "string") && !shutDownOffered(config, setId) ) return fail("SHUT_DOWN_NOT_OFFERED");
   return withEntryChanged(system, setId, entryId, entry => {
     const next = { ...entry };
     if ( !shutDown ) delete next.shutDown;
     else if ( !isPlainObject(entry.shutDown) ) next.shutDown = { reason: "manual" };
     return ok(next);
   });
+}
+
+/**
+ * A set's change after its whole shut-down flag is set or cleared (Character Sheets behaviour 17;
+ * rule 15), as the update to write for that set: the flag alone for a set the actor holds, so its
+ * entries and SFX are kept as stored; for a set it doesn't hold yet, the flag with an empty
+ * entries list and no SFX. Setting the flag needs the set's shut-down feature; clearing it doesn't.
+ * @param {import("../rules/types.mjs").CharacterTraitData} system - the stored system data
+ * @param {import("../rules/types.mjs").GameConfig} config
+ * @param {string} setId
+ * @param {boolean} shutDown
+ * @returns {import("../rules/types.mjs").EngineResult<{shutDown: boolean, sfx?: [], entries?: []}>}
+ *   refuses INVALID_TRAIT_DATA and SHUT_DOWN_NOT_OFFERED
+ */
+export function setShutDownChange(system, config, setId, shutDown) {
+  if ( !isPlainObject(system) || (typeof setId !== "string") || (typeof shutDown !== "boolean") ) {
+    return fail("INVALID_TRAIT_DATA");
+  }
+  if ( shutDown && !shutDownOffered(config, setId) ) return fail("SHUT_DOWN_NOT_OFFERED");
+  const held = isPlainObject(system.traits) && Object.hasOwn(system.traits, setId);
+  return ok(held ? { shutDown } : { shutDown, sfx: [], entries: [] });
 }

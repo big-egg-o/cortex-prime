@@ -395,11 +395,8 @@
   font-size: var(--font-size-13);
 }
 
-/* Statements and shut-down flags (Character Sheets behaviours 8, 15 and 17). */
-.cortex-prime.character-sheet .window-content .cp-trait {
-  flex-wrap: wrap;
-}
-
+/* Statements and shut-down flags (Character Sheets behaviours 8, 15 and 17). Core's form-group
+   already wraps, so these lines take a row of their own. */
 .cortex-prime.character-sheet .window-content .cp-trait > .cp-statement,
 .cortex-prime.character-sheet .window-content .cp-trait > .cp-statement-input,
 .cortex-prime.character-sheet .window-content .cp-trait > .cp-challenged,
