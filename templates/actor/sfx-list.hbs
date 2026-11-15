@@ -6,13 +6,14 @@
     {{#if (and ../edit this.textInput)}}
     <textarea name="{{ this.textInput }}" rows="2" aria-label="{{ this.textLabel }}"
       placeholder="{{ localize "CORTEX.Sheet.Details.SfxPlaceholder" }}">{{ this.text }}</textarea>
-    <label class="checkbox"><input type="checkbox" name="{{ this.unlockedInput }}" {{#if this.unlocked}}checked{{/if}}>
+    <label class="checkbox"><input type="checkbox" name="{{ this.unlockedInput }}" {{#if this.unlocked}}checked{{/if}}
+      aria-label="{{ this.unlockedLabel }}">
       {{ localize "CORTEX.Sheet.Details.Unlocked" }}</label>
     <button type="button" class="ui-control icon" data-action="{{ ../removeAction }}" data-index="{{ this.index }}"
       data-tooltip="{{ this.removeLabel }}" aria-label="{{ this.removeLabel }}"><i class="fa-solid fa-trash" inert></i></button>
     {{else}}
     <i class="fa-solid {{#if this.unlocked}}fa-lock-open{{else}}fa-lock{{/if}}" data-tooltip="{{ this.stateLabel }}"
-      aria-label="{{ this.stateLabel }}"></i>
+      role="img" aria-label="{{ this.stateLabel }}"></i>
     <span>{{ this.label }}</span>
     {{/if}}
   </li>

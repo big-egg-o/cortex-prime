@@ -263,6 +263,7 @@ export default class CharacterSheet extends HandlebarsApplicationMixin(ActorShee
       label: row.text || i18n.localize("CORTEX.Sheet.Details.SfxBlank"),
       stateLabel: i18n.localize(row.unlocked ? "CORTEX.Sheet.Details.Unlocked" : "CORTEX.Sheet.Details.Locked"),
       textLabel: i18n.format("CORTEX.Sheet.Details.SfxText", { owner, number: row.index + 1 }),
+      unlockedLabel: i18n.format("CORTEX.Sheet.Details.SfxUnlocked", { owner, number: row.index + 1 }),
       removeLabel: i18n.format("CORTEX.Sheet.Details.RemoveSfx", { owner, number: row.index + 1 })
     }));
   }
@@ -515,10 +516,8 @@ export default class CharacterSheet extends HandlebarsApplicationMixin(ActorShee
    */
   async addTrait(setId) {
     if ( !this.isEditable ) return false;
-    const added = addTraitEntry(this.actor.system.toObject(), getGameConfig(), setId, foundry.utils.randomID(),
-      game.i18n.localize("CORTEX.Sheet.NewTrait"));
-    if ( !added.ok ) return this.#refuse(added.code);
-    return this.#writeSystem({ traits: { [setId]: added.value } });
+    return this.#writeSetChange(setId, addTraitEntry(this.actor.system.toObject(), getGameConfig(), setId, foundry.utils.randomID(),
+      game.i18n.localize("CORTEX.Sheet.NewTrait")));
   }
 
   /**
@@ -531,9 +530,7 @@ export default class CharacterSheet extends HandlebarsApplicationMixin(ActorShee
    */
   async resolveChallenge(setId, entryId, rewritten) {
     if ( !this.isEditable ) return false;
-    const resolved = resolveTraitChallenge(this.actor.system.toObject(), setId, entryId, rewritten);
-    if ( !resolved.ok ) return this.#refuse(resolved.code);
-    return this.#writeSystem({ traits: { [setId]: resolved.value } });
+    return this.#writeSetChange(setId, resolveTraitChallenge(this.actor.system.toObject(), setId, entryId, rewritten));
   }
 
   /**
@@ -545,9 +542,7 @@ export default class CharacterSheet extends HandlebarsApplicationMixin(ActorShee
    */
   async setShutDown(setId, entryId, shutDown) {
     if ( !this.isEditable ) return false;
-    const changed = setTraitShutDown(this.actor.system.toObject(), getGameConfig(), setId, entryId, shutDown);
-    if ( !changed.ok ) return this.#refuse(changed.code);
-    return this.#writeSystem({ traits: { [setId]: changed.value } });
+    return this.#writeSetChange(setId, setTraitShutDown(this.actor.system.toObject(), getGameConfig(), setId, entryId, shutDown));
   }
 
   /**
@@ -559,9 +554,7 @@ export default class CharacterSheet extends HandlebarsApplicationMixin(ActorShee
    */
   async setSetShutDown(setId, shutDown) {
     if ( !this.isEditable ) return false;
-    const changed = setShutDownChange(this.actor.system.toObject(), getGameConfig(), setId, shutDown);
-    if ( !changed.ok ) return this.#refuse(changed.code);
-    return this.#writeSystem({ traits: { [setId]: changed.value } });
+    return this.#writeSetChange(setId, setShutDownChange(this.actor.system.toObject(), getGameConfig(), setId, shutDown));
   }
 
   /**
@@ -572,9 +565,7 @@ export default class CharacterSheet extends HandlebarsApplicationMixin(ActorShee
    */
   async addSfx(setId, entryId) {
     if ( !this.isEditable ) return false;
-    const added = addTraitSfx(this.actor.system.toObject(), getGameConfig(), setId, entryId);
-    if ( !added.ok ) return this.#refuse(added.code);
-    return this.#writeSystem({ traits: { [setId]: added.value } });
+    return this.#writeSetChange(setId, addTraitSfx(this.actor.system.toObject(), getGameConfig(), setId, entryId));
   }
 
   /**
@@ -586,9 +577,7 @@ export default class CharacterSheet extends HandlebarsApplicationMixin(ActorShee
    */
   async removeSfx(setId, entryId, index) {
     if ( !this.isEditable ) return false;
-    const removed = removeTraitSfx(this.actor.system.toObject(), setId, entryId, index);
-    if ( !removed.ok ) return this.#refuse(removed.code);
-    return this.#writeSystem({ traits: { [setId]: removed.value } });
+    return this.#writeSetChange(setId, removeTraitSfx(this.actor.system.toObject(), setId, entryId, index));
   }
 
   /**
@@ -598,9 +587,7 @@ export default class CharacterSheet extends HandlebarsApplicationMixin(ActorShee
    */
   async addSetSfx(setId) {
     if ( !this.isEditable ) return false;
-    const added = addSetSfx(this.actor.system.toObject(), getGameConfig(), setId);
-    if ( !added.ok ) return this.#refuse(added.code);
-    return this.#writeSystem({ traits: { [setId]: added.value } });
+    return this.#writeSetChange(setId, addSetSfx(this.actor.system.toObject(), getGameConfig(), setId));
   }
 
   /**
@@ -611,9 +598,7 @@ export default class CharacterSheet extends HandlebarsApplicationMixin(ActorShee
    */
   async removeSetSfx(setId, index) {
     if ( !this.isEditable ) return false;
-    const removed = removeSetSfx(this.actor.system.toObject(), setId, index);
-    if ( !removed.ok ) return this.#refuse(removed.code);
-    return this.#writeSystem({ traits: { [setId]: removed.value } });
+    return this.#writeSetChange(setId, removeSetSfx(this.actor.system.toObject(), setId, index));
   }
 
   /**
@@ -624,10 +609,8 @@ export default class CharacterSheet extends HandlebarsApplicationMixin(ActorShee
    */
   async addSubTrait(setId, entryId) {
     if ( !this.isEditable ) return false;
-    const added = addSubTrait(this.actor.system.toObject(), getGameConfig(), setId, entryId, foundry.utils.randomID(),
-      game.i18n.localize("CORTEX.Sheet.NewTrait"));
-    if ( !added.ok ) return this.#refuse(added.code);
-    return this.#writeSystem({ traits: { [setId]: added.value } });
+    return this.#writeSetChange(setId, addSubTrait(this.actor.system.toObject(), getGameConfig(), setId, entryId, foundry.utils.randomID(),
+      game.i18n.localize("CORTEX.Sheet.NewTrait")));
   }
 
   /**
@@ -639,9 +622,7 @@ export default class CharacterSheet extends HandlebarsApplicationMixin(ActorShee
    */
   async removeSubTrait(setId, entryId, subId) {
     if ( !this.isEditable ) return false;
-    const removed = removeSubTrait(this.actor.system.toObject(), setId, entryId, subId);
-    if ( !removed.ok ) return this.#refuse(removed.code);
-    return this.#writeSystem({ traits: { [setId]: removed.value } });
+    return this.#writeSetChange(setId, removeSubTrait(this.actor.system.toObject(), setId, entryId, subId));
   }
 
   /**
@@ -676,9 +657,7 @@ export default class CharacterSheet extends HandlebarsApplicationMixin(ActorShee
    */
   async removeTrait(setId, entryId) {
     if ( !this.isEditable ) return false;
-    const removed = removeTraitEntry(this.actor.system.toObject(), setId, entryId);
-    if ( !removed.ok ) return this.#refuse(removed.code);
-    return this.#writeSystem({ traits: { [setId]: removed.value } });
+    return this.#writeSetChange(setId, removeTraitEntry(this.actor.system.toObject(), setId, entryId));
   }
 
   /**
@@ -694,6 +673,17 @@ export default class CharacterSheet extends HandlebarsApplicationMixin(ActorShee
     });
     if ( !checked.ok ) return this.#refuse(checked.code);
     return Boolean(await this.actor.update({ system }));
+  }
+
+  /**
+   * Writes one set's change from a pure function, or shows why there is none.
+   * @param {string} setId
+   * @param {import("../rules/types.mjs").EngineResult<object>} changed - the set's change
+   * @returns {Promise<boolean>} whether it was written
+   */
+  async #writeSetChange(setId, changed) {
+    if ( !changed.ok ) return this.#refuse(changed.code);
+    return this.#writeSystem({ traits: { [setId]: changed.value } });
   }
 
   /** Shows a refusal's text and renders the stored state again; always returns false. */

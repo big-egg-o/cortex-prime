@@ -501,9 +501,8 @@ function inputDie(value) {
  * @returns {import("../rules/types.mjs").EngineResult<number[]>}
  */
 function inputRating(inputs) {
-  const pairs = Array.isArray(inputs) ? inputs.map((value, index) => [index, value])
-    : isPlainObject(inputs) ? Object.entries(inputs).map(([index, value]) => [Number(index), value]) : null;
-  if ( !pairs || pairs.some(([index]) => !Number.isInteger(index) || (index < 0)) ) return fail("INVALID_TRAIT_DATA");
+  const pairs = indexedInputs(inputs);
+  if ( !pairs ) return fail("INVALID_TRAIT_DATA");
   const dice = [];
   for ( const [, value] of pairs.sort((a, b) => a[0] - b[0]) ) {
     const die = inputDie(value);
@@ -598,14 +597,16 @@ function trimmedText(value) {
  * for an entry that has no statement changes nothing. Changing the text never resolves a challenge
  * (TS-15c, editStatement). Whether the result fits the configuration is checkCharacterUpdate's
  * job.
+ *
+ * The details of a set trait (Character Sheets behaviour 16) are read the same way: a description
+ * is trimmed and may be blank; an SFX's text is trimmed and its unlocked flag taken from its
+ * checkbox; tags are trimmed, split at commas, blanks dropped and each kept once (cleanTags); a
+ * sub-trait's name and rating as for a trait. A set's own SFX come back as the set's `sfx` list
+ * beside or instead of its entries. Inputs for an SFX, a sub-trait or an entry the actor no longer
+ * holds are ignored.
  * @param {import("../rules/types.mjs").CharacterTraitData} system - the stored system data, read
  *   when the form is submitted
  * @param {import("../rules/types.mjs").GameConfig} config
- * The details of a set trait (Character Sheets behaviour 16) are read the same way: a description
- * is trimmed and may be blank; an SFX's text is trimmed and its unlocked flag taken from its
- * checkbox; tags are trimmed, blanks dropped and each kept once; a sub-trait's name and rating as
- * for a trait. A set's own SFX come back as the set's `sfx` list beside or instead of its entries.
- * Inputs for an SFX, a sub-trait or an entry the actor no longer holds are ignored.
  * @param {{ratings?: unknown, newRatings?: unknown, names?: unknown, statements?: unknown,
  *   descriptions?: unknown, sfx?: unknown, tags?: unknown, subNames?: unknown,
  *   subRatings?: unknown, setSfx?: unknown}} form - the form's groups of trait inputs, each as its
@@ -789,9 +790,15 @@ function entrySfxChange(entry, input) {
   return ok({ ...entry, sfx: next.value });
 }
 
-/** @returns {string[]} tags trimmed, without blanks, each once, in their first order */
+/**
+ * Tags as the sheet stores them: trimmed, without blanks, each once, in their first order. A tag
+ * holding a comma is split there, as Foundry's tag input splits its value when the sheet renders, so
+ * what is stored is what the input shows and a later submit never rewrites it.
+ * @param {string[]} tags
+ * @returns {string[]}
+ */
 function cleanTags(tags) {
-  return [...new Set(tags.map(tag => tag.trim()).filter(tag => tag !== ""))];
+  return [...new Set(tags.flatMap(tag => tag.split(",")).map(tag => tag.trim()).filter(tag => tag !== ""))];
 }
 
 /** @returns {import("../rules/types.mjs").EngineResult<object|null>} the entry with its tags input */
@@ -1003,19 +1010,9 @@ export function resolveTraitChallenge(system, setId, entryId, rewritten) {
 }
 
 /**
- * Whether a set's shut-down flags may be set: only where the game configuration gives the set the
- * shut-down feature (rule 13). Clearing a flag is always allowed, so a stored flag is never stuck
- * (ADR-029; Character Sheets CS-D16).
- * @param {import("../rules/types.mjs").GameConfig} config
- * @param {string} setId
- * @returns {boolean}
- */
-function shutDownOffered(config, setId) {
-  return featureOffered(config, setId, "shutDown");
-}
-
-/**
- * Whether a set has a per-set feature turned on in the game configuration (rule 13).
+ * Whether a set has a per-set feature turned on in the game configuration (rule 13). Adding needs
+ * the feature; clearing a shut-down flag or removing a detail never does, so nothing stored is
+ * stuck (ADR-029; Character Sheets CS-D16).
  * @param {import("../rules/types.mjs").GameConfig} config
  * @param {string} setId
  * @param {string} feature - a key of TRAIT_SET_FEATURES
@@ -1043,7 +1040,7 @@ function featureOffered(config, setId, feature) {
  */
 export function setTraitShutDown(system, config, setId, entryId, shutDown) {
   if ( typeof shutDown !== "boolean" ) return fail("INVALID_TRAIT_DATA");
-  if ( shutDown && (typeof setId === "string") && !shutDownOffered(config, setId) ) return fail("SHUT_DOWN_NOT_OFFERED");
+  if ( shutDown && (typeof setId === "string") && !featureOffered(config, setId, "shutDown") ) return fail("SHUT_DOWN_NOT_OFFERED");
   return withEntryChanged(system, setId, entryId, entry => {
     const next = { ...entry };
     if ( !shutDown ) delete next.shutDown;
@@ -1068,7 +1065,7 @@ export function setShutDownChange(system, config, setId, shutDown) {
   if ( !isPlainObject(system) || (typeof setId !== "string") || (typeof shutDown !== "boolean") ) {
     return fail("INVALID_TRAIT_DATA");
   }
-  if ( shutDown && !shutDownOffered(config, setId) ) return fail("SHUT_DOWN_NOT_OFFERED");
+  if ( shutDown && !featureOffered(config, setId, "shutDown") ) return fail("SHUT_DOWN_NOT_OFFERED");
   const held = isPlainObject(system.traits) && Object.hasOwn(system.traits, setId);
   return ok(held ? { shutDown } : { shutDown, sfx: [], entries: [] });
 }

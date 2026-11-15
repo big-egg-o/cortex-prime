@@ -225,6 +225,7 @@
         "SfxPlaceholder": "What the SFX does",
         "SfxBlank": "(SFX without text)",
         "SfxText": "{owner}: SFX {number}",
+        "SfxUnlocked": "{owner}: SFX {number} is unlocked",
         "Unlocked": "Unlocked",
         "Locked": "Locked",
         "RemoveSfx": "Remove SFX {number} of {owner}",

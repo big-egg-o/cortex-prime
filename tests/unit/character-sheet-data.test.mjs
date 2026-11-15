@@ -800,6 +800,19 @@ describe("trait details: descriptions, SFX, tags and sub-traits (behaviours 8 an
     }, () => "unused")).toEqual({ ok: true, value: {} });
   });
 
+  it("splits a tag at its commas, as the tag input shows it, and leaves such a stored tag alone", () => {
+    const typed = sheetTraitChanges(detailedSystem(), detailsConfig(), {
+      tags: { [DISTINCTIONS]: { [ENTRY_CULT]: ["past", "red, hot", "cult"] } }
+    }, () => "unused");
+    expect(cultEntry(typed.value).tags).toEqual(["past", "red", "hot", "cult"]);
+
+    const system = structuredClone(detailedSystem());
+    system.traits[DISTINCTIONS].entries[0].tags = ["past", "red, hot"];
+    expect(sheetTraitChanges(deepFreeze(system), detailsConfig(), {
+      tags: { [DISTINCTIONS]: { [ENTRY_CULT]: ["past", "red", "hot"] } }
+    }, () => "unused")).toEqual({ ok: true, value: {} });
+  });
+
   it("keeps a set's own SFX change and an entry change of the same set together", () => {
     const changed = sheetTraitChanges(detailedSystem(), detailsConfig(), {
       setSfx: { [DISTINCTIONS]: { 0: { text: "Better trick", unlocked: false } } },
