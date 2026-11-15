@@ -27,7 +27,15 @@
     {{#each sections}}
     <fieldset class="cp-trait-set{{#if this.free}} cp-free-traits{{/if}}{{#if this.shutDown}} cp-shut-down{{/if}}"
       {{#if this.free}}data-free-traits{{else}}data-set-id="{{ this.id }}"{{/if}}>
-      <legend>{{ this.name }}</legend>
+      <legend>{{ this.name }}
+        {{#if this.canShutDown}}
+        <button type="button" class="ui-control icon cp-shut-down-toggle{{#if this.shutDown}} active{{/if}}"
+          data-action="toggleSetShutDown" data-shut-down="{{#if this.shutDown}}true{{else}}false{{/if}}"
+          aria-pressed="{{#if this.shutDown}}true{{else}}false{{/if}}"
+          data-tooltip="{{ this.shutDownLabel }}" aria-label="{{ this.shutDownLabel }}"><i class="fa-solid fa-power-off" inert></i></button>
+        {{/if}}
+      </legend>
+      {{#if this.shutDown}}<p class="hint cp-shut-down-note">{{ localize "CORTEX.Sheet.ShutDown.Set" }}</p>{{/if}}
       {{#unless this.traits.length}}<p class="hint">{{ this.emptyText }}</p>{{/unless}}
       {{#each this.traits}}
       <div class="form-group cp-trait{{#if this.shutDown}} cp-shut-down{{/if}}"
@@ -77,11 +85,35 @@
             {{/if}}
           </span>
           {{/if}}
+          {{#if this.canShutDown}}
+          <button type="button" class="ui-control icon cp-shut-down-toggle{{#if this.shutDownReason}} active{{/if}}"
+            data-action="toggleShutDown" data-shut-down="{{#if this.shutDownReason}}true{{else}}false{{/if}}"
+            aria-pressed="{{#if this.shutDownReason}}true{{else}}false{{/if}}"
+            data-tooltip="{{ this.shutDownLabel }}" aria-label="{{ this.shutDownLabel }}"><i class="fa-solid fa-power-off" inert></i></button>
+          {{/if}}
           {{#if this.nameInput}}
           <button type="button" class="ui-control icon cp-remove-trait" data-action="removeTrait"
             data-tooltip="{{ this.removeLabel }}" aria-label="{{ this.removeLabel }}"><i class="fa-solid fa-trash" inert></i></button>
           {{/if}}
         </div>
+        {{#if this.statementInput}}
+        <input type="text" class="cp-statement-input" name="{{ this.statementInput }}" value="{{ this.statement }}"
+          placeholder="{{ localize "CORTEX.Sheet.Statement.Placeholder" }}" aria-label="{{ this.statementLabel }}">
+        {{else if this.statement}}
+        <p class="cp-statement">{{ this.statement }}</p>
+        {{/if}}
+        {{#if this.challenged}}
+        <div class="cp-challenged">
+          <span class="cp-challenged-badge"><i class="fa-solid fa-bolt" inert></i> {{ localize "CORTEX.Sheet.Statement.Challenged" }}</span>
+          {{#if this.canResolve}}
+          <button type="button" data-action="resolveChallenge" data-rewritten="true"
+            data-tooltip="{{ this.resolveLabels.rewritten }}" aria-label="{{ this.resolveLabels.rewritten }}">{{ localize "CORTEX.Sheet.Statement.RewrittenButton" }}</button>
+          <button type="button" data-action="resolveChallenge" data-rewritten="false"
+            data-tooltip="{{ this.resolveLabels.kept }}" aria-label="{{ this.resolveLabels.kept }}">{{ localize "CORTEX.Sheet.Statement.KeptButton" }}</button>
+          {{/if}}
+        </div>
+        {{/if}}
+        {{#if this.shutDownText}}<p class="hint cp-shut-down-note">{{ this.shutDownText }}</p>{{/if}}
         {{#each this.hintTexts}}<p class="hint">{{ this }}</p>{{/each}}
       </div>
       {{/each}}

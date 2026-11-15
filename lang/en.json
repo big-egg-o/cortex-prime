@@ -162,7 +162,8 @@
         "UNKNOWN_TRAIT": "This character doesn't hold that trait any more.",
         "TRAIT_SET_NOT_OPEN": "This trait set's traits are defined in the game configuration.",
         "INVALID_RATING_OPTIONS": "A trait set in the game configuration has invalid dice options.",
-        "INVALID_GAME_CONFIG": "The game configuration can't be read."
+        "INVALID_GAME_CONFIG": "The game configuration can't be read.",
+        "STATEMENT_NOT_CHALLENGED": "This trait's statement isn't challenged, so there is nothing to resolve."
       }
     },
     "Sheet": {
@@ -192,6 +193,24 @@
       "RemoveTitle": "Remove this trait?",
       "RemoveConfirm": "{trait} and everything it holds is removed from this character.",
       "NewRating": "{trait}: set a rating",
+      "Statement": {
+        "Input": "{trait}: statement",
+        "Placeholder": "Statement",
+        "Challenged": "Statement challenged",
+        "RewrittenButton": "Rewritten",
+        "KeptButton": "Kept",
+        "Rewritten": "{trait}: the statement was rewritten. The rating from before the challenge comes back.",
+        "Kept": "{trait}: the statement is kept. The lowered rating stays."
+      },
+      "ShutDown": {
+        "manual": "Shut down by hand.",
+        "statementChallenged": "Shut down: its statement was challenged at d4. Rewriting it brings the trait back.",
+        "Set": "This whole set is shut down.",
+        "SetTrait": "Shut down {trait}",
+        "ClearTrait": "Clear the shut-down of {trait}",
+        "SetSet": "Shut down the whole set {set}",
+        "ClearSet": "Clear the shut-down of the set {set}"
+      },
       "Others": {
         "Title": "Other stored traits",
         "Hint": "Stored on this character but not shown above. They are kept until you remove them.",

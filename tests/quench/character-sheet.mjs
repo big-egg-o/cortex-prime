@@ -556,6 +556,130 @@ export function registerCharacterSheetBatch(quench) {
         });
       });
 
+      describe("statements and shut-down flags (behaviours 8, 15 and 17)", () => {
+        /** Turns the sheet's edit mode on or off through its header button. */
+        async function toggleEdit(sheet) {
+          const rendered = nextRender(sheet);
+          sheet.element.querySelector('button[data-action="toggleEdit"]').click();
+          await rendered;
+        }
+
+        /** Stores the defaults with statements turned on for Attributes. */
+        async function withStatements() {
+          const config = defaultGameConfig();
+          traitSetById(config, ATTRIBUTES).features.statements = true;
+          await storeConfig(config);
+        }
+
+        const row = (sheet, entryId) => sheet.element.querySelector(`fieldset[data-set-id="${ATTRIBUTES}"] [data-entry-id="${entryId}"]`);
+        const socialOf = actor => storedSystem(actor).traits[ATTRIBUTES].entries.find(e => e.defId === SOCIAL);
+
+        it("CS-14 shows a challenged statement in play mode and resolves it as rewritten", async () => {
+          await withStatements();
+          const { system, social } = pcSystem();
+          const actor = await createCharacter(system);
+          const sheet = await openSheet(actor);
+          const socialRow = row(sheet, social);
+          assert.equal(socialRow.querySelector(".cp-statement")?.textContent.trim(), "I trust no one");
+          assert.isNull(socialRow.querySelector("input.cp-statement-input"), "the text is edited in edit mode");
+          assert.include(socialRow.querySelector(".cp-challenged").textContent, game.i18n.localize("CORTEX.Sheet.Statement.Challenged"));
+          assert.include(socialRow.textContent, game.i18n.localize("CORTEX.Sheet.ShutDown.manual"), "the shut-down shows its reason");
+
+          const updated = nextUpdate(actor);
+          socialRow.querySelector('[data-action="resolveChallenge"][data-rewritten="true"]').click();
+          await updated;
+          const stored = socialOf(actor);
+          assert.deepEqual(stored.dice, [8], "the rating from before the challenge comes back");
+          assert.notProperty(stored, "challenged");
+          assert.notProperty(stored, "preChallengeDice");
+          assert.deepEqual(stored.shutDown, { reason: "manual" }, "a shut-down set by hand stays");
+          await nextRenderOrNow(sheet);
+          assert.isNull(row(sheet, social).querySelector(".cp-challenged"));
+        });
+
+        it("resolves a challenge as kept, and the lowered rating stays", async () => {
+          await withStatements();
+          const { system, social } = pcSystem();
+          const actor = await createCharacter(system);
+          const sheet = await openSheet(actor);
+          assert.isTrue(await sheet.resolveChallenge(ATTRIBUTES, social, false));
+          assert.deepEqual(socialOf(actor).dice, [6]);
+          assert.notProperty(socialOf(actor), "challenged");
+        });
+
+        it("shows a challenge but no statement where the set has no statements", async () => {
+          const { system, social } = pcSystem();
+          const sheet = await openSheet(await createCharacter(system));
+          assert.isNull(row(sheet, social).querySelector(".cp-statement"));
+          assert.isNotNull(row(sheet, social).querySelector(".cp-challenged"), "an open challenge is never hidden");
+        });
+
+        it("edits a statement's text in edit mode and keeps the challenge (TS-15c)", async () => {
+          await withStatements();
+          const { system, social, physical } = pcSystem();
+          const actor = await createCharacter(system);
+          const sheet = await openSheet(actor);
+          await toggleEdit(sheet);
+          assert.isNotNull(row(sheet, physical).querySelector("input.cp-statement-input"), "a trait without one can get one");
+          const input = row(sheet, social).querySelector("input.cp-statement-input");
+          const updated = nextUpdate(actor);
+          input.value = "  I trust my crew ";
+          input.dispatchEvent(new Event("change", { bubbles: true }));
+          await updated;
+          const stored = socialOf(actor);
+          assert.equal(stored.statement, "I trust my crew");
+          assert.isTrue(stored.challenged);
+          assert.deepEqual(stored.preChallengeDice, [8]);
+        });
+
+        it("sets and clears a trait's and a set's shut-down in edit mode, kept after reopening", async () => {
+          const { system, social, physical } = pcSystem();
+          const actor = await createCharacter(system);
+          const sheet = await openSheet(actor);
+          assert.isNull(sheet.element.querySelector('[data-action="toggleShutDown"]'), "play mode has no shut-down toggles");
+          await toggleEdit(sheet);
+
+          let updated = nextUpdate(actor);
+          row(sheet, physical).querySelector('[data-action="toggleShutDown"]').click();
+          await updated;
+          const physicalOf = () => storedSystem(actor).traits[ATTRIBUTES].entries.find(e => e.id === physical);
+          assert.deepEqual(physicalOf().shutDown, { reason: "manual" });
+
+          await nextRenderOrNow(sheet);
+          updated = nextUpdate(actor);
+          row(sheet, social).querySelector('[data-action="toggleShutDown"]').click();
+          await updated;
+          assert.notProperty(socialOf(actor), "shutDown");
+          assert.isTrue(socialOf(actor).challenged, "clearing the flag leaves the challenge open");
+
+          await nextRenderOrNow(sheet);
+          updated = nextUpdate(actor);
+          sheet.element.querySelector(`fieldset[data-set-id="${SKILLS}"] [data-action="toggleSetShutDown"]`).click();
+          await updated;
+          assert.deepEqual(storedSystem(actor).traits[SKILLS], { shutDown: true, sfx: [], entries: [] },
+            "a set the actor held nothing in gets its flag and an empty list");
+
+          await sheet.close();
+          const reopened = await openSheet(actor);
+          assert.isTrue(reopened.element.querySelector(`fieldset[data-set-id="${SKILLS}"]`).classList.contains("cp-shut-down"));
+          assert.isTrue(row(reopened, physical).classList.contains("cp-shut-down"));
+          assert.isTrue(await reopened.setSetShutDown(SKILLS, false));
+          assert.isFalse(storedSystem(actor).traits[SKILLS].shutDown);
+        });
+
+        it("clears a shut-down a challenged d4 left (RQ-034)", async () => {
+          const entryId = newId();
+          const actor = await createCharacter({ kindId: PC_KIND, traits: { [ATTRIBUTES]: { entries: [
+            { id: entryId, defId: SOCIAL, name: "Social", dice: [4], statement: "I trust no one", challenged: true,
+              preChallengeDice: [4], sfx: [], shutDown: { reason: "statementChallenged" } }
+          ] } } });
+          const sheet = await openSheet(actor);
+          assert.include(row(sheet, entryId).textContent, game.i18n.localize("CORTEX.Sheet.ShutDown.statementChallenged"));
+          assert.isTrue(await sheet.setShutDown(ATTRIBUTES, entryId, false));
+          assert.notProperty(socialOf(actor), "shutDown");
+        });
+      });
+
       describe("editing a rating", () => {
         it("saves an edited rating through Actor#update, and it is there when the sheet is opened again", async () => {
           const { system, physical, social, orphan } = pcSystem();
