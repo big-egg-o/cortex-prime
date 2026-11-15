@@ -3,8 +3,8 @@
  * first slice). It renders the sets of an actor's kind as the game configuration names them, and
  * an edited rating is saved through Actor#update and is there when the sheet is opened again. A
  * rating its set doesn't allow is refused before anything is written (ADR-037 point 3). Every
- * actor it creates carries a test flag and is deleted after each test, with its sheets closed;
- * actors left behind by an interrupted run are deleted before the batch. The batch stores the
+ * actor and scene it creates carries a test flag and is deleted after each test, with its sheets
+ * closed; those left behind by an interrupted run are deleted before the batch. The batch stores the
  * ADR-036 defaults as the world's game configuration while it runs, changes it where a test needs
  * a set of its own, and puts the stored configuration back afterwards.
  * @module tests/quench/character-sheet
@@ -41,11 +41,23 @@ function testActors() {
   return game.actors.filter(a => a.getFlag(SYSTEM_ID, FLAG_KEY));
 }
 
-/** Closes the sheets of this batch's actors and deletes the actors. */
+/** @returns {Scene[]} the scenes this batch created, including ones left by an interrupted run */
+function testScenes() {
+  return game.scenes.filter(s => s.getFlag(SYSTEM_ID, FLAG_KEY));
+}
+
+/**
+ * Closes the sheets of this batch's actors and tokens, and deletes its scenes and actors. The batch
+ * closes windows without their closing animation: a page in the background never finishes one, so
+ * each close would wait a full second and a test or hook could pass Mocha's two-second limit.
+ */
 async function cleanUp() {
-  for ( const actor of testActors() ) {
-    for ( const app of Object.values(actor.apps) ) await app.close();
+  const tokenActors = testScenes().flatMap(scene => scene.tokens.map(token => token.actor)).filter(Boolean);
+  for ( const actor of [...tokenActors, ...testActors()] ) {
+    for ( const app of Object.values(actor.apps) ) await app.close({ animate: false });
   }
+  const sceneIds = testScenes().map(s => s.id);
+  if ( sceneIds.length ) await getDocumentClass("Scene").deleteDocuments(sceneIds);
   const ids = testActors().map(a => a.id);
   if ( ids.length ) await Actor.implementation.deleteDocuments(ids);
 }
@@ -54,11 +66,12 @@ async function cleanUp() {
  * Creates a flagged test character.
  * @param {object} system
  * @param {string} [name]
+ * @param {object} [data] - further actor data, such as a prototype token
  * @returns {Promise<Actor>}
  */
-function createCharacter(system, name = "sheet") {
+function createCharacter(system, name = "sheet", data = {}) {
   return Actor.implementation.create({
-    name: `[Quench] ${name}`, type: "character", system, flags: { [SYSTEM_ID]: { [FLAG_KEY]: true } }
+    ...data, name: `[Quench] ${name}`, type: "character", system, flags: { [SYSTEM_ID]: { [FLAG_KEY]: true } }
   });
 }
 
@@ -252,7 +265,7 @@ export function registerCharacterSheetBatch(quench) {
           const second = `Quench Virtues ${newId()}`;
           traitSetById(config, setId).name = second;
           await storeConfig(config);
-          await sheet.close();
+          await sheet.close({ animate: false });
           sheet = await openSheet(actor);
           assert.deepEqual(setNames(sheet), [second]);
           assert.notInclude(sheet.element.textContent, first);
@@ -313,7 +326,7 @@ export function registerCharacterSheetBatch(quench) {
           assert.deepInclude(created, { defId: "cpAttrMental0000", name: "Mental", dice: [10] });
           assert.match(created.id, /^[a-zA-Z0-9]{16}$/);
 
-          await sheet.close();
+          await sheet.close({ animate: false });
           const reopened = await openSheet(actor);
           assert.equal(dieInput(reopened, ATTRIBUTES, created.id, 0).value, "10");
         });
@@ -469,7 +482,7 @@ export function registerCharacterSheetBatch(quench) {
           await updated;
           assert.deepEqual(storedSystem(actor).freeTraits, [{ id, name: "Crooked Deputy", dice: [8] }]);
 
-          await sheet.close();
+          await sheet.close({ animate: false });
           const reopened = await openSheet(actor);
           assert.equal(reopened.element.querySelector(`select[name="freeRatings.${id}.0"]`).value, "8");
           assert.include(freeSection(reopened).textContent, "Crooked Deputy");
@@ -659,7 +672,7 @@ export function registerCharacterSheetBatch(quench) {
           assert.deepEqual(storedSystem(actor).traits[SKILLS], { shutDown: true, sfx: [], entries: [] },
             "a set the actor held nothing in gets its flag and an empty list");
 
-          await sheet.close();
+          await sheet.close({ animate: false });
           const reopened = await openSheet(actor);
           assert.isTrue(reopened.element.querySelector(`fieldset[data-set-id="${SKILLS}"]`).classList.contains("cp-shut-down"));
           assert.isTrue(row(reopened, physical).classList.contains("cp-shut-down"));
@@ -781,7 +794,7 @@ export function registerCharacterSheetBatch(quench) {
           await updated;
           assert.deepEqual(cultOf(actor).sfx, [{ text: "Spend a PP to know the cult's sign", unlocked: false }]);
 
-          await sheet.close();
+          await sheet.close({ animate: false });
           sheet = await openSheet(actor);
           assert.include(rowOf(sheet, distinction).querySelector(".cp-sfx").textContent, "know the cult's sign");
           assert.isNotNull(rowOf(sheet, distinction).querySelector(".cp-sfx .fa-lock"));
@@ -890,7 +903,7 @@ export function registerCharacterSheetBatch(quench) {
           assert.deepEqual(after, expected);
           assert.deepEqual(after.traits[ATTRIBUTES].entries.map(e => e.id), [physical, orphan, social]);
 
-          await sheet.close();
+          await sheet.close({ animate: false });
           assert.isFalse(sheet.rendered);
           const reopened = await openSheet(actor);
           assert.equal(dieInput(reopened, ATTRIBUTES, physical, 0).value, "10");
@@ -902,7 +915,7 @@ export function registerCharacterSheetBatch(quench) {
             assert.equal(dieInput(fresh, ATTRIBUTES, physical, 0).value, "10");
           }
           finally {
-            await fresh.close();
+            await fresh.close({ animate: false });
           }
         });
 
@@ -970,6 +983,83 @@ export function registerCharacterSheetBatch(quench) {
           assert.isFalse(updateCalled, "Actor#update was called");
           assert.deepEqual(storedSystem(actor).traits[MOB_TRAIT].entries[0].dice, [6, 6]);
           assert.equal(dieInput(sheet, MOB_TRAIT, entryId, 1).value, "6");
+        });
+      });
+
+      describe("an unlinked token's sheet (behaviours 12 and 19, CS-17)", () => {
+        /** Turns the sheet's edit mode on or off through its header button. */
+        async function toggleEdit(sheet) {
+          const rendered = nextRender(sheet);
+          sheet.element.querySelector('button[data-action="toggleEdit"]').click();
+          await rendered;
+        }
+
+        /**
+         * An unlinked token of a fresh player character (pcSystem) on a scratch scene; both go
+         * with the batch's clean-up.
+         * @returns {Promise<ReturnType<typeof pcSystem> & {actor: Actor, token: TokenDocument}>}
+         */
+        async function unlinkedToken() {
+          const built = pcSystem();
+          const actor = await createCharacter(built.system, "token base", { prototypeToken: { actorLink: false } });
+          const scene = await getDocumentClass("Scene").create({
+            name: "[Quench] character sheet", flags: { [SYSTEM_ID]: { [FLAG_KEY]: true } }
+          });
+          const tokenData = (await actor.getTokenDocument({ x: 0, y: 0 })).toObject();
+          const [token] = await scene.createEmbeddedDocuments("Token", [tokenData]);
+          return { ...built, actor, token };
+        }
+
+        /** @returns {object} the system data of a token's actor, as plain data */
+        const tokenSystem = token => JSON.parse(JSON.stringify(token.actor.system.toObject()));
+
+        /** @returns {object} the token's actor rebuilt from the stored base actor and delta, as a reload builds it */
+        const rebuiltSystem = token => getDocumentClass("ActorDelta")
+          .applyDelta(token.delta, game.actors.get(token.actorId)).system.toObject();
+
+        it("CS-17 edits the token's own actor; a set it clears is stored as {entries: []} and keeps its key (ADR-044)", async () => {
+          const { actor, token, physical, distinction } = await unlinkedToken();
+          assert.isTrue(token.actor.isToken);
+          const sheet = await openSheet(token.actor);
+          assert.instanceOf(sheet, CharacterSheet);
+          assert.strictEqual(sheet.actor, token.actor);
+          assert.notStrictEqual(sheet, actor.sheet, "the token's actor has a sheet of its own");
+
+          // A rating edited on the token's sheet is the token's, not the base actor's.
+          dieInput(sheet, ATTRIBUTES, physical, 0).value = "10";
+          await sheet.submit();
+          assert.deepEqual(tokenSystem(token).traits[ATTRIBUTES].entries[0].dice, [10]);
+          assert.deepEqual(storedSystem(actor).traits[ATTRIBUTES].entries[0].dice, [8]);
+
+          // Edit mode adds a distinction to the token's actor, then removes both of its distinctions.
+          await nextRenderOrNow(sheet);
+          await toggleEdit(sheet);
+          const updated = nextUpdate(actor);
+          sheet.element.querySelector(`fieldset[data-set-id="${DISTINCTIONS}"] [data-action="addTrait"]`).click();
+          await updated;
+          const added = tokenSystem(token).traits[DISTINCTIONS].entries[1];
+          assert.deepInclude(added, { defId: null, dice: [8] });
+          await nextRenderOrNow(sheet);
+          const shown = await errorsShownBy(async () => {
+            assert.isTrue(await sheet.removeTrait(DISTINCTIONS, distinction));
+            assert.isTrue(await sheet.removeTrait(DISTINCTIONS, added.id));
+          });
+          assert.deepEqual(shown, [], "no removal of a set key was attempted");
+
+          // The token's actor, its stored delta and the actor a reload builds all hold the emptied
+          // set under its key; the base actor still has its distinction.
+          const emptied = { shutDown: false, sfx: [], entries: [] };
+          assert.deepEqual(tokenSystem(token).traits[DISTINCTIONS], emptied);
+          assert.deepEqual(token.delta.toObject().system.traits[DISTINCTIONS].entries, [], "the delta holds the cleared list");
+          assert.deepEqual(rebuiltSystem(token).traits[DISTINCTIONS], emptied);
+          assert.deepEqual(storedSystem(actor).traits[DISTINCTIONS].entries.map(e => e.id), [distinction]);
+
+          // Opened again, the token's sheet still shows the set, now without traits.
+          await sheet.close({ animate: false });
+          const reopened = await openSheet(token.actor);
+          assert.deepEqual(setNames(reopened), ["Distinctions", "Attributes", "Skills"]);
+          assert.lengthOf(reopened.element.querySelectorAll(`fieldset[data-set-id="${DISTINCTIONS}"] .cp-trait`), 0);
+          assert.equal(dieInput(reopened, ATTRIBUTES, physical, 0).value, "10");
         });
       });
     },
