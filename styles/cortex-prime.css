@@ -291,3 +291,72 @@
 .cortex-prime.character-sheet .window-content fieldset.cp-shut-down > legend {
   opacity: 0.5;
 }
+
+/* The pool buttons sit at the end of a trait row (Character Sheets behaviours 20 and 21). */
+.cortex-prime.character-sheet .window-content .cp-pool-buttons {
+  display: flex;
+  flex: none;
+  gap: 0.125rem;
+  margin-left: auto;
+}
+
+/* ---------------------------------------- */
+/*  pool-builder: traits from sheets        */
+/* ---------------------------------------- */
+
+/* A trait's group names its actor and how it was added; Hinder's plot point is shown, not paid. */
+.cortex-prime.pool-builder .window-content .cp-source-actor {
+  font-weight: normal;
+}
+
+.cortex-prime.pool-builder .window-content .cp-source-option,
+.cortex-prime.pool-builder .window-content .cp-source-pp {
+  white-space: nowrap;
+  padding: 0 0.375rem;
+  border: 1px solid var(--color-border);
+  border-radius: 3px;
+  font-size: var(--font-size-12);
+  font-weight: normal;
+}
+
+.cortex-prime.pool-builder .window-content .cp-source > .hint {
+  margin: 0;
+}
+
+.cortex-prime.pool-builder .window-content .cp-pool-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.cortex-prime.pool-builder .window-content .cp-pool-summary p {
+  margin: 0;
+}
+
+.cortex-prime.pool-builder .window-content .cp-pool-cost {
+  font-weight: bold;
+}
+
+/* The same nonstandard section as the roll card's, for the pool about to be rolled. */
+.cortex-prime.pool-builder .window-content .cp-nonstandard {
+  padding: 0.25rem 0.5rem;
+  border-left: 3px solid var(--color-level-warning);
+  font-size: var(--font-size-12);
+}
+
+.cortex-prime.pool-builder .window-content .cp-nonstandard-title {
+  margin: 0;
+  border: none;
+  font-size: var(--font-size-12);
+  font-weight: bold;
+}
+
+.cortex-prime.pool-builder .window-content .cp-nonstandard-reasons {
+  margin: 0;
+  padding-left: 1.1em;
+}
+
+.cortex-prime.pool-builder .window-content .cp-unpriced {
+  margin: 0;
+  font-style: italic;
+}

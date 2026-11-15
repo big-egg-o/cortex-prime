@@ -108,17 +108,19 @@ export function registerBuilderBatch(quench) {
           const app = await openBuilder();
           await app.addDie(8, "Source A");
           await app.addDie(6, "Source A");
-          const pool = app.pool;
+          const pool = foundry.utils.deepClone(app.pool);
 
           const message = await app.rollPool([5, 3]);
           messages.push(message);
 
           assert.equal(message.type, "poolRoll");
-          assert.deepEqual(message.system.toObject().pool, pool);
+          const fields = d => [d.id, d.size, d.origin, d.source.kind, d.source.label];
+          assert.deepEqual(message.system.toObject().pool.map(fields), pool.map(fields));
           assert.equal(message.system.rolled[0].result, 5);
           assert.equal(message.system.rolled[1].result, 3);
-          assert.lengthOf(app.pool, 2, "rolling keeps the pool");
-          // Traits reach the builder only with the M2 sheet, so it posts no warnings yet (ADR-029, RQ-030).
+          // The message's cleaning works on a copy: the kept pool is exactly as it was.
+          assert.deepEqual(app.pool, pool, "rolling keeps the pool");
+          // A pool of dice from no trait posts no warnings (ADR-029, RQ-030).
           assert.deepEqual(message.system.toObject().warnings, []);
           assert.deepEqual(message.system.toObject().unpricedTraits, []);
         });
