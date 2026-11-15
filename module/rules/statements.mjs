@@ -62,30 +62,41 @@ function statementTraitProblem(trait) {
  * the one reason slot then keeps "manual", and what follows is the table's call (RQ-034; the
  * books don't say).
  *
- * The books describe one die tripled and stepped down; a rating of several dice is refused until
- * RQ-033 is decided, although traitPoolEntries triples each die of such a rating as the spec's
- * implementation notes say.
+ * The books describe one die tripled and stepped down. A rating of several dice is a project
+ * extension (rule 16a, RQ-033) that the caller turns on with `multiDice`, for the trait sets whose
+ * game configuration says so (ADR-053), since the dice alone don't say whether a trait is a
+ * specialty, a resource or a mob: every stored die steps down once and their number stays
+ * (2d8 becomes 2d6); a rating of all d4s keeps its dice and the whole trait is shut down; the
+ * whole rating is saved before the first unresolved challenge. Without `multiDice` such a rating
+ * is refused, and a rating of mixed sizes always is: the table handles those by hand.
  * @param {object} trait - a trait entry: `dice`, and `challenged` and `preChallengeDice` when
  *   already challenged
+ * @param {{multiDice?: boolean}} [options] - `multiDice` true where the trait's set supports
+ *   challenges of several equal-sized dice
  * @returns {import("./types.mjs").EngineResult<object>} a new entry; refuses, in this order:
- *   INVALID_TRAIT_DATA or INVALID_DIE_SIZE (malformed fields, see above), TRAIT_UNRATED (no dice),
- *   STATEMENT_RATING_NOT_ONE_DIE
+ *   INVALID_TRAIT_DATA or INVALID_DIE_SIZE (malformed fields, see above), INVALID_TRAIT_OPTIONS,
+ *   TRAIT_UNRATED (no dice), STATEMENT_RATING_NOT_ONE_DIE (several dice without `multiDice`),
+ *   STATEMENT_RATING_MIXED_SIZES
  */
-export function challengeStatement(trait) {
+export function challengeStatement(trait, options = {}) {
   const problem = statementTraitProblem(trait);
   if ( problem ) return fail(problem);
+  if ( !isPlainObject(options) || ((options.multiDice !== undefined) && (typeof options.multiDice !== "boolean")) ) {
+    return fail("INVALID_TRAIT_OPTIONS");
+  }
   if ( trait.dice.length === 0 ) return fail("TRAIT_UNRATED");
-  if ( trait.dice.length > 1 ) return fail("STATEMENT_RATING_NOT_ONE_DIE");
+  if ( (trait.dice.length > 1) && (options.multiDice !== true) ) return fail("STATEMENT_RATING_NOT_ONE_DIE");
+  if ( trait.dice.some(size => size !== trait.dice[0]) ) return fail("STATEMENT_RATING_MIXED_SIZES");
 
   const next = copyPlain(trait);
   if ( !trait.challenged ) next.preChallengeDice = [...trait.dice];
   next.challenged = true;
   const stepped = stepDie(trait.dice[0], -1);
   if ( stepped.removed ) {
-    next.dice = [4];
+    next.dice = [...trait.dice];
     if ( trait.shutDown === undefined ) next.shutDown = { reason: STATEMENT_SHUT_DOWN_REASON };
   }
-  else next.dice = [stepped.size];
+  else next.dice = trait.dice.map(() => stepped.size);
   return ok(next);
 }
 

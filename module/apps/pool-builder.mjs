@@ -181,7 +181,7 @@ function groupBySource(pool) {
       ...group,
       actorName: severalActors ? (findPoolActor(trait)?.name ?? null) : null,
       option: trait.option ? game.i18n.localize(`CORTEX.Builder.Option.${trait.option}`) : null,
-      ppGained: ((trait.option === "hinder") && (trait.ppGained > 0)) ? `+${trait.ppGained} PP` : null,
+      ppGained: (trait.ppGained > 0) ? `+${trait.ppGained} PP` : null,
       hint: trait.hint ? game.i18n.localize(`CORTEX.Builder.Hints.${trait.hint}`) : null,
       fallback: trait.isFallback
     };
@@ -457,13 +457,13 @@ export async function openPoolBuilder({ beside } = {}) {
  * @param {Actor} actor - a "character" actor, world or unlinked token
  * @param {string} setId
  * @param {string} traitId - a fixed set's definition id or an open set's entry id
- * @param {"hinder"|"challenge"|null} [option]
+ * @param {"hinder"|"challenge"|"hinderChallenge"|null} [option]
  * @param {{beside?: foundry.applications.api.ApplicationV2}} [options] - the sheet the builder
  *   opens beside
  * @returns {Promise<boolean>} whether the trait is in the pool afterwards
  */
 export async function addTraitToPool(actor, setId, traitId, option = null, { beside } = {}) {
-  if ( (option === "challenge") && !actor.isOwner ) return refusePoolTrait("CHALLENGE_NEEDS_OWNER");
+  if ( ["challenge", "hinderChallenge"].includes(option) && !actor.isOwner ) return refusePoolTrait("CHALLENGE_NEEDS_OWNER");
   let config;
   try {
     config = getGameConfig();

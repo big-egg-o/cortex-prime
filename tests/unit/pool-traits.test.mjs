@@ -444,12 +444,112 @@ describe("rolling: the dice as stored, and the challenges that follow the roll (
   });
 });
 
+describe("Hinder with a challenge, and challenges of several dice (RQ-032, RQ-033, ADR-053)", () => {
+  /** @returns {object} a PC whose distinction Retired Smuggler carries a statement */
+  function pcWithStatedDistinction(dice = [8]) {
+    const system = pcSystem();
+    Object.assign(system.traits[DISTINCTIONS].entries[0], { dice, statement: "I owe nobody" });
+    return system;
+  }
+
+  /** @returns {object} a location whose scene distinction carries a statement */
+  function locationWithStatement(dice) {
+    const system = locationSystem();
+    Object.assign(system.traits[SCENE].entries[0], { dice, statement: "Everyone runs" });
+    return system;
+  }
+
+  /** @returns {object} the defaults with statements on a set, and challenges of several dice if asked */
+  function configFor(setId, multiDice = false) {
+    const config = configWithStatements(setId);
+    traitSetById(config, setId).features.multiDiceChallenges = multiDice;
+    return config;
+  }
+
+  it("RQ-032 adds a stated distinction with Hinder and a challenge: three d4s, 1 PP, then d8 steps down to d6", () => {
+    const config = configFor(DISTINCTIONS);
+    const system = pcWithStatedDistinction();
+    const dice = traitPoolDice(system, config, DISTINCTIONS, SMUGGLER, { actorId: ACTOR, option: "hinderChallenge" });
+    expect(dice.value.option).toBe("hinderChallenge");
+    expect(dice.value.entries.map(e => [e.size, e.ppGained])).toEqual([[4, 1], [4, undefined], [4, undefined]]);
+
+    const pool = addTraitDice([], dice.value, { actorRef: REF }).value.pool;
+    expect(poolTraitReport(pool, { [REF]: system }, config).value.ppGained).toBe(1);
+    expect(challengedPoolTraits(pool).value.map(t => t.traitId)).toEqual([SMUGGLER]);
+    expect(entriesAfterChallenge(system, config, DISTINCTIONS, SMUGGLER).value[0])
+      .toMatchObject({ dice: [6], challenged: true, preChallengeDice: [8] });
+  });
+
+  it("RQ-032 on a distinction at one d4: three d4s, no PP and the hint, then shut down (RQ-021)", () => {
+    const config = configFor(DISTINCTIONS);
+    const system = pcWithStatedDistinction([4]);
+    const dice = traitPoolDice(system, config, DISTINCTIONS, SMUGGLER, { option: "hinderChallenge" }).value;
+    expect(dice.entries.map(e => [e.size, e.ppGained, e.hint])).toEqual([
+      [4, 0, "HINDER_ALREADY_D4"], [4, undefined, undefined], [4, undefined, undefined]
+    ]);
+    expect(poolTraitReport(addTraitDice([], dice, { actorRef: REF }).value.pool, { [REF]: system }, config).value.ppGained).toBe(0);
+    expect(entriesAfterChallenge(system, config, DISTINCTIONS, SMUGGLER).value[0])
+      .toMatchObject({ dice: [4], shutDown: { reason: "statementChallenged" } });
+  });
+
+  it("offers Hinder with a challenge only where the trait offers both", () => {
+    // Attributes have statements here but no Hinder; the unstated distinction has Hinder but no statement.
+    expect(traitPoolDice(pcSystem(), configWithStatements(ATTRIBUTES), ATTRIBUTES, SOCIAL, { option: "hinderChallenge" }))
+      .toEqual(refused("TRAIT_OPTION_UNAVAILABLE"));
+    expect(traitPoolDice(pcSystem(), configFor(DISTINCTIONS), DISTINCTIONS, OPTIMIST, { option: "hinderChallenge" }))
+      .toEqual(refused("TRAIT_OPTION_UNAVAILABLE"));
+  });
+
+  it("replaces a trait's dice when its choice changes between Hinder, challenge and both (CS-D8, CS-D14)", () => {
+    const config = configFor(DISTINCTIONS);
+    const system = pcWithStatedDistinction();
+    let pool = poolOf(config, [[system, DISTINCTIONS, SMUGGLER, "challenge"]]);
+    expect(pool.map(d => d.size)).toEqual([8, 8, 8]);
+    pool = poolOf(config, [[system, DISTINCTIONS, SMUGGLER, "hinderChallenge"]], pool);
+    expect(pool.map(d => [d.size, d.source.option])).toEqual([[4, "hinderChallenge"], [4, "hinderChallenge"], [4, "hinderChallenge"]]);
+    pool = poolOf(config, [[system, DISTINCTIONS, SMUGGLER, "hinder"]], pool);
+    expect(pool.map(d => [d.size, d.source.option])).toEqual([[4, "hinder"]]);
+  });
+
+  it("TS-23 where the set supports it, 2d8 challenged gives six d8 and steps down to 2d6, whole rating saved", () => {
+    const config = configFor(SCENE, true);
+    const system = locationWithStatement([8, 8]);
+    const dice = traitPoolDice(system, config, SCENE, CROWD, { option: "challenge" });
+    expect(dice.value.entries.map(e => e.size)).toEqual([8, 8, 8, 8, 8, 8]);
+    expect(entriesAfterChallenge(system, config, SCENE, CROWD).value[0])
+      .toMatchObject({ dice: [6, 6], challenged: true, preChallengeDice: [8, 8] });
+  });
+
+  it("TS-24 where the set supports it, 2d4 with Hinder and a challenge: three d4s, 1 PP, 2d4 kept and shut down", () => {
+    const config = configFor(SCENE, true);
+    const system = locationWithStatement([4, 4]);
+    const dice = traitPoolDice(system, config, SCENE, CROWD, { option: "hinderChallenge" }).value;
+    expect(dice.entries.map(e => [e.size, e.ppGained])).toEqual([[4, 1], [4, undefined], [4, undefined]]);
+    expect(entriesAfterChallenge(system, config, SCENE, CROWD).value[0])
+      .toMatchObject({ dice: [4, 4], preChallengeDice: [4, 4], shutDown: { reason: "statementChallenged" } });
+  });
+
+  it("TS-26 adds nothing for several dice where the set doesn't support it, or for mixed sizes, with or without Hinder", () => {
+    for ( const option of ["challenge", "hinderChallenge"] ) {
+      expect(traitPoolDice(locationWithStatement([8, 8]), configFor(SCENE), SCENE, CROWD, { option }), option)
+        .toEqual(refused("STATEMENT_RATING_NOT_ONE_DIE"));
+      expect(traitPoolDice(locationWithStatement([8, 4]), configFor(SCENE, true), SCENE, CROWD, { option }), option)
+        .toEqual(refused("STATEMENT_RATING_MIXED_SIZES"));
+    }
+    expect(entriesAfterChallenge(locationWithStatement([8, 4]), configFor(SCENE, true), SCENE, CROWD))
+      .toEqual(refused("STATEMENT_RATING_MIXED_SIZES"));
+    // Adding the trait plainly or with Hinder still works: only the challenge is unsupported.
+    expect(traitPoolDice(locationWithStatement([8, 8]), configFor(SCENE), SCENE, CROWD).ok).toBe(true);
+    expect(traitPoolDice(locationWithStatement([8, 8]), configFor(SCENE), SCENE, CROWD, { option: "hinder" }).ok).toBe(true);
+  });
+});
+
 describe("pool strings", () => {
   it("has a refusal string for every code adding a trait or stepping one down can return", () => {
     const source = readFileSync(resolve(ROOT, "module/rules/pool-traits.mjs"), "utf8");
     const own = new Set([...source.matchAll(/fail\("([A-Z_]+)"\)/g)].map(m => m[1]));
     const passedOn = ["TRAIT_HAS_NO_DICE", "TRAIT_ORPHANED", "INVALID_DIE_SIZE", "TRAIT_UNRATED",
-      "STATEMENT_RATING_NOT_ONE_DIE", "TRAIT_OPTIONS_CONFLICT"];
+      "STATEMENT_RATING_NOT_ONE_DIE", "STATEMENT_RATING_MIXED_SIZES"];
     const foundry = ["CHALLENGE_NEEDS_OWNER", "ACTOR_NOT_FOUND"];
     expect(own.size).toBeGreaterThanOrEqual(7);
     for ( const code of [...own, ...passedOn, ...foundry] ) {

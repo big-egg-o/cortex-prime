@@ -71,7 +71,8 @@
       "Roll": "Roll",
       "Option": {
         "hinder": "Hinder",
-        "challenge": "Challenge"
+        "challenge": "Challenge",
+        "hinderChallenge": "Hinder + challenge"
       },
       "Fallback": "fallback",
       "Cost": "Cost: {cost} PP",
@@ -92,8 +93,8 @@
         "INVALID_DIE_SIZE": "This trait's rating holds a die size that doesn't exist.",
         "TRAIT_UNRATED": "This trait has no rating.",
         "TRAIT_OPTION_UNAVAILABLE": "This trait can't be added that way.",
-        "TRAIT_OPTIONS_CONFLICT": "Hinder and a challenge can't be used together yet.",
-        "STATEMENT_RATING_NOT_ONE_DIE": "A statement on a rating of several dice can't be challenged yet.",
+        "STATEMENT_RATING_NOT_ONE_DIE": "This trait set doesn't handle a challenge of several dice automatically. Add the dice and change the rating by hand, as your table decides; a GM can turn this on for the set in the game configuration.",
+        "STATEMENT_RATING_MIXED_SIZES": "A challenge of a rating with mixed die sizes isn't handled automatically. Add the dice and change the rating by hand, as your table decides.",
         "CHALLENGE_NEEDS_OWNER": "Only someone who can edit this character can challenge its statement.",
         "ACTOR_NOT_FOUND": "The character of a challenged trait can't be found, so it wasn't stepped down."
       }
@@ -179,7 +180,8 @@
       "Pool": {
         "Add": "Add {trait} to your dice pool",
         "Hinder": "Add {trait} with Hinder: one d4, gains 1 PP",
-        "Challenge": "Add {trait} as a challenged statement: its die three times"
+        "Challenge": "Add {trait} as a challenged statement: its dice three times",
+        "HinderChallenge": "Add {trait} with Hinder and as a challenged statement: three d4s"
       },
       "Hints": {
         "RATING_OUTSIDE_GUIDANCE": "Outside this trait set's usual range. The rating is kept.",
@@ -250,7 +252,8 @@
         "subTraits": "Sub-traits",
         "hinder": "Hinder",
         "setSfx": "Set SFX",
-        "shutDown": "Can be shut down"
+        "shutDown": "Can be shut down",
+        "multiDiceChallenges": "Challenge ratings of several dice"
       },
       "Errors": {
         "INVALID_GAME_CONFIG": "The configuration can't be read.",

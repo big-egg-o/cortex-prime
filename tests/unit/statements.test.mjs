@@ -51,7 +51,40 @@ describe("challengeStatement (MOD Trait Statements, rule 16)", () => {
     expect(challengeStatement(trait).value.shutDown).toEqual({ reason: "manual" });
   });
 
-  it("refuses a trait with no rating, a rating of several dice (until RQ-033 is decided) and a die size that doesn't exist", () => {
+  it("TS-23 2d8 challenged three times where the set supports it: 2d6, 2d4, then 2d4 kept and shut down; a rewrite restores 2d8", () => {
+    const multi = { multiDice: true };
+    const once = challengeStatement(social({ dice: [8, 8] }), multi).value;
+    expect(once).toEqual({ ...social(), dice: [6, 6], challenged: true, preChallengeDice: [8, 8] });
+    const twice = challengeStatement(once, multi).value;
+    expect(twice).toEqual({ ...social(), dice: [4, 4], challenged: true, preChallengeDice: [8, 8] });
+    const thrice = challengeStatement(twice, multi).value;
+    expect(thrice).toEqual({
+      ...social(), dice: [4, 4], challenged: true, preChallengeDice: [8, 8], shutDown: { reason: "statementChallenged" }
+    });
+    expect(resolveChallengedStatement(thrice, { rewritten: true }).value).toEqual(social({ dice: [8, 8] }));
+    expect(resolveChallengedStatement(thrice, { rewritten: false }).value)
+      .toEqual(social({ dice: [4, 4], shutDown: { reason: "statementChallenged" } }));
+  });
+
+  it("TS-24 2d4 challenged: both d4s kept and the whole trait shut down; a manual shut-down keeps its reason (RQ-034)", () => {
+    expect(challengeStatement(social({ dice: [4, 4] }), { multiDice: true }).value).toEqual({
+      ...social(), dice: [4, 4], challenged: true, preChallengeDice: [4, 4], shutDown: { reason: "statementChallenged" }
+    });
+    const manual = social({ dice: [4, 4], shutDown: { reason: "manual" } });
+    expect(challengeStatement(manual, { multiDice: true }).value.shutDown).toEqual({ reason: "manual" });
+  });
+
+  it("TS-26 never challenges a rating of mixed sizes automatically, and several dice only where the set supports it", () => {
+    expect(challengeStatement(social({ dice: [8, 4] }), { multiDice: true })).toEqual(refused("STATEMENT_RATING_MIXED_SIZES"));
+    expect(challengeStatement(social({ dice: [8, 8] }))).toEqual(refused("STATEMENT_RATING_NOT_ONE_DIE"));
+    expect(challengeStatement(social({ dice: [8, 8] }), { multiDice: false })).toEqual(refused("STATEMENT_RATING_NOT_ONE_DIE"));
+    expect(challengeStatement(social(), { multiDice: "yes" })).toEqual(refused("INVALID_TRAIT_OPTIONS"));
+    expect(challengeStatement(social(), null)).toEqual(refused("INVALID_TRAIT_OPTIONS"));
+    // One die is challenged as before, whatever the option says.
+    expect(challengeStatement(social(), { multiDice: true }).value.dice).toEqual([6]);
+  });
+
+  it("refuses a trait with no rating, a rating of several dice without the set's support (RQ-033) and a die size that doesn't exist", () => {
     expect(challengeStatement(social({ dice: [] }))).toEqual(refused("TRAIT_UNRATED"));
     expect(challengeStatement(social({ dice: [6, 6] }))).toEqual(refused("STATEMENT_RATING_NOT_ONE_DIE"));
     expect(challengeStatement(social({ dice: [7] }))).toEqual(refused("INVALID_DIE_SIZE"));

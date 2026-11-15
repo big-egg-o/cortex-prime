@@ -188,8 +188,33 @@ describe("traitPoolEntries (rules 11, 16)", () => {
     expect(traitPoolEntries(trait([6, 8]), { challenge: true }).value.map(e => e.size)).toEqual([6, 6, 6, 8, 8, 8]);
   });
 
-  it("refuses Hinder together with a challenged statement until RQ-032 is decided", () => {
-    expect(traitPoolEntries(trait([8]), { hinder: true, challenge: true })).toEqual(refused("TRAIT_OPTIONS_CONFLICT"));
+  it("RQ-032 Hinder with a challenge: Hinder first, then tripled: three d4s and one plot point, recorded once", () => {
+    const result = traitPoolEntries(trait([8]), { hinder: true, challenge: true });
+    expect(result.value.map(e => [e.size, e.ppGained, e.hint])).toEqual([[4, 1, undefined], [4, undefined, undefined], [4, undefined, undefined]]);
+    for ( const size of [6, 10, 12] ) {
+      const entries = traitPoolEntries(trait([size]), { hinder: true, challenge: true }).value;
+      expect(entries.map(e => e.size)).toEqual([4, 4, 4]);
+      expect(entries.reduce((sum, e) => sum + (e.ppGained ?? 0), 0)).toBe(1);
+    }
+  });
+
+  it("RQ-032 Hinder with a challenge on exactly one stored d4: three d4s, no plot point, the hint", () => {
+    const result = traitPoolEntries(trait([4]), { hinder: true, challenge: true });
+    expect(result.value.map(e => [e.size, e.ppGained, e.hint])).toEqual([
+      [4, 0, "HINDER_ALREADY_D4"], [4, undefined, undefined], [4, undefined, undefined]
+    ]);
+  });
+
+  it("TS-24 Hinder with a challenge on several dice: one d4 tripled, and one plot point even at 2d4 (RQ-033)", () => {
+    for ( const dice of [[8, 8], [4, 4], [6, 6, 6]] ) {
+      const entries = traitPoolEntries(trait(dice), { hinder: true, challenge: true }).value;
+      expect(entries.map(e => e.size), String(dice)).toEqual([4, 4, 4]);
+      expect(entries.map(e => e.ppGained), String(dice)).toEqual([1, undefined, undefined]);
+    }
+  });
+
+  it("TS-23 a challenge triples every die of 2d8: six d8 (rule 16a)", () => {
+    expect(traitPoolEntries(trait([8, 8]), { challenge: true }).value.map(e => e.size)).toEqual([8, 8, 8, 8, 8, 8]);
   });
 
   it("refuses a trait that isn't shaped like one, without throwing", () => {

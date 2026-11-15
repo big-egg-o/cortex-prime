@@ -12,6 +12,7 @@
 
 import { addTraitToPool, openPoolBuilder } from "../../module/apps/pool-builder.mjs";
 import { GAME_CONFIG_SETTING, getGameConfig } from "../../module/config/settings.mjs";
+import GameConfigData from "../../module/data/settings/game-config.mjs";
 import { preparePoolRollCardContext } from "../../module/dice/pool-roll-card.mjs";
 import { defaultGameConfig, poolDieGroupKey, traitSetById } from "../../module/rules/index.mjs";
 
@@ -334,6 +335,83 @@ export function registerSheetPoolBatch(quench) {
           assert.isFalse(added);
           assert.deepEqual(shown, [game.i18n.localize("CORTEX.Builder.Errors.STATEMENT_RATING_NOT_ONE_DIE")]);
           assert.deepEqual(userPool(), []);
+        });
+      });
+
+      describe("Hinder with a challenge, and challenges of several dice (RQ-032, RQ-033, ADR-053)", () => {
+        it("offers a fourth button where a trait has Hinder and a statement, and rolls three d4s, then steps d8 down to d6", async () => {
+          await storeConfig(configWithStatements(DISTINCTIONS));
+          const { system, smuggler, optimist } = pcSystem();
+          system.traits[DISTINCTIONS].entries[0].statement = "I owe nobody";
+          const actor = await createCharacter(system, "hinder and challenge");
+          const sheet = await openSheet(actor);
+          assert.deepEqual(poolButtons(sheet, DISTINCTIONS, smuggler), ["add", "hinder", "challenge", "hinderChallenge"]);
+          assert.deepEqual(poolButtons(sheet, DISTINCTIONS, optimist), ["add", "hinder"], "no statement, no challenge");
+
+          const rendered = nextBuilderRender();
+          sheet.element.querySelector(`[data-pool-trait-id="${smuggler}"] button[data-option="hinderChallenge"]`).click();
+          await rendered;
+          assert.deepEqual(userPool().map(d => [d.size, d.source.option]),
+            [[4, "hinderChallenge"], [4, "hinderChallenge"], [4, "hinderChallenge"]]);
+          assert.include(builderApp().element.textContent, game.i18n.format("CORTEX.Builder.HinderGain", { pp: 1 }));
+
+          const message = await roll([2, 3, 4]);
+          assert.deepEqual(message.system.pool.map(d => d.size), [4, 4, 4]);
+          assert.deepInclude(storedEntry(actor, DISTINCTIONS, smuggler), { dice: [6], challenged: true, preChallengeDice: [8] });
+          assert.deepEqual(userPool(), [], "the challenged dice leave the kept pool");
+        });
+
+        it("TS-23 with the set's option on, 2d8 rolls six d8 and steps down to 2d6; rolled again, 2d4", async () => {
+          const config = configWithStatements(SCENE);
+          traitSetById(config, SCENE).features.multiDiceChallenges = true;
+          await storeConfig(config);
+          const crowd = newId();
+          const location = await createLocation(crowd, [8, 8], { statement: "Everyone runs" });
+
+          assert.isTrue(await addTraitToPool(location, SCENE, crowd, "challenge"));
+          assert.deepEqual(userPool().map(d => d.size), [8, 8, 8, 8, 8, 8]);
+          await roll([5, 5, 5, 5, 5, 5]);
+          assert.deepInclude(storedEntry(location, SCENE, crowd), { dice: [6, 6], challenged: true, preChallengeDice: [8, 8] });
+
+          assert.isTrue(await addTraitToPool(location, SCENE, crowd, "challenge"));
+          await roll([5, 5, 5, 5, 5, 5]);
+          assert.deepInclude(storedEntry(location, SCENE, crowd), { dice: [4, 4], preChallengeDice: [8, 8] });
+        });
+
+        it("TS-24 with the set's option on, 2d4 with Hinder and a challenge: three d4s, then 2d4 kept and shut down", async () => {
+          const config = configWithStatements(SCENE);
+          traitSetById(config, SCENE).features.multiDiceChallenges = true;
+          await storeConfig(config);
+          const crowd = newId();
+          const location = await createLocation(crowd, [4, 4], { statement: "Everyone runs" });
+          assert.isTrue(await addTraitToPool(location, SCENE, crowd, "hinderChallenge"));
+          assert.deepEqual(userPool().map(d => [d.size, d.source.ppGained ?? null]), [[4, 1], [4, null], [4, null]]);
+          await roll([2, 3, 4]);
+          assert.deepInclude(storedEntry(location, SCENE, crowd),
+            { dice: [4, 4], challenged: true, shutDown: { reason: "statementChallenged" } });
+        });
+
+        it("TS-26 refuses a challenge of mixed sizes even with the option on, and adds nothing", async () => {
+          const config = configWithStatements(SCENE);
+          traitSetById(config, SCENE).features.multiDiceChallenges = true;
+          await storeConfig(config);
+          const crowd = newId();
+          const location = await createLocation(crowd, [8, 4], { statement: "Everyone runs" });
+          let added;
+          const shown = await notificationsShownBy("warn", async () => {
+            added = await addTraitToPool(location, SCENE, crowd, "challenge");
+          });
+          assert.isFalse(added);
+          assert.deepEqual(shown, [game.i18n.localize("CORTEX.Builder.Errors.STATEMENT_RATING_MIXED_SIZES")]);
+          assert.deepEqual(userPool(), []);
+        });
+
+        it("loads a configuration stored before the option existed with it off, and valid", () => {
+          const old = defaultGameConfig();
+          for ( const set of old.traitSets ) delete set.features.multiDiceChallenges;
+          const model = GameConfigData.fromSource(old);
+          assert.notEqual(model.invalid, true);
+          assert.isTrue(model.toObject().traitSets.every(set => set.features.multiDiceChallenges === false));
         });
       });
 
