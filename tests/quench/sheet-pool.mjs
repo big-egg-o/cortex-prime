@@ -542,6 +542,38 @@ export function registerSheetPoolBatch(quench) {
           assert.deepEqual(storedEntry(token.actor, ATTRIBUTES, SOCIAL).dice, [6]);
           assert.deepEqual(storedEntry(game.actors.get(actor.id), ATTRIBUTES, SOCIAL).dice, [8]);
         });
+
+        it("ADR-054 writes one update per actor when a roll challenges two of its traits", async () => {
+          await storeConfig(configWithStatements(ATTRIBUTES, DISTINCTIONS));
+          const { system, smuggler } = pcSystem();
+          system.traits[DISTINCTIONS].entries[0].statement = "I know every back road";
+          const actor = await createCharacter(system, "two challenges");
+          await addTraitToPool(actor, ATTRIBUTES, SOCIAL, "challenge");
+          await addTraitToPool(actor, DISTINCTIONS, smuggler, "challenge");
+
+          const updates = [];
+          const hookId = Hooks.on("preUpdateActor", (doc, changes) => {
+            if ( doc.id === actor.id ) updates.push(changes);
+          });
+          let shown;
+          try {
+            shown = await notificationsShownBy("info", () => roll([5, 5, 5, 5, 5, 5]));
+          }
+          finally {
+            Hooks.off("preUpdateActor", hookId);
+          }
+
+          // Foundry 14.369 keeps only the last update of an unlinked token whose delta has no name,
+          // so one roll writes one update per actor.
+          assert.lengthOf(updates, 1, "both step-downs went into one update");
+          assert.sameMembers(Object.keys(updates[0].system.traits), [ATTRIBUTES, DISTINCTIONS]);
+          assert.deepInclude(storedEntry(actor, ATTRIBUTES, SOCIAL), { dice: [6], challenged: true, preChallengeDice: [8] });
+          assert.deepInclude(storedEntry(actor, DISTINCTIONS, smuggler), { dice: [6], challenged: true, preChallengeDice: [8] });
+          for ( const trait of ["Social", "Retired Smuggler"] ) {
+            assert.include(shown, game.i18n.format("CORTEX.Builder.SteppedDown", { trait }));
+          }
+          assert.lengthOf(userPool(), 0, "the challenged dice left the kept pool");
+        });
       });
     },
     { displayName: "Cortex Prime: sheet and pool" }

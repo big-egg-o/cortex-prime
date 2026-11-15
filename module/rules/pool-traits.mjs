@@ -3,8 +3,8 @@
  * Sheets behaviours 20 to 24; Decisions ADR-016, ADR-048 and ADR-049): the dice a trait the sheet
  * shows puts into a pool, adding them so that a trait is never in a pool twice (CS-D8, TS-E05),
  * what a pool's trait dice cost and warn of, the dice as they are rolled and stored, and the
- * step-down that follows a challenged statement. Every function returns an EngineResult (ADR-025)
- * and never changes its inputs.
+ * step-down that follows a challenged statement, gathered into one write per actor (ADR-054).
+ * Every function returns an EngineResult (ADR-025) and never changes its inputs.
  *
  * A trait die keeps its trait's marks in its source, beside the four fields the roll message
  * stores (`kind`, `actorId`, `traitId`, `label`):
@@ -451,4 +451,63 @@ export function entriesAfterChallenge(system, config, setId, traitId) {
   const challenged = challengeStatement(entry, challengeOptionsOf(set));
   if ( !challenged.ok ) return challenged;
   return ok(setData.entries.map(stored => copyStored((stored === entry) ? challenged.value : stored)));
+}
+
+/**
+ * Pool traits grouped by the actor they belong to, in the order each actor first appears, so that
+ * the writes after a roll can cover all of one actor's traits at once (ADR-054). The actor is a
+ * trait's `actorRef`, which is the actor's reference or, without one, its id.
+ * @template {{actorRef: string|null}} T
+ * @param {T[]} traits - from poolTraits or challengedPoolTraits
+ * @returns {import("./types.mjs").EngineResult<T[][]>} refuses INVALID_TRAIT_DATA
+ */
+export function groupPoolTraitsByActor(traits) {
+  if ( !Array.isArray(traits) || !traits.every(isPlainObject) ) return fail("INVALID_TRAIT_DATA");
+  const groups = new Map();
+  for ( const trait of traits ) {
+    const key = trait.actorRef ?? null;
+    if ( !groups.has(key) ) groups.set(key, []);
+    groups.get(key).push(trait);
+  }
+  return ok([...groups.values()]);
+}
+
+/**
+ * One actor's writes after a roll that challenged some of its statements (rule 16; ADR-048). Each
+ * trait is stepped down as entriesAfterChallenge does, in turn, on the actor's data as the earlier
+ * step-downs left it, so two challenged traits of one set both count. Each changed set's whole
+ * entries list is returned once, for a single update of the actor: Foundry 14.369 keeps only the
+ * last update of an unlinked token whose delta has no name of its own, so one roll must not
+ * become several updates of one actor (ADR-054). A trait whose step-down is refused is listed
+ * with its code; the others still apply.
+ * @param {import("./types.mjs").CharacterTraitData} system - the actor's stored data
+ * @param {import("./types.mjs").GameConfig} config
+ * @param {T[]} traits - one actor's challenged traits, each with `setId` and `traitId`
+ * @returns {import("./types.mjs").EngineResult<{sets: Record<string, object[]>, stepped: T[],
+ *   refused: {trait: T, code: string}[]}>} `sets` holds each changed set's entries by set id.
+ *   Refuses INVALID_TRAIT_DATA for data or a list it can't read
+ * @template {{setId: string|null, traitId: string}} T
+ */
+export function stepDownsAfterChallenge(system, config, traits) {
+  if ( !isPlainObject(system) || !Array.isArray(traits) || !traits.every(isPlainObject) ) {
+    return fail("INVALID_TRAIT_DATA");
+  }
+  let current = system;
+  const sets = {};
+  const stepped = [];
+  const refused = [];
+  for ( const trait of traits ) {
+    const entries = entriesAfterChallenge(current, config, trait.setId, trait.traitId);
+    if ( !entries.ok ) {
+      refused.push({ trait, code: entries.code });
+      continue;
+    }
+    current = {
+      ...current,
+      traits: { ...current.traits, [trait.setId]: { ...current.traits[trait.setId], entries: entries.value } }
+    };
+    sets[trait.setId] = entries.value;
+    stepped.push(trait);
+  }
+  return ok({ sets, stepped, refused });
 }

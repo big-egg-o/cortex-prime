@@ -4,8 +4,8 @@ import { describe, expect, it } from "vitest";
 import { buildPool, doubleDie, stepPoolDie } from "../../module/rules/pool.mjs";
 import { defaultGameConfig, traitSetById } from "../../module/rules/game-config.mjs";
 import {
-  addTraitDice, challengedPoolTraits, entriesAfterChallenge, poolDieGroupKey, poolTraitReport, poolTraits,
-  rollablePool, traitPoolDice, withoutPoolTraits
+  addTraitDice, challengedPoolTraits, entriesAfterChallenge, groupPoolTraitsByActor, poolDieGroupKey, poolTraitReport,
+  poolTraits, rollablePool, stepDownsAfterChallenge, traitPoolDice, withoutPoolTraits
 } from "../../module/rules/pool-traits.mjs";
 
 const ROOT = resolve(import.meta.dirname, "../..");
@@ -481,6 +481,59 @@ describe("rolling: the dice as stored, and the challenges that follow the roll (
     system.traits[SCENE].entries[0].dice = [6, 6];
     expect(entriesAfterChallenge(system, config, SCENE, CROWD)).toEqual(refused("STATEMENT_RATING_NOT_ONE_DIE"));
     expect(entriesAfterChallenge(null, config, SCENE, CROWD)).toEqual(refused("INVALID_TRAIT_DATA"));
+  });
+});
+
+describe("one write per actor after a roll (ADR-054)", () => {
+  /** @returns {object} a PC whose Physical and Retired Smuggler carry statements too */
+  function pcWithThreeStatements() {
+    const system = pcSystem();
+    system.traits[ATTRIBUTES].entries[0].statement = "I never tire";
+    system.traits[DISTINCTIONS].entries[0].statement = "I know every back road";
+    return system;
+  }
+
+  it("groups a pool's challenged traits by actor, in the order each actor first appears", () => {
+    const config = configWithStatements(ATTRIBUTES, SCENE);
+    const location = locationSystem();
+    location.traits[SCENE].entries[0].statement = "Everyone runs for the exits";
+    const pool = poolOf(config, [
+      [pcSystem(), ATTRIBUTES, SOCIAL, "challenge"],
+      [location, SCENE, CROWD, "challenge", LOCATION, LOCATION_REF],
+      [pcWithThreeStatements(), ATTRIBUTES, PHYSICAL, "challenge"]
+    ]);
+    const groups = groupPoolTraitsByActor(deepFreeze(challengedPoolTraits(pool).value));
+    expect(groups.value.map(group => group.map(t => [t.actorRef, t.traitId])))
+      .toEqual([[[REF, SOCIAL], [REF, PHYSICAL]], [[LOCATION_REF, CROWD]]]);
+    expect(groupPoolTraitsByActor("traits")).toEqual(refused("INVALID_TRAIT_DATA"));
+    expect(groupPoolTraitsByActor([null])).toEqual(refused("INVALID_TRAIT_DATA"));
+  });
+
+  it("steps two traits of one set down in one entries list, and a trait of another set beside it", () => {
+    const config = configWithStatements(ATTRIBUTES, DISTINCTIONS);
+    const traits = [
+      { setId: ATTRIBUTES, traitId: SOCIAL }, { setId: DISTINCTIONS, traitId: SMUGGLER }, { setId: ATTRIBUTES, traitId: PHYSICAL }
+    ];
+    const result = stepDownsAfterChallenge(deepFreeze(pcWithThreeStatements()), config, deepFreeze(traits));
+    expect(Object.keys(result.value.sets)).toEqual([ATTRIBUTES, DISTINCTIONS]);
+    expect(result.value.sets[ATTRIBUTES].map(e => [e.name, e.dice, e.preChallengeDice]))
+      .toEqual([["Physical", [6], [8]], ["Social", [6], [8]]]);
+    expect(result.value.sets[DISTINCTIONS].map(e => [e.name, e.dice, e.challenged ?? false]))
+      .toEqual([["Retired Smuggler", [6], true], ["Hopeless Optimist", [4], false]]);
+    expect(result.value.stepped).toEqual(traits);
+    expect(result.value.refused).toEqual([]);
+  });
+
+  it("lists a trait it can't step down with its code and still steps the others down", () => {
+    const config = configWithStatements(ATTRIBUTES);
+    const traits = [{ setId: ATTRIBUTES, traitId: MENTAL }, { setId: ATTRIBUTES, traitId: SOCIAL }];
+    const result = stepDownsAfterChallenge(pcSystem(), config, traits);
+    expect(result.value.refused).toEqual([{ trait: traits[0], code: "UNKNOWN_TRAIT" }]);
+    expect(result.value.stepped).toEqual([traits[1]]);
+    expect(result.value.sets[ATTRIBUTES][1]).toMatchObject({ name: "Social", dice: [6], challenged: true });
+    expect(stepDownsAfterChallenge(pcSystem(), config, [])).toEqual({ ok: true, value: { sets: {}, stepped: [], refused: [] } });
+    expect(stepDownsAfterChallenge(null, config, traits)).toEqual(refused("INVALID_TRAIT_DATA"));
+    expect(stepDownsAfterChallenge(pcSystem(), config, "traits")).toEqual(refused("INVALID_TRAIT_DATA"));
   });
 });
 
