@@ -101,6 +101,46 @@ function poolOf(config, adds, pool = []) {
 
 const refused = code => ({ ok: false, code });
 
+describe("free traits in a pool (TS-22)", () => {
+  const config = deepFreeze(defaultGameConfig());
+  const DEPUTY = "freeDeputy000000";
+  const gmc = deepFreeze({
+    kindId: "cpKindMinorGmc00", traits: {},
+    freeTraits: [{ id: DEPUTY, name: "Crooked Deputy", dice: [8] }, { id: "freeBreath000000", name: "Short of Breath", dice: [] },
+      { id: "freeNoName000000", name: " ", dice: [6] }]
+  });
+
+  it("adds a free trait's die, asked for with no set", () => {
+    const dice = traitPoolDice(gmc, config, null, DEPUTY, { actorId: ACTOR });
+    expect(dice.ok).toBe(true);
+    expect(dice.value).toMatchObject({ setId: null, traitId: DEPUTY, option: null, ratingConflict: false });
+    expect(dice.value.entries.map(e => [e.size, e.source.label, e.source.actorId, e.source.traitId]))
+      .toEqual([[8, "Crooked Deputy", ACTOR, DEPUTY]]);
+  });
+
+  it("refuses an unknown, unnamed or unrated free trait, and Hinder or a challenge", () => {
+    expect(traitPoolDice(gmc, config, null, "nope000000000000")).toEqual({ ok: false, code: "UNKNOWN_TRAIT" });
+    expect(traitPoolDice(gmc, config, null, "freeNoName000000")).toEqual({ ok: false, code: "TRAIT_UNNAMED" });
+    expect(traitPoolDice(gmc, config, null, "freeBreath000000")).toEqual({ ok: false, code: "TRAIT_UNRATED" });
+    for ( const option of ["hinder", "challenge", "hinderChallenge"] ) {
+      expect(traitPoolDice(gmc, config, null, DEPUTY, { option })).toEqual({ ok: false, code: "TRAIT_OPTION_UNAVAILABLE" });
+    }
+    expect(traitPoolDice(gmc, config, undefined, DEPUTY)).toEqual({ ok: false, code: "INVALID_TRAIT_DATA" });
+  });
+
+  it("keeps a free trait once in the pool, with no set id, and never charges for it", () => {
+    const dice = traitPoolDice(gmc, config, null, DEPUTY, { actorId: ACTOR }).value;
+    const first = addTraitDice([], dice, { actorRef: REF });
+    expect(first.value.changed).toBe(true);
+    expect(first.value.pool).toHaveLength(1);
+    expect("setId" in first.value.pool[0].source).toBe(false);
+    expect(addTraitDice(first.value.pool, dice, { actorRef: REF }).value.changed).toBe(false);
+    expect(poolTraits(first.value.pool).value[0]).toMatchObject({ setId: null, traitId: DEPUTY, label: "Crooked Deputy" });
+    const report = poolTraitReport(first.value.pool, { [REF]: gmc }, config);
+    expect(report.value).toMatchObject({ traitCount: 1, ppCost: 0, extraTraits: [], unpricedTraits: [], warnings: [] });
+  });
+});
+
 describe("traitPoolDice: the dice a trait the sheet shows puts into a pool", () => {
   it("CS-12 a fixed set's trait gives its stored die, named by its definition", () => {
     const result = traitPoolDice(deepFreeze(pcSystem()), deepFreeze(defaultGameConfig()), ATTRIBUTES, PHYSICAL,

@@ -24,10 +24,11 @@
   <section class="cp-sheet-body scrollable">
     {{#if notice}}<p class="notification info">{{ notice }}</p>{{/if}}
 
-    {{#each sets}}
-    <fieldset class="cp-trait-set{{#if this.shutDown}} cp-shut-down{{/if}}" data-set-id="{{ this.id }}">
+    {{#each sections}}
+    <fieldset class="cp-trait-set{{#if this.free}} cp-free-traits{{/if}}{{#if this.shutDown}} cp-shut-down{{/if}}"
+      {{#if this.free}}data-free-traits{{else}}data-set-id="{{ this.id }}"{{/if}}>
       <legend>{{ this.name }}</legend>
-      {{#unless this.traits.length}}<p class="hint">{{ localize "CORTEX.Sheet.NoTraits" }}</p>{{/unless}}
+      {{#unless this.traits.length}}<p class="hint">{{ this.emptyText }}</p>{{/unless}}
       {{#each this.traits}}
       <div class="form-group cp-trait{{#if this.shutDown}} cp-shut-down{{/if}}"
         {{#if this.entryId}}data-entry-id="{{ this.entryId }}"{{/if}}
@@ -91,5 +92,30 @@
       {{/if}}{{/if}}
     </fieldset>
     {{/each}}
+
+    {{#if others}}
+    <fieldset class="cp-other-traits">
+      <legend>{{ localize "CORTEX.Sheet.Others.Title" }}</legend>
+      <p class="hint">{{ localize "CORTEX.Sheet.Others.Hint" }}</p>
+      {{#each others.groups}}
+      <div class="cp-other-group" {{#if this.free}}data-free-traits{{else}}data-set-id="{{ this.setId }}"{{/if}}>
+        <h4>{{ this.label }}</h4>
+        {{#each this.traits}}
+        <div class="form-group cp-trait" {{#if this.entryId}}data-entry-id="{{ this.entryId }}"{{/if}}
+          data-trait-name="{{ this.label }}">
+          <label>{{ this.label }}</label>
+          <div class="form-fields">
+            <span class="cp-rating-note">{{ this.ratingText }}</span>
+            {{#if this.entryId}}
+            <button type="button" class="ui-control icon cp-remove-trait" data-action="removeTrait"
+              data-tooltip="{{ this.removeLabel }}" aria-label="{{ this.removeLabel }}"><i class="fa-solid fa-trash" inert></i></button>
+            {{/if}}
+          </div>
+        </div>
+        {{/each}}
+      </div>
+      {{/each}}
+    </fieldset>
+    {{/if}}
   </section>
 </div>

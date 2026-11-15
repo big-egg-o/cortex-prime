@@ -140,10 +140,11 @@ export function poolDieGroupKey(die) {
  * Whether the user may challenge, that is may update the actor afterwards, is the caller's check.
  * @param {import("./types.mjs").CharacterTraitData} system - the actor's stored data
  * @param {import("./types.mjs").GameConfig} config
- * @param {string} setId
- * @param {string} traitId - a fixed set's definition id or an open set's entry id
+ * @param {string|null} setId - null for a free trait (TS-22), which belongs to no set: it has no
+ *   fallback die, and neither option exists for it
+ * @param {string} traitId - a fixed set's definition id, or an open set's or a free trait's entry id
  * @param {{actorId?: string, option?: "hinder"|"challenge"|"hinderChallenge"|null}} [options]
- * @returns {import("./types.mjs").EngineResult<{setId: string, traitId: string,
+ * @returns {import("./types.mjs").EngineResult<{setId: string|null, traitId: string,
  *   option: "hinder"|"challenge"|"hinderChallenge"|null, ratingConflict: boolean,
  *   entries: ReturnType<typeof traitPoolEntries>["value"]}>} refuses, in this order:
  *   INVALID_TRAIT_DATA (data that can't be read), INVALID_TRAIT_OPTIONS (an option that doesn't
@@ -155,12 +156,28 @@ export function poolDieGroupKey(die) {
  */
 export function traitPoolDice(system, config, setId, traitId, options = {}) {
   if ( !isPlainObject(system) || !isPlainObject(config) || !Array.isArray(config.traitSets)
-    || (typeof setId !== "string") || (typeof traitId !== "string") || !isPlainObject(options) ) {
+    || ((setId !== null) && (typeof setId !== "string")) || (typeof traitId !== "string")
+    || !isPlainObject(options) ) {
     return fail("INVALID_TRAIT_DATA");
   }
   const { actorId, option = null } = options;
   if ( (actorId !== undefined) && (typeof actorId !== "string") ) return fail("INVALID_TRAIT_DATA");
   if ( (option !== null) && !POOL_TRAIT_OPTIONS.includes(option) ) return fail("INVALID_TRAIT_OPTIONS");
+
+  if ( setId === null ) {
+    const free = (Array.isArray(system.freeTraits) ? system.freeTraits : [])
+      .find(entry => isPlainObject(entry) && (entry.id === traitId));
+    if ( !free ) return fail("UNKNOWN_TRAIT");
+    if ( !isName(free.name) ) return fail("TRAIT_UNNAMED");
+    const freeRating = effectiveRating(null, null, free);
+    if ( !freeRating.ok ) return freeRating;
+    if ( option !== null ) return fail("TRAIT_OPTION_UNAVAILABLE");
+    const freeTrait = { dice: freeRating.value.dice, label: free.name, traitId };
+    if ( actorId !== undefined ) freeTrait.actorId = actorId;
+    const freeEntries = traitPoolEntries(freeTrait, {});
+    if ( !freeEntries.ok ) return freeEntries;
+    return ok({ setId: null, traitId, option: null, ratingConflict: false, entries: freeEntries.value });
+  }
 
   const set = traitSetById(config, setId);
   if ( !isPlainObject(set) ) return fail("UNKNOWN_TRAIT_SET");
@@ -214,7 +231,8 @@ export function addTraitDice(pool, traitDice, options = {}) {
   const { actorRef } = options;
   if ( (actorRef !== undefined) && (typeof actorRef !== "string") ) return fail("INVALID_TRAIT_DATA");
 
-  const marks = { setId: traitDice.setId };
+  // A free trait has no set, so its dice carry no set id (TS-22).
+  const marks = (typeof traitDice.setId === "string") ? { setId: traitDice.setId } : {};
   if ( actorRef !== undefined ) marks.actorRef = actorRef;
   if ( traitDice.option ) marks.option = traitDice.option;
   if ( traitDice.ratingConflict ) marks.ratingConflict = true;
