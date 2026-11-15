@@ -20,15 +20,19 @@ export const GAME_CONFIG_SETTING = "gameConfig";
  * Assistant has by default and a GM can grant further, and setGameConfig adds the isGM check.
  * A new world starts with the ADR-036 defaults, which the active GM stores once the game is
  * ready, so a later change to the defaults never changes an existing world.
+ * @param {object} [options]
+ * @param {() => void} [options.onGameConfigChange] - called on every client once a new game
+ *   configuration is stored, for example to render open sheets again
  */
-export function registerSettings() {
+export function registerSettings({ onGameConfigChange } = {}) {
   game.settings.register(SYSTEM_ID, GAME_CONFIG_SETTING, {
     name: "CORTEX.Settings.GameConfig.Name",
     hint: "CORTEX.Settings.GameConfig.Hint",
     scope: "world",
     config: false,
     type: GameConfigData,
-    default: defaultGameConfig()
+    default: defaultGameConfig(),
+    onChange: () => onGameConfigChange?.()
   });
   Hooks.once("ready", storeDefaultGameConfig);
 }

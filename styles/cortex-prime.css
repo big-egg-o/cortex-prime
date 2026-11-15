@@ -212,3 +212,82 @@
   flex: 1;
   min-width: 0;
 }
+
+/* ---------------------------------------- */
+/*  character-sheet (ActorSheetV2)          */
+/* ---------------------------------------- */
+
+/* Core's standard-form layout draws the fieldsets and form-group rows; these rules only lay out
+   the header, let the die selects sit side by side, and grey out what is shut down (Traits &
+   Trait Sets rule 15). Scoped to .window-content, as for the other windows. */
+.cortex-prime.character-sheet .window-content .cp-sheet {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  min-height: 0;
+  height: 100%;
+}
+
+.cortex-prime.character-sheet .window-content .cp-sheet-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.cortex-prime.character-sheet .window-content .cp-portrait {
+  flex: none;
+  width: 64px;
+  height: 64px;
+  object-fit: cover;
+  border: none;
+  cursor: var(--cursor-pointer);
+}
+
+.cortex-prime.character-sheet .window-content .cp-sheet-title {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.cortex-prime.character-sheet .window-content .cp-actor-name {
+  font-size: var(--font-size-20);
+  height: auto;
+}
+
+.cortex-prime.character-sheet .window-content .cp-sheet-title .cp-kind {
+  margin: 0;
+}
+
+.cortex-prime.character-sheet .window-content .cp-sheet-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  flex: 1;
+}
+
+/* A long trait name wraps; core's form line height would spread it over two tall lines. */
+.cortex-prime.character-sheet .window-content .cp-trait > label {
+  line-height: 1.25;
+}
+
+/* Core gives a select the full row; a rating's dice share it. */
+.cortex-prime.character-sheet .window-content .cp-trait > .form-fields {
+  justify-content: flex-start;
+  gap: 0.25rem;
+}
+
+.cortex-prime.character-sheet .window-content .cp-trait select.cp-die {
+  flex: none;
+  width: 4.5rem;
+}
+
+.cortex-prime.character-sheet .window-content .cp-rating-note {
+  color: var(--color-text-secondary);
+}
+
+.cortex-prime.character-sheet .window-content .cp-shut-down > label,
+.cortex-prime.character-sheet .window-content .cp-shut-down > .form-fields,
+.cortex-prime.character-sheet .window-content fieldset.cp-shut-down > legend {
+  opacity: 0.5;
+}

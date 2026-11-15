@@ -13,6 +13,7 @@ import { togglePoolBuilder } from "./apps/pool-builder.mjs";
 import { registerSettings } from "./config/settings.mjs";
 import { registerContestQuery } from "./contest/relay.mjs";
 import GameConfigApp from "./apps/game-config-app.mjs";
+import CharacterSheet from "./apps/character-sheet.mjs";
 
 /** The package id, as declared in system.json. */
 export const SYSTEM_ID = "cortex-prime";
@@ -23,7 +24,11 @@ Hooks.once("init", () => {
   CONFIG.Actor.dataModels.character = CharacterData;
   CONFIG.ChatMessage.dataModels.poolRoll = PoolRollData;
   CONFIG.ChatMessage.dataModels.contest = ContestData;
-  registerSettings();
+  // Core 14.369 registers no Actor sheet, so this one is the only and default sheet for characters.
+  foundry.applications.apps.DocumentSheetConfig.registerSheet(Actor, SYSTEM_ID, CharacterSheet, {
+    types: ["character"], makeDefault: true, label: "CORTEX.Sheet.Character"
+  });
+  registerSettings({ onGameConfigChange: () => CharacterSheet.renderOpenSheets() });
   registerContestQuery();
   game.settings.registerMenu(SYSTEM_ID, "gameConfigMenu", {
     name: "CORTEX.Config.MenuName",

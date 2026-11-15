@@ -7,7 +7,8 @@ const RULES_DIR = resolve(ROOT_DIR, "module/rules");
 
 /** Pure files outside module/rules/: they may import only from module/rules/. */
 const PURE_FILES = [
-  "module/data/chat/contest-mapping.mjs", "module/data/migration-runner.mjs", "module/config/game-config-draft.mjs"
+  "module/data/chat/contest-mapping.mjs", "module/data/migration-runner.mjs", "module/config/game-config-draft.mjs",
+  "module/apps/character-sheet-data.mjs"
 ].map(path => resolve(ROOT_DIR, path));
 
 /** @param {string} dir @returns {string[]} all .mjs files below dir */
