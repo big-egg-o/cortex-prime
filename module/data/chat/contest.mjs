@@ -171,7 +171,10 @@ function testFlowSchema() {
     closed: flagField(),
     difficultyLevel: new StringField({ required: true, nullable: true, choices: DIFFICULTY_LEVELS }),
     difficultyMessageRef: idField({ nullable: true }),
-    oppositionEffects: new ArrayField(new SchemaField(effectSchema()))
+    oppositionEffects: new ArrayField(new SchemaField(effectSchema())),
+    // May be empty and has no initial value, so a test stored before the field existed is cleaned to
+    // null, "not known", with no schema-version step (ADR-021, Step 4.4 S3 proposal review).
+    oppositionTakeOut: flagField({ nullable: true })
   };
 }
 
@@ -202,9 +205,9 @@ export default class ContestData extends foundry.abstract.TypeDataModel {
 
   /**
    * Top level: schemaVersion, revision, startedBy, sides and flow. A test's flow holds the TestState
-   * fields plus difficultyLevel, difficultyMessageRef and oppositionEffects; a contest's flow holds
-   * the ContestState fields plus usedAgainstLoser. A stored roll is a ContestRoll plus its sender's
-   * userId.
+   * fields plus difficultyLevel, difficultyMessageRef, oppositionEffects and oppositionTakeOut; a
+   * contest's flow holds the ContestState fields plus usedAgainstLoser. A stored roll is a
+   * ContestRoll plus its sender's userId.
    * @override
    */
   static defineSchema() {

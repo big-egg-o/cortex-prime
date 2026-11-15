@@ -4,7 +4,7 @@
  * ContestState, TestState and ContestRoll, so the mapping is mostly a copy; what it adds are the
  * fields that live only in the model: the sides, the revision, who started the test or contest,
  * each roll's sender, the effect dice used against the loser, and a test's difficulty level,
- * difficulty card and opposition effect dice.
+ * difficulty card, opposition effect dice and the setter's take-out.
  *
  * It works on source data, i.e. `message.system.toObject()`, never on the initialized model, and
  * it never changes its inputs: every object it returns is new. It has no Foundry globals and
@@ -68,7 +68,8 @@ import { fail, ok } from "../../rules/result.mjs";
 
 /**
  * The stored flow of a test: the TestState fields with a stored roll, plus the test's difficulty
- * level, difficulty card and opposition effect dice (kept for rule 24, M4).
+ * level, difficulty card, opposition effect dice and the setter's take-out (kept for rule 24, M4;
+ * RQ-035, Decisions ADR-021, Step 4.4 S3 proposal review).
  * @typedef {Object} StoredTestFlow
  * @property {"test"} type
  * @property {boolean} highStakes
@@ -82,6 +83,9 @@ import { fail, ok } from "../../rules/result.mjs";
  * @property {DifficultyLevel|null} difficultyLevel - model only; null for a typed difficulty
  * @property {string|null} difficultyMessageRef - model only; the difficulty card's message id
  * @property {ContestEffect[]} oppositionEffects - model only; empty for a typed difficulty
+ * @property {boolean|null} oppositionTakeOut - model only; whether the difficulty card's overflow
+ *   choice was the take-out, null when not known (a typed difficulty, or a test stored before the
+ *   field existed, which Foundry fills with null)
  */
 
 /** @typedef {StoredContestFlow|StoredTestFlow} StoredFlow */
@@ -122,6 +126,7 @@ import { fail, ok } from "../../rules/result.mjs";
  * @property {DifficultyLevel|null} [difficultyLevel=null] - test only; a contest leaves it out
  * @property {string|null} [difficultyMessageRef=null] - test only; a contest leaves it out
  * @property {ContestEffect[]} [oppositionEffects=[]] - test only; a contest leaves it out
+ * @property {boolean|null} [oppositionTakeOut=null] - test only; a contest leaves it out
  */
 
 /** The current schema version of the contest message's data; contest.mjs re-exports it. */
@@ -214,8 +219,8 @@ function rollsKept(before, after) {
  * @param {string} type - one of FLOW_TYPES
  * @param {ContestState|TestState} state
  * @param {StoredRoll[]} rolls - new objects, each with its userId
- * @param {object} modelOnly - usedAgainstLoser for a contest; difficultyLevel, difficultyMessageRef
- *   and oppositionEffects for a test
+ * @param {object} modelOnly - usedAgainstLoser for a contest; difficultyLevel, difficultyMessageRef,
+ *   oppositionEffects and oppositionTakeOut for a test
  * @returns {StoredFlow}
  */
 function storedFlow(type, state, rolls, modelOnly) {
@@ -224,14 +229,16 @@ function storedFlow(type, state, rolls, modelOnly) {
   }
   return {
     type, ...pick(state, TEST_STATE_KEYS), roll: rolls[0] ?? null, difficultyLevel: modelOnly.difficultyLevel,
-    difficultyMessageRef: modelOnly.difficultyMessageRef, oppositionEffects: copyPlain(modelOnly.oppositionEffects)
+    difficultyMessageRef: modelOnly.difficultyMessageRef, oppositionEffects: copyPlain(modelOnly.oppositionEffects),
+    oppositionTakeOut: modelOnly.oppositionTakeOut
   };
 }
 
 /**
  * The engine state held in a stored flow: a new copy of its engine fields, without the model-only
- * ones (each roll's userId, usedAgainstLoser, and a test's difficultyLevel, difficultyMessageRef and
- * oppositionEffects). It doesn't check what the model's schema already guarantees.
+ * ones (each roll's userId, usedAgainstLoser, and a test's difficultyLevel, difficultyMessageRef,
+ * oppositionEffects and oppositionTakeOut). It doesn't check what the model's schema already
+ * guarantees.
  * @param {StoredFlow} flow - source data, e.g. `message.system.toObject().flow`
  * @returns {EngineResult<ContestState|TestState>} UNKNOWN_FLOW_TYPE for a flow type that isn't one
  *   of FLOW_TYPES
@@ -291,27 +298,28 @@ export function systemChangesAfter(system, state, extras = {}) {
 /**
  * The system data for a new test or contest message: the current schema version, revision 0, the
  * given sides and starter, and a flow copied from the engine's starting state. A test's model-only
- * fields default to null, null and an empty list; a contest's usedAgainstLoser starts as null.
+ * fields default to null, null, an empty list and null; a contest's usedAgainstLoser starts as null.
  * @param {InitialInput} input
  * @returns {EngineResult<ContestSystemSource>} refuses, checked in this order: UNKNOWN_FLOW_TYPE,
  *   FLOW_TYPE_MISMATCH (the state isn't of the given type's kind, then a contest given
- *   difficultyLevel, difficultyMessageRef or oppositionEffects, any of them not undefined, as
- *   systemChangesAfter refuses usedAgainstLoser for a test), INITIAL_ROLLS_PRESENT (the state
- *   already holds a roll)
+ *   difficultyLevel, difficultyMessageRef, oppositionEffects or oppositionTakeOut, any of them not
+ *   undefined, as systemChangesAfter refuses usedAgainstLoser for a test), INITIAL_ROLLS_PRESENT (the
+ *   state already holds a roll)
  */
 export function initialSystem({
-  type, state, startedBy, sides, difficultyLevel, difficultyMessageRef, oppositionEffects
+  type, state, startedBy, sides, difficultyLevel, difficultyMessageRef, oppositionEffects, oppositionTakeOut
 } = {}) {
   if ( !FLOW_TYPES.includes(type) ) return fail("UNKNOWN_FLOW_TYPE");
   if ( !isStateOf(type, state) ) return fail("FLOW_TYPE_MISMATCH");
-  const testOnly = [difficultyLevel, difficultyMessageRef, oppositionEffects];
+  const testOnly = [difficultyLevel, difficultyMessageRef, oppositionEffects, oppositionTakeOut];
   if ( (type === "contest") && testOnly.some(value => value !== undefined) ) return fail("FLOW_TYPE_MISMATCH");
   if ( rollsOf(type, state).length > 0 ) return fail("INITIAL_ROLLS_PRESENT");
 
   const modelOnly = type === "contest" ? { usedAgainstLoser: null } : {
     difficultyLevel: difficultyLevel ?? null,
     difficultyMessageRef: difficultyMessageRef ?? null,
-    oppositionEffects: oppositionEffects ?? []
+    oppositionEffects: oppositionEffects ?? [],
+    oppositionTakeOut: oppositionTakeOut ?? null
   };
   return ok({
     schemaVersion: CONTEST_SCHEMA_VERSION,

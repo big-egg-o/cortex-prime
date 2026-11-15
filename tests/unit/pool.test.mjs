@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildPool, doubleDie, stepPoolDie } from "../../module/rules/pool.mjs";
+import { appendToPool, buildPool, doubleDie, stepPoolDie } from "../../module/rules/pool.mjs";
 
 /** @returns {{kind: string, label: string}} a minimal DieSource for tests */
 function source(label, kind = "trait") {
@@ -150,5 +150,60 @@ describe("die identity", () => {
 
     const ids = steppedPastD12.map(d => d.id);
     expect(new Set(ids).size).toBe(ids.length);
+  });
+});
+
+describe("appendToPool", () => {
+  it("appends dice after the pool's highest id, keeping the dice already there in place", () => {
+    const built = buildPool([{ size: 8, source: source("A") }, { size: 4, source: source("B") }, { size: 6, source: source("C") }]);
+    const gap = stepPoolDie(built, "d2", -1);
+    expect(gap.map(d => d.id)).toEqual(["d1", "d3"]);
+
+    const result = appendToPool(gap, [{ size: 10, source: source("D") }]);
+    expect(result).toEqual({
+      ok: true,
+      value: [...gap, { id: "d4", size: 10, source: source("D"), origin: "rating" }]
+    });
+  });
+
+  it("takes buildPool's entries: count gives several dice of one source, and origin is kept", () => {
+    const pool = buildPool([{ size: 8, source: source("A") }]);
+    const result = appendToPool(pool, [{ size: 6, source: source("Asset", "asset"), count: 2 }, { size: 4, source: source("SFX"), origin: "bonus" }]);
+    expect(result.value.map(d => [d.id, d.size, d.source.label, d.origin])).toEqual([
+      ["d1", 8, "A", "rating"], ["d2", 6, "Asset", "rating"], ["d3", 6, "Asset", "rating"], ["d4", 4, "SFX", "bonus"]
+    ]);
+  });
+
+  it("on an empty pool it gives what buildPool gives, and no entries give the same dice in a new pool", () => {
+    const entries = [{ size: 8, source: source("Skill") }, { size: 6, source: source("Asset", "asset") }];
+    expect(appendToPool([], entries)).toEqual({ ok: true, value: buildPool(entries) });
+
+    const pool = buildPool(entries);
+    const unchanged = appendToPool(pool, []);
+    expect(unchanged).toEqual({ ok: true, value: pool });
+    expect(unchanged.value).not.toBe(pool);
+  });
+
+  it("ids that aren't d<n> are ignored when continuing the sequence", () => {
+    const pool = [{ id: "custom", size: 8, source: source("A"), origin: "rating" }];
+    expect(appendToPool(pool, [{ size: 6, source: source("B") }]).value.map(d => d.id)).toEqual(["custom", "d1"]);
+  });
+
+  it("a size that isn't a die size is refused with INVALID_DIE_SIZE, and nothing is added", () => {
+    const pool = buildPool([{ size: 8, source: source("A") }]);
+    for ( const size of [7, 3, 20, "8", null, undefined] ) {
+      expect(appendToPool(pool, [{ size, source: source("B") }]), String(size)).toEqual({ ok: false, code: "INVALID_DIE_SIZE" });
+    }
+    expect(appendToPool(pool, [{ size: 8, source: source("B") }, { size: 7, source: source("C") }]))
+      .toEqual({ ok: false, code: "INVALID_DIE_SIZE" });
+  });
+
+  it("a frozen pool and frozen entries are left alone", () => {
+    const freeze = list => Object.freeze(list.map(item => Object.freeze({ ...item, source: Object.freeze({ ...item.source }) })));
+    const pool = freeze(buildPool([{ size: 8, source: source("A") }]));
+    const entries = freeze([{ size: 6, source: source("B") }]);
+    const before = structuredClone({ pool, entries });
+    expect(appendToPool(pool, entries)).toMatchObject({ ok: true });
+    expect({ pool, entries }).toEqual(before);
   });
 });

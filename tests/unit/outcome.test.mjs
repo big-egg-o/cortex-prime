@@ -4,7 +4,9 @@ import {
 } from "../../module/rules/outcome.mjs";
 import { buildPool } from "../../module/rules/pool.mjs";
 import { applyResults, resolve, stepEffectDie, unrolledEffectDie } from "../../module/rules/roll.mjs";
-import { DIFFICULTY_SOURCE_KIND, difficultyLevelOfPool, doubleDie, stepPoolDie } from "../../module/rules/index.mjs";
+import {
+  DIFFICULTY_SOURCE_KIND, appendToPool, difficultyLevelOfPool, doubleDie, setDifficultyDice, stepPoolDie
+} from "../../module/rules/index.mjs";
 
 /** @returns {{kind: string, label: string}} a minimal DieSource for tests */
 function source(label) {
@@ -333,5 +335,114 @@ describe("the difficulty level of a pool (display only)", () => {
     const both = stepPoolDie(stepPoolDie(hard, hard[0].id, 1), hard[1].id, 1);
     expect(both.map(d => d.size)).toEqual([12, 12]);
     expect(difficultyLevelOfPool(both)).toEqual({ ok: true, value: "veryHard" });
+  });
+});
+
+describe("the pool builder's difficulty helper (setDifficultyDice)", () => {
+  const HARD = "Hard difficulty";
+  const gmcTrait = { kind: "trait", label: "Gate guard" };
+  const risk = { kind: "risk", label: "Extra risk" };
+
+  /** @returns {object} the source the helper gives its dice */
+  function difficultySource(label) {
+    return { kind: DIFFICULTY_SOURCE_KIND, label };
+  }
+
+  /**
+   * @template T
+   * @param {import("../../module/rules/types.mjs").EngineResult<T>} result
+   * @returns {T} the value, failing the test on a refusal
+   */
+  function unwrap(result, label = "setDifficultyDice") {
+    expect(result, label).toMatchObject({ ok: true });
+    return result.value;
+  }
+
+  it("TC-01 sets each level's pair on an empty pool, with the difficulty source kind and the label", () => {
+    const sizes = { veryEasy: 4, easy: 6, challenging: 8, hard: 10, veryHard: 12 };
+    for ( const level of DIFFICULTY_LEVELS ) {
+      const label = `${level} difficulty`;
+      expect(setDifficultyDice([], level, label), level).toEqual({
+        ok: true,
+        value: [
+          { id: "d1", size: sizes[level], source: difficultySource(label), origin: "rating" },
+          { id: "d2", size: sizes[level], source: difficultySource(label), origin: "rating" }
+        ]
+      });
+    }
+  });
+
+  it("TC-01 an unknown level is refused with UNKNOWN_DIFFICULTY_LEVEL", () => {
+    const pool = buildPool([{ size: 8, source: gmcTrait }]);
+    for ( const level of ["medium", "Hard", "", undefined, null, 10, "toString", "constructor"] ) {
+      expect(setDifficultyDice(pool, level, HARD), String(level)).toEqual({ ok: false, code: "UNKNOWN_DIFFICULTY_LEVEL" });
+    }
+  });
+
+  it("TC-02 Hard, then a GMC trait d8 and a risk d6, gives d10 d10 d8 d6, each die with its source", () => {
+    const hard = unwrap(setDifficultyDice([], "hard", HARD));
+    const pool = unwrap(appendToPool(hard, [{ size: 8, source: gmcTrait }, { size: 6, source: risk }]), "appendToPool");
+    expect(pool.map(d => [d.id, d.size, d.source])).toEqual([
+      ["d1", 10, difficultySource(HARD)], ["d2", 10, difficultySource(HARD)], ["d3", 8, gmcTrait], ["d4", 6, risk]
+    ]);
+    expect(difficultyLevelOfPool(pool)).toEqual({ ok: true, value: "hard" });
+  });
+
+  it("TC-02 setting the difficulty after the other dice appends the pair after them, continuing their ids", () => {
+    const others = buildPool([{ size: 8, source: gmcTrait }, { size: 6, source: risk }]);
+    const pool = unwrap(setDifficultyDice(others, "hard", HARD));
+    expect(pool.map(d => [d.id, d.size, d.source.kind])).toEqual([
+      ["d1", 8, "trait"], ["d2", 6, "risk"], ["d3", 10, DIFFICULTY_SOURCE_KIND], ["d4", 10, DIFFICULTY_SOURCE_KIND]
+    ]);
+  });
+
+  it("TC-53 another level replaces the pair: the other dice stay in place, and the new pair gets new ids at the end", () => {
+    const hard = unwrap(setDifficultyDice(buildPool([{ size: 8, source: gmcTrait }]), "hard", HARD));
+    expect(hard.map(d => d.id)).toEqual(["d1", "d2", "d3"]);
+    const easy = unwrap(setDifficultyDice(hard, "easy", "Easy difficulty"));
+    expect(easy.map(d => [d.id, d.size, d.source.label])).toEqual([
+      ["d1", 8, "Gate guard"], ["d4", 6, "Easy difficulty"], ["d5", 6, "Easy difficulty"]
+    ]);
+    expect(difficultyLevelOfPool(easy)).toEqual({ ok: true, value: "easy" });
+  });
+
+  it("TC-53 a stepped pair with its overflow d6, and a doubled difficulty die, are all replaced", () => {
+    const veryHard = unwrap(setDifficultyDice([], "veryHard", "Very Hard difficulty"));
+    const stepped = stepPoolDie(veryHard, "d1", 1);
+    const doubled = doubleDie(stepped, "d2");
+    expect(doubled.map(d => [d.id, d.size, d.source.kind])).toEqual([
+      ["d1", 12, DIFFICULTY_SOURCE_KIND], ["d3", 6, DIFFICULTY_SOURCE_KIND], ["d2", 12, DIFFICULTY_SOURCE_KIND],
+      ["d4", 12, DIFFICULTY_SOURCE_KIND]
+    ]);
+    const reset = unwrap(setDifficultyDice(doubled, "hard", HARD));
+    expect(reset.map(d => [d.id, d.size])).toEqual([["d5", 10], ["d6", 10]]);
+    expect(difficultyLevelOfPool(reset)).toEqual({ ok: true, value: "hard" });
+  });
+
+  it("TC-53 each level set on TC-02's other dice reads back with difficultyLevelOfPool", () => {
+    const others = buildPool([{ size: 8, source: gmcTrait }, { size: 6, source: risk }]);
+    for ( const level of DIFFICULTY_LEVELS ) {
+      expect(difficultyLevelOfPool(unwrap(setDifficultyDice(others, level, `${level} difficulty`))), level)
+        .toEqual({ ok: true, value: level });
+    }
+  });
+
+  it("dice of another kind are kept, even with a difficulty's size and label", () => {
+    const custom = buildPool([{ size: 10, source: { kind: "custom", label: HARD }, count: 2 }]);
+    const pool = unwrap(setDifficultyDice(custom, "easy", "Easy difficulty"));
+    expect(pool.map(d => [d.id, d.size, d.source.kind])).toEqual([
+      ["d1", 10, "custom"], ["d2", 10, "custom"], ["d3", 6, DIFFICULTY_SOURCE_KIND], ["d4", 6, DIFFICULTY_SOURCE_KIND]
+    ]);
+  });
+
+  it("a frozen pool is left alone, and a new pool comes back", () => {
+    const pool = Object.freeze(buildPool([{ size: 8, source: gmcTrait }, ...difficultyEntry("hard", difficultySource(HARD)).value])
+      .map(die => Object.freeze({ ...die, source: Object.freeze({ ...die.source }) })));
+    const before = structuredClone(pool);
+    const easy = unwrap(setDifficultyDice(pool, "easy", "Easy difficulty"));
+    expect(pool).toEqual(before);
+    expect(easy).not.toBe(pool);
+    expect(setDifficultyDice(pool, "epic", HARD)).toEqual({ ok: false, code: "UNKNOWN_DIFFICULTY_LEVEL" });
+    expect(pool).toEqual(before);
   });
 });

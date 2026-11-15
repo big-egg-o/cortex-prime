@@ -15,6 +15,11 @@
  * - for an add-roll naming a roll card, that poolRoll message as a PoolRollRecord, or null when it
  *   wasn't found.
  *
+ * Starting a test or contest has no message yet, so it has its own pair: checkStartRequest and
+ * dispatchStartRequest (Step 4.4 S3), which hand initialSystem what a new message starts from.
+ * expectedRoll, mayActFor and rollCardHold answer the card's and the pool builder's questions with
+ * the same rules the checks apply.
+ *
  * The checks, in order, stopping at the first that fails (ADR-025). As ADR-027 orders them, the
  * messages are looked up and the sender is checked before the revision:
  * 1. MALFORMED_REQUEST: the request's shape (see requestMalformed).
@@ -27,7 +32,7 @@
  * 4. STALE_REVISION: the request was made against another revision of the card.
  * 5. The action's own checks: CONTEST_CLOSED for every action (ADR-027 lists the closed flag among
  *    the handler's checks), then DECLINE_AFTER_ROLL for a decline once the opposition has rolled,
- *    and for a roll card POOL_ROLL_NOT_CONFIRMED and ROLL_ALREADY_ADDED.
+ *    and for a roll card POOL_ROLL_NOT_CONFIRMED, ROLL_ALREADY_ADDED and ROLL_IN_OTHER_CONTEST.
  * 6. The engine's codes, in the order the engine checks them. A roll has to be built before it can
  *    be added, so the builder's codes (CONTEST_OVERFLOW_CHOICE_IN_EXCHANGE for a roll card,
  *    INVALID_DIE_SIZE for typed effect dice) come before the add function's, CONTEST_RESOLVED
@@ -38,10 +43,12 @@
 import {
   CONTEST_SIDES, TEST_SIDES, addContestRoll, addTestRoll, applyContestHeroicSteps, applyTestHeroicSteps,
   autoApplyContestHeroicSteps, autoApplyTestHeroicSteps, chooseContestOverflow, chooseTestOverflow, closeContest,
-  closeTest, contestConsequence, contestRollFromResolution, contestRollFromTotal, giveIn, setContestHighStakes,
-  setTestHighStakes
+  closeTest, contestConsequence, contestRollFromResolution, contestRollFromTotal, createContest, createTest, giveIn,
+  setContestHighStakes, setTestHighStakes
 } from "./contest.mjs";
+import { DIFFICULTY_LEVELS } from "./outcome.mjs";
 import { fail, ok } from "./result.mjs";
+import { OVERFLOW_PENDING } from "./roll.mjs";
 
 /**
  * @template T
@@ -87,6 +94,8 @@ import { fail, ok } from "./result.mjs";
  * @property {string|null} authorId - the message's author, or null when the author is gone
  * @property {import("./types.mjs").RolledDie[]} rolled
  * @property {import("./types.mjs").Resolution|null} resolution - null until the roll is confirmed
+ * @property {string[]} [heldBy=[]] - the other contest messages, written by a GM, whose rolls name
+ *   the card; one roll card answers one test or contest in M3 (ADR-020, Step 4.4 S3 proposal review)
  */
 
 /**
@@ -345,14 +354,16 @@ function notSendersRoll(sender, poolRoll) {
  * The action's own checks, after the revision and before the engine: a closed test or contest
  * refuses every action (ADR-027); a decline is refused once the opposition has rolled, since it can
  * then only give in (rules 14 and 16, Handbook p. 19; giveIn records a decline only before the
- * opposition's first roll); and a roll card must be confirmed and not be part of this test or
- * contest already (one card is one roll).
+ * opposition's first roll); and a roll card must be confirmed, not be part of this test or contest
+ * already (one card is one roll), and not be held by another one. The last is an M3 limit, not a
+ * rule: with area attacks and area effects every target rolls against the attacker's one total
+ * (Handbook p. 191, an SFX), to revisit with SFX (ADR-020, Step 4.4 S3 proposal review).
  * @param {ContestRecord} contest
  * @param {ContestRequest} request
  * @param {object} payload
  * @param {PoolRollRecord|null} poolRoll - found, for a roll card (checked before the revision)
  * @returns {string|null} checked in this order: CONTEST_CLOSED, DECLINE_AFTER_ROLL,
- *   POOL_ROLL_NOT_CONFIRMED, ROLL_ALREADY_ADDED
+ *   POOL_ROLL_NOT_CONFIRMED, ROLL_ALREADY_ADDED, ROLL_IN_OTHER_CONTEST
  */
 function actionProblem(contest, request, payload, poolRoll) {
   if ( contest.state.closed ) return "CONTEST_CLOSED";
@@ -362,6 +373,7 @@ function actionProblem(contest, request, payload, poolRoll) {
   if ( !fromRollCard(request, payload) ) return null;
   if ( poolRoll.resolution == null ) return "POOL_ROLL_NOT_CONFIRMED";
   if ( rollsOf(contest).some(roll => roll.messageRef === payload.poolRollId) ) return "ROLL_ALREADY_ADDED";
+  if ( Array.isArray(poolRoll.heldBy) && (poolRoll.heldBy.length > 0) ) return "ROLL_IN_OTHER_CONTEST";
   return null;
 }
 
@@ -375,7 +387,7 @@ function actionProblem(contest, request, payload, poolRoll) {
  *   stakes and closing, and for a winner's choice while a contest has no winner); refuses, checked
  *   in this order: MALFORMED_REQUEST, CONTEST_NOT_FOUND, UNSUPPORTED_ACTION, POOL_ROLL_NOT_FOUND,
  *   GM_ONLY or INVALID_SIDE, NOT_YOUR_SIDE, SIDE_REQUIRED, NOT_YOUR_ROLL, STALE_REVISION,
- *   CONTEST_CLOSED, DECLINE_AFTER_ROLL, POOL_ROLL_NOT_CONFIRMED, ROLL_ALREADY_ADDED
+ *   CONTEST_CLOSED, DECLINE_AFTER_ROLL, POOL_ROLL_NOT_CONFIRMED, ROLL_ALREADY_ADDED, ROLL_IN_OTHER_CONTEST
  */
 export function checkContestRequest({ sender, request, contest, poolRoll = null } = {}) {
   if ( requestMalformed(request) ) return fail("MALFORMED_REQUEST");
@@ -501,8 +513,8 @@ function startSideWellFormed(side) {
  * test. A player starts with high stakes off, since high stakes is the GM's flag (ADR-022). The
  * sides must be exactly the flow type's sides (CONTEST_SIDES or TEST_SIDES), as the contest
  * message's model requires in M3. Only the type, the sides and high stakes are checked here; the
- * rest of a start (the difficulty and its card, the actors, the speaker) is the start dialog's
- * (Step 4.4 S3).
+ * rest of a start (the difficulty and its card, the level, the actors) is dispatchStartRequest's,
+ * which runs these checks first (Step 4.4 S3).
  * @param {{sender: RequestSender, request: {type: string, sides: RequestSide[], highStakes?: boolean}}} input
  * @returns {EngineResult<null>} null when the start may go ahead; refuses, checked in this order:
  *   MALFORMED_REQUEST (not a plain object, a type that isn't a string, sides that aren't a list of
@@ -526,4 +538,242 @@ export function checkStartRequest({ sender, request } = {}) {
   if ( (keys.length !== expected.length) || !expected.every(key => keys.includes(key)) ) return fail("INVALID_SIDE");
   if ( (highStakes !== undefined) && (typeof highStakes !== "boolean") ) return fail("INVALID_HIGH_STAKES");
   return ok(null);
+}
+
+/**
+ * One side of a start request: a RequestSide plus the side's actor and the name the card shows.
+ * @typedef {Object} StartSide
+ * @property {string} key - initiator or opposition; roller or setter
+ * @property {string|null} userId - the side's user, or null for the GM's side
+ * @property {string|null} actorUuid - the side's actor, or null
+ * @property {string} label - the name the card shows for the side; may be empty
+ */
+
+/**
+ * A request to start a test or contest (ADR-027, Step 4.4 S3 proposal review). A test has exactly
+ * one of `difficulty` (typed by hand) and `difficultyMessageId` (a roll card), and a level only with
+ * a card; a contest has none of the three.
+ * @typedef {Object} StartRequest
+ * @property {"start"} action
+ * @property {string} type - "test" or "contest"
+ * @property {StartSide[]} sides
+ * @property {boolean} [highStakes] - the GM's flag (ADR-022)
+ * @property {unknown} [difficulty] - a test's typed difficulty, checked by createTest
+ * @property {string} [difficultyMessageId] - the poolRoll message that sets a test's difficulty
+ * @property {string|null} [difficultyLevel] - with a card only: the level the card shows, or null
+ */
+
+/**
+ * What the handler knows about one actor a start request names. The handler reads the actor
+ * itself; the request never says whether the sender owns it.
+ * @typedef {Object} StartActor
+ * @property {boolean} ownedBySender - the sender has OWNER permission on the actor; only true counts
+ */
+
+/**
+ * Everything one start request is checked against.
+ * @typedef {Object} StartInput
+ * @property {RequestSender} sender
+ * @property {StartRequest} request
+ * @property {PoolRollRecord|null} [difficultyCard=null] - the roll card `difficultyMessageId` names,
+ *   or null when it wasn't found or the request names none
+ * @property {Object<string, StartActor>} [actors={}] - keyed by actor UUID, for each actor the
+ *   request names that exists; a UUID missing here means the actor wasn't found
+ */
+
+/**
+ * What an accepted start hands to initialSystem (module/data/chat/contest-mapping.mjs): the
+ * engine's starting state, the sides, and the sender as the starter; for a test also its
+ * model-only fields. A contest's value has no test-only fields at all, since initialSystem refuses
+ * them for a contest.
+ * @typedef {Object} StartWrite
+ * @property {string} type
+ * @property {ContestState|TestState} state - from createContest or createTest
+ * @property {string} startedBy - the sender's userId
+ * @property {StartSide[]} sides - new objects with exactly the StartSide fields
+ * @property {import("./types.mjs").DifficultyLevel|null} [difficultyLevel] - test only
+ * @property {string|null} [difficultyMessageRef] - test only: the card's message id, or null
+ * @property {import("./types.mjs").ContestEffect[]} [oppositionEffects] - test only: the card's
+ *   effect dice as they stand at the start, or empty
+ * @property {boolean|null} [oppositionTakeOut] - test only: whether the card's overflow choice was
+ *   the take-out; null for a typed difficulty
+ */
+
+/** A test's difficulty fields in a start request; a contest has none of them. */
+const DIFFICULTY_FIELDS = Object.freeze(["difficulty", "difficultyMessageId", "difficultyLevel"]);
+
+/**
+ * @param {unknown} side
+ * @returns {boolean} whether a side to start with is well formed (startSideWellFormed) and has an
+ *   actor that is a non-empty string or null and a label that is a string
+ */
+function startSideComplete(side) {
+  return startSideWellFormed(side) && ((side.actorUuid === null) || isNonEmptyString(side.actorUuid))
+    && (typeof side.label === "string");
+}
+
+/**
+ * Whether a start request is malformed: not a plain object, an action other than "start", sides
+ * that aren't a list of complete sides, or difficulty fields that don't fit the type. A test has
+ * exactly one of `difficulty` and `difficultyMessageId` (a non-empty string), and a level only with
+ * a card; a contest has none of the three. The fields are checked against the type only when it is
+ * test or contest, so an unknown type reaches checkStartRequest's UNSUPPORTED_ACTION. The type itself
+ * and the values the engine checks (the typed difficulty, the level, high stakes) keep their own codes.
+ * @param {unknown} request
+ * @returns {boolean}
+ */
+function startMalformed(request) {
+  if ( !isPlainObject(request) || (request.action !== "start") ) return true;
+  if ( !Array.isArray(request.sides) || ![...request.sides].every(startSideComplete) ) return true;
+  if ( request.type === "contest" ) return DIFFICULTY_FIELDS.some(field => request[field] !== undefined);
+  if ( request.type !== "test" ) return false;
+  const fromCard = request.difficultyMessageId !== undefined;
+  if ( fromCard === (request.difficulty !== undefined) ) return true;
+  return fromCard ? !isNonEmptyString(request.difficultyMessageId) : (request.difficultyLevel != null);
+}
+
+/**
+ * The difficulty card's problem for a test started from a card: it must have been found, be
+ * confirmed, and have no overflow choice open, since storing such a die as a d12 would drop the
+ * second-effect-die option (Handbook p. 21; ADR-021, Step 4.4 S3 proposal review).
+ * @param {StartRequest} request - well formed
+ * @param {PoolRollRecord|null} difficultyCard
+ * @returns {string|null} POOL_ROLL_NOT_FOUND, POOL_ROLL_NOT_CONFIRMED or OVERFLOW_PENDING; null for a
+ *   card that may set the difficulty, and for a start without a card
+ */
+function difficultyCardProblem(request, difficultyCard) {
+  if ( (request.type !== "test") || (request.difficultyMessageId === undefined) ) return null;
+  if ( difficultyCard == null ) return "POOL_ROLL_NOT_FOUND";
+  if ( difficultyCard.resolution == null ) return "POOL_ROLL_NOT_CONFIRMED";
+  if ( difficultyCard.resolution.overflow ) return OVERFLOW_PENDING;
+  return null;
+}
+
+/**
+ * The actors' problem for a start (ADR-027, Step 4.4 S3 proposal review): every actor a side names
+ * must have been found, and a player may name for their own starting side, the initiator or the
+ * roller, only an actor they own (Foundry's OWNER permission, so shared actors work). A GM may name
+ * any actor. The map is read through its own properties only, so a UUID such as "toString" isn't
+ * found.
+ * @param {RequestSender} sender
+ * @param {StartRequest} request - accepted by checkStartRequest
+ * @param {Object<string, StartActor>} actors
+ * @returns {string|null} ACTOR_NOT_FOUND for any side first, then NOT_YOUR_ACTOR; null when the
+ *   actors may be used
+ */
+function startActorProblem(sender, request, actors) {
+  const known = isPlainObject(actors) ? actors : {};
+  const found = uuid => Object.hasOwn(known, uuid) && isPlainObject(known[uuid]);
+  if ( request.sides.some(side => (side.actorUuid !== null) && !found(side.actorUuid)) ) return "ACTOR_NOT_FOUND";
+  if ( isGM(sender) ) return null;
+  const startingKey = (request.type === "test" ? TEST_SIDES : CONTEST_SIDES)[0];
+  const starting = request.sides.find(side => side.key === startingKey);
+  if ( starting.actorUuid === null ) return null;
+  return known[starting.actorUuid].ownedBySender === true ? null : "NOT_YOUR_ACTOR";
+}
+
+/**
+ * Checks and applies a request to start a test or contest on the GM's client (ADR-027, Step 4.4 S3
+ * proposal review). It runs checkStartRequest, then the rest of a start: the difficulty card, the
+ * level and the actors. A test from a roll card takes its difficulty and opposition effect dice
+ * from the stored card, never from the request (ADR-021, Step 4.4 S3 proposal review): the
+ * difficulty is the card's total (a botch gives 0, rule 9), `difficultyMessageRef` is the card's
+ * id, `oppositionEffects` are its effect dice as they stand, `oppositionTakeOut` is whether its
+ * overflow choice was the take-out, and the level is the one the request sends, or null. A typed
+ * difficulty has no level, no card reference, no opposition effect dice and an unknown take-out.
+ * A player may name, for their own starting side, only an actor they own; a GM may name any actor.
+ * @param {StartInput} input
+ * @returns {EngineResult<StartWrite>} refuses, checked in this order: MALFORMED_REQUEST (the whole
+ *   shape; the difficulty fields are checked against the type only when it is test or contest),
+ *   checkStartRequest's codes in its order, POOL_ROLL_NOT_FOUND, POOL_ROLL_NOT_CONFIRMED,
+ *   OVERFLOW_PENDING (the card's overflow choice is still open), UNKNOWN_DIFFICULTY_LEVEL,
+ *   ACTOR_NOT_FOUND, NOT_YOUR_ACTOR, then createTest's INVALID_TOTAL for a typed difficulty
+ */
+export function dispatchStartRequest({ sender, request, difficultyCard = null, actors = {} } = {}) {
+  if ( startMalformed(request) ) return fail("MALFORMED_REQUEST");
+  const checked = checkStartRequest({ sender, request });
+  if ( !checked.ok ) return checked;
+  const cardProblem = difficultyCardProblem(request, difficultyCard);
+  if ( cardProblem ) return fail(cardProblem);
+  const level = request.difficultyLevel ?? null;
+  if ( (level !== null) && !DIFFICULTY_LEVELS.includes(level) ) return fail("UNKNOWN_DIFFICULTY_LEVEL");
+  const actorProblem = startActorProblem(sender, request, actors);
+  if ( actorProblem ) return fail(actorProblem);
+
+  const { type, highStakes } = request;
+  const sides = request.sides.map(({ key, userId, actorUuid, label }) => ({ key, userId, actorUuid, label }));
+  const started = { type, startedBy: sender.userId, sides };
+  if ( type === "contest" ) return ok({ ...started, state: createContest({ highStakes }).value });
+
+  if ( request.difficultyMessageId === undefined ) {
+    const state = createTest({ difficulty: request.difficulty, highStakes });
+    if ( !state.ok ) return state;
+    return ok({
+      ...started, state: state.value, difficultyLevel: null, difficultyMessageRef: null, oppositionEffects: [],
+      oppositionTakeOut: null
+    });
+  }
+  const resolution = difficultyCard.resolution;
+  const state = createTest({ difficulty: resolution.total, highStakes });
+  if ( !state.ok ) return state;
+  return ok({
+    ...started, state: state.value, difficultyLevel: level, difficultyMessageRef: request.difficultyMessageId,
+    oppositionEffects: resolution.effectDice.map(({ id, size }) => ({ id, size })),
+    oppositionTakeOut: resolution.takeOut === true
+  });
+}
+
+/**
+ * The roll a test or contest waits for, for the card's button and the pool builder's target: a test
+ * without its roll waits for the roller against its difficulty; an open contest for the side whose
+ * turn it is, against the standing total (null before the initiator's first roll). `rollIndex` is
+ * the number of rolls the record holds, the value a roll card's flag carries for this turn.
+ * @param {ContestRecord|null} contest
+ * @returns {{side: string, toBeat: number|null, rollIndex: number}|null} null for a closed or
+ *   decided test or contest, a missing record, or a type this module doesn't know
+ */
+export function expectedRoll(contest) {
+  const state = contest?.state;
+  if ( (state == null) || state.closed ) return null;
+  if ( contest.type === "test" ) {
+    return state.roll == null ? { side: ROLLER, toBeat: state.difficulty, rollIndex: 0 } : null;
+  }
+  if ( contest.type === "contest" ) {
+    return state.status === "open" ? { side: state.turn, toBeat: state.difficulty, rollIndex: state.rolls.length } : null;
+  }
+  return null;
+}
+
+/**
+ * Whether a sender may act for a side, as the request checks decide it (ADR-027): a GM for any of
+ * the record's sides, a player only for a side whose user they are. The card shows a button only
+ * where the relay would accept the action.
+ * @param {RequestSender} sender
+ * @param {ContestRecord|null} contest
+ * @param {string} sideKey
+ * @returns {boolean} false for a key that isn't one of the record's sides, and for a missing record
+ */
+export function mayActFor(sender, contest, sideKey) {
+  if ( !Array.isArray(contest?.sides) ) return false;
+  return namedSide(sender, contest, sideKey).ok;
+}
+
+/**
+ * What a poolRoll card flagged for a test or contest offers (ADR-020, Step 4.4 S3 proposal review).
+ * The caller passes the contest message the flag names, and only one a GM wrote.
+ * - "sent": one of the record's rolls names the card, whatever the flag says;
+ * - "held": the record is open, and the flag's side and rollIndex are those of expectedRoll;
+ * - "free": anything else, a missing record or flag included.
+ * @param {ContestRecord|null} contest
+ * @param {string} poolRollId - the card's message id
+ * @param {{messageId: string, side: string, rollIndex: number}|null} flag - the card's
+ *   `flags["cortex-prime"].contest`
+ * @returns {"sent"|"held"|"free"}
+ */
+export function rollCardHold(contest, poolRollId, flag) {
+  if ( contest?.state == null ) return "free";
+  if ( isNonEmptyString(poolRollId) && rollsOf(contest).some(roll => roll.messageRef === poolRollId) ) return "sent";
+  const expected = expectedRoll(contest);
+  if ( !expected || !isPlainObject(flag) ) return "free";
+  return (flag.side === expected.side) && (flag.rollIndex === expected.rollIndex) ? "held" : "free";
 }
