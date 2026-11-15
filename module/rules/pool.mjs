@@ -4,6 +4,8 @@
  */
 
 import { stepDie } from "./dice.mjs";
+import { fail, ok } from "./result.mjs";
+import { DIE_SIZES } from "./types.mjs";
 
 const ID_PATTERN = /^d(\d+)$/;
 
@@ -46,6 +48,23 @@ export function buildPool(entries) {
     }
   }
   return pool;
+}
+
+/**
+ * Appends dice to a pool, continuing the pool's own id sequence after its highest `d<n>` id
+ * (buildPool always starts at d1). The entries take buildPool's shape, `count` and `origin`
+ * included. Unlike the older functions here it returns an EngineResult (ADR-025).
+ * @param {import("./types.mjs").PoolDie[]} pool
+ * @param {Array<{size: import("./types.mjs").DieSize, source: import("./types.mjs").DieSource,
+ *   count?: number, origin?: 'rating'|'bonus'}>} entries
+ * @returns {import("./types.mjs").EngineResult<import("./types.mjs").PoolDie[]>} a new pool;
+ *   INVALID_DIE_SIZE for an entry whose size isn't a die size, adding nothing
+ */
+export function appendToPool(pool, entries) {
+  if ( entries.some(entry => !DIE_SIZES.includes(entry?.size)) ) return fail("INVALID_DIE_SIZE");
+  const base = highestIdNumber(pool);
+  const added = buildPool(entries).map((die, i) => ({ ...die, id: `d${base + i + 1}` }));
+  return ok([...pool, ...added]);
 }
 
 /**

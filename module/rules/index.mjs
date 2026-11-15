@@ -9,10 +9,10 @@
 
 export { DIE_SIZES } from "./types.mjs";
 export { stepDie } from "./dice.mjs";
-export { buildPool, doubleDie, stepPoolDie } from "./pool.mjs";
+export { appendToPool, buildPool, doubleDie, stepPoolDie } from "./pool.mjs";
 export {
   DIFFICULTY_LEVELS, DIFFICULTY_SOURCE_KIND, applyHeroicSteps, beats, difficultyDice, difficultyEntry,
-  difficultyLevelOfPool, heroicSteps, resolveTest
+  difficultyLevelOfPool, heroicSteps, resolveTest, setDifficultyDice
 } from "./outcome.mjs";
 export {
   CONTEST_SIDES, TEST_SIDES, addContestRoll, addTestRoll, applyContestHeroicSteps, applyTestHeroicSteps,
@@ -20,7 +20,10 @@ export {
   closeTest, compareEffectDie, contestConsequence, contestRollFromResolution, contestRollFromTotal, createContest,
   createTest, decidingRolls, giveIn, setContestHighStakes, setTestHighStakes, testResult
 } from "./contest.mjs";
-export { REQUEST_ACTIONS, checkContestRequest, checkStartRequest, dispatchContestRequest } from "./contest-request.mjs";
+export {
+  REQUEST_ACTIONS, checkContestRequest, checkStartRequest, dispatchContestRequest, dispatchStartRequest, expectedRoll,
+  mayActFor, rollCardHold
+} from "./contest-request.mjs";
 export {
   OVERFLOW_PENDING, applyOverflowChoice, applyRerolls, applyResults, evaluate, largestEligible, rerollableIds,
   resolve, stepEffectDie, suggestSelection, twoHighest, unrolledEffectDie, validateSelection

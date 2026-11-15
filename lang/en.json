@@ -118,8 +118,11 @@
         "STALE_REVISION": "The card changed before your action arrived. Check it and try again.",
         "POOL_ROLL_NOT_FOUND": "That roll card no longer exists.",
         "NOT_YOUR_ROLL": "Only the roll's owner or a GM can hand that roll in.",
-        "POOL_ROLL_NOT_CONFIRMED": "Confirm the roll before handing it in.",
+        "POOL_ROLL_NOT_CONFIRMED": "That roll isn't confirmed yet. Confirm it on its card first.",
         "ROLL_ALREADY_ADDED": "That roll is already on this card.",
+        "ROLL_IN_OTHER_CONTEST": "That roll already belongs to another test or contest. Roll again for this one.",
+        "ACTOR_NOT_FOUND": "That actor no longer exists.",
+        "NOT_YOUR_ACTOR": "Your own side can only use an actor you own.",
         "INVALID_TOTAL": "A total has to be a whole number of 0 or more.",
         "INVALID_SIDE": "That side doesn't fit this test or contest.",
         "INVALID_DIE_SIZE": "Effect dice have to be a d4, d6, d8, d10 or d12.",
@@ -139,6 +142,13 @@
         "INVALID_OVERFLOW_CHOICE": "That choice isn't available, or it doesn't say which effect die past d12 it is for.",
         "INVALID_HIGH_STAKES": "High stakes can only be switched on or off.",
         "UNKNOWN_DIFFICULTY_LEVEL": "That isn't one of the difficulty levels."
+      },
+      "DifficultyLevels": {
+        "veryEasy": "Very Easy",
+        "easy": "Easy",
+        "challenging": "Challenging",
+        "hard": "Hard",
+        "veryHard": "Very Hard"
       }
     },
     "Settings": {

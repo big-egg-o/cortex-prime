@@ -32,14 +32,20 @@ function testSides() {
   ];
 }
 
-/** @returns {object} a test's model-only fields when the difficulty came from a roll card */
-function difficultyCard() {
-  return { difficultyLevel: "challenging", difficultyMessageRef: DIFFICULTY_CARD, oppositionEffects: [{ id: "e1", size: 8 }] };
+/**
+ * @param {boolean} [oppositionTakeOut=false] - whether the card's overflow choice was the take-out
+ * @returns {object} a test's model-only fields when the difficulty came from a roll card
+ */
+function difficultyCard(oppositionTakeOut = false) {
+  return {
+    difficultyLevel: "challenging", difficultyMessageRef: DIFFICULTY_CARD, oppositionEffects: [{ id: "e1", size: 8 }],
+    oppositionTakeOut
+  };
 }
 
-/** @returns {object} a test's model-only fields for a typed difficulty */
+/** @returns {object} a test's model-only fields for a typed difficulty: no card, so the take-out is unknown */
 function noCard() {
-  return { difficultyLevel: null, difficultyMessageRef: null, oppositionEffects: [] };
+  return { difficultyLevel: null, difficultyMessageRef: null, oppositionEffects: [], oppositionTakeOut: null };
 }
 
 /**
@@ -208,10 +214,30 @@ describe("a new test or contest (initialSystem)", () => {
       ok: true,
       value: {
         schemaVersion: 1, revision: 0, startedBy: PLAYER, sides: testSides(),
-        flow: { type: "test", ...state, difficultyLevel: null, difficultyMessageRef: null, oppositionEffects: [] }
+        flow: {
+          type: "test", ...state, difficultyLevel: null, difficultyMessageRef: null, oppositionEffects: [],
+          oppositionTakeOut: null
+        }
       }
     });
     expect(engineStateOf(created.value.flow)).toEqual({ ok: true, value: state });
+  });
+
+  it("RQ-035 a test started from a card stores the setter's take-out as given, true or false; left out it is null", () => {
+    const state = unwrap(createTest({ difficulty: 13 }), "createTest");
+    for ( const takeOut of [true, false] ) {
+      const created = unwrap(initialSystem({
+        type: "test", state, startedBy: PLAYER, sides: testSides(), ...difficultyCard(takeOut)
+      }), `take-out ${takeOut}`);
+      expect(created.flow).toEqual({ type: "test", ...state, ...difficultyCard(takeOut) });
+      expect(engineStateOf(created.flow)).toEqual({ ok: true, value: state });
+    }
+    const cardWithoutTakeOut = difficultyCard();
+    delete cardWithoutTakeOut.oppositionTakeOut;
+    const created = unwrap(initialSystem({
+      type: "test", state, startedBy: PLAYER, sides: testSides(), ...cardWithoutTakeOut
+    }), "take-out left out");
+    expect(created.flow.oppositionTakeOut).toBeNull();
   });
 
   it("TC-43 a test started with high stakes stores the flag", () => {
@@ -249,9 +275,9 @@ describe("a new test or contest (initialSystem)", () => {
       .toEqual(REFUSED("FLOW_TYPE_MISMATCH"));
   });
 
-  it("a contest given difficultyLevel, difficultyMessageRef or oppositionEffects is refused with FLOW_TYPE_MISMATCH", () => {
+  it("a contest given difficultyLevel, difficultyMessageRef, oppositionEffects or oppositionTakeOut is refused with FLOW_TYPE_MISMATCH", () => {
     const state = unwrap(createContest(), "createContest");
-    for ( const fields of [difficultyCard(), noCard()] ) {
+    for ( const fields of [difficultyCard(true), difficultyCard(false), noCard()] ) {
       for ( const [field, value] of Object.entries(fields) ) {
         expect(initialSystem({ type: "contest", state, startedBy: PLAYER, sides: contestSides(), [field]: value }), field)
           .toEqual(REFUSED("FLOW_TYPE_MISMATCH"));
@@ -393,6 +419,29 @@ describe("one write (systemChangesAfter)", () => {
     ]);
   });
 
+  it("RQ-035 the setter's take-out is kept through the roll, the heroic steps and high stakes, and never part of the engine state", () => {
+    const started = unwrap(createTest({ difficulty: 8 }), "createTest");
+    let stored = storedSystem(storedTestFlow(started, null, difficultyCard(true)));
+    const added = tc48State();
+    stored = write(stored, added, { rollUserId: PLAYER });
+    const stepped = unwrap(applyTestHeroicSteps(added, "e1"), "steps on e1");
+    stored = write(stored, stepped);
+    const highStakes = unwrap(setTestHighStakes(stepped, true), "high stakes on");
+    stored = write(stored, highStakes);
+
+    expect(stored.flow).toMatchObject(difficultyCard(true));
+    const read = unwrap(engineStateOf(stored.flow), "engineStateOf");
+    expect(read).not.toHaveProperty("oppositionTakeOut");
+    expect(read).toEqual(highStakes);
+  });
+
+  it("a typed difficulty's unknown take-out stays null through a write", () => {
+    const started = unwrap(createTest({ difficulty: 13 }), "createTest");
+    const before = storedSystem(storedTestFlow(started, null, noCard()));
+    const added = unwrap(addTestRoll(started, tc44Roll()), "addTestRoll");
+    expect(write(before, added, { rollUserId: PLAYER }).flow.oppositionTakeOut).toBeNull();
+  });
+
   it("TC-17 usedAgainstLoser is set through extras, kept as stored when left out, and never part of the engine state", () => {
     const state = exchange(tc17Rolls());
     let stored = storedSystem(storedContestFlow(state, TC17_USERS));
@@ -497,5 +546,20 @@ describe("guards", () => {
         "effects", "leftovers", "messageRef", "nextEffectNumber", "overflows", "side", "total", "userId"
       ]);
     }
+  });
+
+  it("TC-44 the stored test flow has exactly the documented fields, the four test-only ones included", () => {
+    const state = unwrap(createTest({ difficulty: 13 }), "createTest");
+    const created = unwrap(initialSystem({
+      type: "test", state, startedBy: PLAYER, sides: testSides(), ...difficultyCard(true)
+    }), "initialSystem");
+    const stored = write(created, unwrap(addTestRoll(state, tc44Roll()), "addTestRoll"), { rollUserId: PLAYER });
+
+    const testFlowKeys = [
+      "closed", "difficulty", "difficultyLevel", "difficultyMessageRef", "heroicAppliedTo", "heroicSteps", "highStakes",
+      "margin", "oppositionEffects", "oppositionTakeOut", "roll", "success", "type"
+    ];
+    expect(Object.keys(created.flow).sort()).toEqual(testFlowKeys);
+    expect(Object.keys(stored.flow).sort()).toEqual(testFlowKeys);
   });
 });

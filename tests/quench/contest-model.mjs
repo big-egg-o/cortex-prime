@@ -221,6 +221,33 @@ export function registerContestModelBatch(quench) {
           delete system.sides[0].userId;
           assert.isString(ContestData.checkCandidate(system));
         });
+
+        it("RQ-035 a test started from a difficulty card stores its level, card, effect dice and take-out, and reads them back", async () => {
+          const state = unwrap(createTest({ difficulty: 13 }), "createTest");
+          for ( const oppositionTakeOut of [true, false] ) {
+            const system = unwrap(initialSystem({
+              type: "test", state, startedBy: game.user.id, sides: testSides(), difficultyLevel: "hard",
+              difficultyMessageRef: foundry.utils.randomID(), oppositionEffects: [{ id: "e1", size: 12 }], oppositionTakeOut
+            }), "initialSystem");
+            assert.isNull(ContestData.checkCandidate(system), `take-out ${oppositionTakeOut}`);
+            const message = await create("contest", system);
+            assert.deepEqual(game.messages.get(message.id).system.toObject(), system, `take-out ${oppositionTakeOut}`);
+          }
+        });
+
+        it("RQ-035 a typed difficulty stores an unknown take-out as null, and checkCandidate accepts it", async () => {
+          const { system } = tc44Test();
+          assert.isNull(system.flow.oppositionTakeOut);
+          assert.isNull(ContestData.checkCandidate(system));
+          const message = await create("contest", system);
+          assert.isNull(game.messages.get(message.id).system.toObject().flow.oppositionTakeOut);
+        });
+
+        it("checkCandidate refuses a take-out that cleaning would change, such as the string \"true\"", () => {
+          const { system } = tc44Test();
+          system.flow.oppositionTakeOut = "true";
+          assert.isString(ContestData.checkCandidate(system));
+        });
       });
 
       describe("updating contest messages", () => {
@@ -305,6 +332,24 @@ export function registerContestModelBatch(quench) {
           assert.deepEqual(loaded.system.toObject(), stored);
         });
 
+        // A test stored before Step 4.4 S3 has no oppositionTakeOut. The field may be empty and has no
+        // initial value, so Foundry 14.369 fills it with null when the source is cleaned
+        // (common/data/fields.mjs, DataField#clean and DataField#getInitialValue), and no schema-version
+        // step is needed (Decisions, ADR-021, Step 4.4 S3 proposal review).
+        it("RQ-035 a test stored before oppositionTakeOut existed reads it as null, created or loaded strictly", async () => {
+          const { system, state } = tc44Test();
+          delete system.flow.oppositionTakeOut;
+          const message = await create("contest", system);
+          assert.isDefined(message, "Foundry stores the message");
+          assert.isNull(game.messages.get(message.id).system.toObject().flow.oppositionTakeOut);
+
+          const source = foundry.utils.deepClone(message.toObject());
+          delete source.system.flow.oppositionTakeOut;
+          const loaded = ChatMessage.implementation.fromSource(source, { strict: true, clean: { expand: false } });
+          assert.isNull(loaded.system.toObject().flow.oppositionTakeOut);
+          assert.deepEqual(unwrap(engineStateOf(loaded.system.toObject().flow), "engineStateOf"), state);
+        });
+
         it("migrateData leaves a current source, a partial update source and an empty source unchanged", () => {
           const full = tc17().systems[4];
           assert.deepEqual(ContestData.migrateData(foundry.utils.deepClone(full)), full);
@@ -325,7 +370,9 @@ export function registerContestModelBatch(quench) {
           assert.deepEqual(sorted(Object.keys(contest.fields)), sorted(["type", ...CONTEST_STATE_KEYS, "usedAgainstLoser"]));
           assert.deepEqual(
             sorted(Object.keys(test.fields)),
-            sorted(["type", ...TEST_STATE_KEYS, "difficultyLevel", "difficultyMessageRef", "oppositionEffects"])
+            sorted([
+              "type", ...TEST_STATE_KEYS, "difficultyLevel", "difficultyMessageRef", "oppositionEffects", "oppositionTakeOut"
+            ])
           );
           assert.deepEqual(sorted(Object.keys(contest.fields.rolls.element.fields)), sorted([...ROLL_KEYS, "userId"]));
           assert.deepEqual(sorted(Object.keys(test.fields.roll.fields)), sorted([...ROLL_KEYS, "userId"]));

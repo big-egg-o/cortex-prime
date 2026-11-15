@@ -142,6 +142,14 @@ function poolRollOf({ rolled, resolution }, authorId = P1) {
   return { authorId, rolled, resolution };
 }
 
+/** Another GM-written contest message whose rolls name a card (ADR-020, Step 4.4 S3 proposal review). */
+const OTHER_CONTEST = "contestCard00002";
+
+/** A roll card as the handler passes it in when another contest message holds it. */
+function heldElsewhere(poolRoll) {
+  return { ...poolRoll, heldBy: [OTHER_CONTEST] };
+}
+
 /** The engine's own copy of a confirmed roll card's roll. */
 function fromCard(side, { rolled, resolution }, messageRef) {
   return unwrap(contestRollFromResolution(side, rolled, resolution, messageRef), `${side} from ${messageRef}`);
@@ -388,6 +396,19 @@ describe("the check order (ADR-027)", () => {
   it("TC-15 ROLL_ALREADY_ADDED comes before the engine's CONTEST_NOT_YOUR_TURN", () => {
     expect(sendCard(PLAYER_ONE, contestRecord(tc15Opened()), CARD_I, poolRollOf(tc15I())))
       .toEqual(REFUSED("ROLL_ALREADY_ADDED"));
+  });
+
+  it("TC-44 POOL_ROLL_NOT_CONFIRMED and TC-15 ROLL_ALREADY_ADDED come before ROLL_IN_OTHER_CONTEST", () => {
+    const unconfirmed = { authorId: P1, rolled: tc15I().rolled, resolution: null, heldBy: [OTHER_CONTEST] };
+    expect(sendCard(PLAYER_ONE, contestRecord(freshContest()), CARD_I, unconfirmed))
+      .toEqual(REFUSED("POOL_ROLL_NOT_CONFIRMED"));
+    expect(sendCard(PLAYER_ONE, contestRecord(tc15Opened()), CARD_I, heldElsewhere(poolRollOf(tc15I()))))
+      .toEqual(REFUSED("ROLL_ALREADY_ADDED"));
+  });
+
+  it("TC-15 ROLL_IN_OTHER_CONTEST comes before the engine's CONTEST_NOT_YOUR_TURN", () => {
+    expect(sendCard(PLAYER_ONE, contestRecord(tc15Opened()), CARD_O, heldElsewhere(poolRollOf(tc15O()))))
+      .toEqual(REFUSED("ROLL_IN_OTHER_CONTEST"));
   });
 
   it("TC-18 DECLINE_AFTER_ROLL comes before the engine's CONTEST_NOT_YOUR_TURN and CONTEST_RESOLVED", () => {
@@ -687,6 +708,24 @@ describe("who may do what (ADR-027)", () => {
     it("TC-44 a test's roll card that is already its roll is refused with ROLL_ALREADY_ADDED", () => {
       expect(sendCard(PLAYER_ONE, testRecord(tc44()), CARD_R, poolRollOf(tc44Roll())))
         .toEqual(REFUSED("ROLL_ALREADY_ADDED"));
+    });
+
+    it("a roll card another test or contest holds is refused with ROLL_IN_OTHER_CONTEST (an M3 limit)", () => {
+      expect(sendCard(PLAYER_ONE, contestRecord(freshContest()), CARD_I, heldElsewhere(poolRollOf(tc15I()))))
+        .toEqual(REFUSED("ROLL_IN_OTHER_CONTEST"));
+      expect(sendCard(GM, testRecord(freshTest()), CARD_R, heldElsewhere(poolRollOf(tc44Roll()))))
+        .toEqual(REFUSED("ROLL_IN_OTHER_CONTEST"));
+      const held = deepFreeze({
+        sender: PLAYER_ONE, request: request("add-roll", { poolRollId: CARD_I }), contest: contestRecord(freshContest()),
+        poolRoll: heldElsewhere(poolRollOf(tc15I()))
+      });
+      expect(checkContestRequest(held)).toEqual(REFUSED("ROLL_IN_OTHER_CONTEST"));
+    });
+
+    it("heldBy left out or empty refuses nothing", () => {
+      expect(sendCard(PLAYER_ONE, contestRecord(freshContest()), CARD_I, poolRollOf(tc15I()))).toMatchObject({ ok: true });
+      expect(sendCard(PLAYER_ONE, contestRecord(freshContest()), CARD_I, { ...poolRollOf(tc15I()), heldBy: [] }))
+        .toMatchObject({ ok: true });
     });
   });
 

@@ -4,6 +4,7 @@
  * @module rules/outcome
  */
 
+import { appendToPool } from "./pool.mjs";
 import { fail, ok } from "./result.mjs";
 import { OVERFLOW_PENDING, stepEffectDie } from "./roll.mjs";
 
@@ -117,6 +118,27 @@ export function difficultyLevelOfPool(pool) {
   const dice = (Array.isArray(pool) ? pool : []).filter(d => d?.source?.kind === DIFFICULTY_SOURCE_KIND);
   if ( dice.length !== 2 || dice[0].size !== dice[1].size ) return ok(null);
   return ok(DIFFICULTY_LEVELS.find(level => DIFFICULTY_DIE_SIZES.get(level) === dice[0].size) ?? null);
+}
+
+/**
+ * The pool builder's difficulty helper (rules 4-5, TC-01, TC-02): removes every die with the
+ * difficulty source kind, an overflow d6 from stepping one up and a doubled one included, and
+ * appends the level's pair with the source `{kind: DIFFICULTY_SOURCE_KIND, label}`. The new dice
+ * continue the given pool's ids, so a replaced pair never reuses the old pair's ids, and
+ * difficultyLevelOfPool reads the level back (TC-53).
+ * @param {import("./types.mjs").PoolDie[]} pool
+ * @param {import("./types.mjs").DifficultyLevel} level
+ * @param {string} label - the dice's label, such as "Hard difficulty"
+ * @returns {import("./types.mjs").EngineResult<import("./types.mjs").PoolDie[]>} a new pool;
+ *   UNKNOWN_DIFFICULTY_LEVEL as in difficultyDice
+ */
+export function setDifficultyDice(pool, level, label) {
+  const entries = difficultyEntry(level, { kind: DIFFICULTY_SOURCE_KIND, label });
+  if ( !entries.ok ) return entries;
+  const appended = appendToPool(pool, entries.value);
+  if ( !appended.ok ) return appended;
+  const replaced = new Set(pool.filter(die => die?.source?.kind === DIFFICULTY_SOURCE_KIND));
+  return ok(appended.value.filter(die => !replaced.has(die)));
 }
 
 /**

@@ -64,6 +64,15 @@ describe("language strings for test and contest codes", () => {
     }
   });
 
+  it("the scan finds the codes a start and Step 4.4 S3 add, and those a start reuses", () => {
+    for ( const code of [
+      "ACTOR_NOT_FOUND", "NOT_YOUR_ACTOR", "ROLL_IN_OTHER_CONTEST", "UNKNOWN_DIFFICULTY_LEVEL", "POOL_ROLL_NOT_FOUND",
+      "POOL_ROLL_NOT_CONFIRMED", "OVERFLOW_PENDING", "INVALID_TOTAL"
+    ] ) {
+      expect(REQUEST_CODES, code).toContain(code);
+    }
+  });
+
   it.each(REQUEST_CODES)("%s has a string", code => {
     const text = contestErrors()[code];
     expect(typeof text, code).toBe("string");
@@ -92,5 +101,23 @@ describe("language strings for test and contest codes", () => {
   it("every contest string belongs to a code that can be returned, so none is left behind", () => {
     const known = new Set([...REQUEST_CODES, ...TRANSPORT_CODES]);
     expect(Object.keys(contestErrors()).filter(code => !known.has(code))).toEqual([]);
+  });
+});
+
+describe("language strings for the difficulty levels (TC-01; the pool builder's helper and the start dialog)", () => {
+  /** @returns {Record<string, string>} the difficulty level labels of lang/en.json */
+  function levelLabels() {
+    const lang = JSON.parse(readFileSync(resolve(ROOT_DIR, "lang/en.json"), "utf8"));
+    return lang.CORTEX?.Contest?.DifficultyLevels ?? {};
+  }
+
+  it.each(rules.DIFFICULTY_LEVELS)("%s has a label", level => {
+    const text = levelLabels()[level];
+    expect(typeof text, level).toBe("string");
+    expect(text.trim().length, level).toBeGreaterThan(0);
+  });
+
+  it("there is a label for each of the five levels and for nothing else", () => {
+    expect(Object.keys(levelLabels()).sort()).toEqual([...rules.DIFFICULTY_LEVELS].sort());
   });
 });
