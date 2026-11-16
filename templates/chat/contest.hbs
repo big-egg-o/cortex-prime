@@ -1,19 +1,127 @@
 <div class="cortex-prime contest-card">
-  <h4 class="cp-contest-title">{{ title }}</h4>
+  <h4 class="cp-contest-title">
+    <span>{{ title }}</span>
+    {{#if highStakes}}<span class="cp-contest-badge cp-high-stakes">{{ localize "CORTEX.Contest.Card.HighStakes" }}</span>{{/if}}
+  </h4>
+
   <ul class="cp-contest-sides">
     {{#each sides}}
-    <li data-side="{{ this.key }}">{{ this.label }}</li>
+    <li data-side="{{ this.key }}" class="{{#if this.expected}}cp-expected{{/if}} {{#if this.winner}}cp-winner{{/if}}">
+      <span class="cp-side-role">{{ this.role }}</span>
+      <span class="cp-side-label">{{ this.label }}</span>
+    </li>
     {{/each}}
   </ul>
+
+  {{#if difficulty}}
+  <div class="cp-contest-difficulty">
+    <p>
+      {{ localize "CORTEX.Contest.Card.Difficulty" }} <strong>{{ difficulty.total }}</strong>
+      {{#if difficulty.level}}<span class="cp-contest-level">({{ difficulty.level.label }})</span>{{/if}}
+    </p>
+    <p class="cp-contest-origin">
+      {{#if difficulty.messageId}}
+      <a data-action="show-roll" data-roll-id="{{ difficulty.messageId }}">{{ localize (concat "CORTEX.Contest.Card.DifficultyOrigin." difficulty.origin) }}</a>
+      {{else}}
+      {{ localize (concat "CORTEX.Contest.Card.DifficultyOrigin." difficulty.origin) }}
+      {{/if}}
+    </p>
+    {{#if difficulty.effects.length}}
+    <p class="cp-contest-opposition">
+      {{ localize "CORTEX.Contest.Card.OppositionEffects" }}
+      {{#each difficulty.effects}}<span class="cp-die">d{{ this.size }}</span>{{/each}}
+    </p>
+    {{/if}}
+    {{#if difficulty.takeOut}}
+    <p class="cp-contest-take-out">{{ localize "CORTEX.Contest.Card.OppositionTakeOut" }}</p>
+    {{/if}}
+  </div>
+  {{/if}}
+
+  {{#if rolls.length}}
+  <ol class="cp-contest-rolls">
+    {{#each rolls}}
+    <li data-side="{{ this.side }}" class="{{#if this.standing}}cp-standing{{/if}}">
+      <span class="cp-roll-side">{{ this.label }}</span>
+      <strong class="cp-roll-total">{{ this.total }}</strong>
+      <span class="cp-roll-effects">
+        {{#each this.effects}}<span class="cp-die {{#if this.overflowOpen}}cp-overflow-open{{/if}}"
+          {{#if this.overflowOpen}}data-tooltip="CORTEX.Contest.Card.OverflowOpen"{{/if}}>d{{ this.size }}{{#if this.overflowOpen}}+{{/if}}</span>{{/each}}
+      </span>
+      <span class="cp-roll-origin">
+        {{#if this.messageId}}
+        <a data-action="show-roll" data-roll-id="{{ this.messageId }}">{{ localize (concat "CORTEX.Contest.Card.RollOrigin." this.origin) }}</a>
+        {{else}}
+        {{ localize (concat "CORTEX.Contest.Card.RollOrigin." this.origin) }}
+        {{/if}}
+      </span>
+    </li>
+    {{/each}}
+  </ol>
+  {{/if}}
+
+  {{#unless isTest}}
+  {{#if (eq status.key "waiting")}}
   {{#if toBeat includeZero=true}}
   <p class="cp-contest-to-beat">{{ localize "CORTEX.Contest.Card.ToBeat" }} <strong>{{ toBeat }}</strong></p>
   {{/if}}
+  {{/if}}
+  {{/unless}}
+
   <p class="cp-contest-status" data-status="{{ status.key }}">{{ status.label }}</p>
-  {{#if button}}
+
+  {{#if outcome}}
+  <div class="cp-contest-outcome">
+    {{#if isTest}}
+    <p class="cp-outcome-line">
+      {{#if outcome.success}}
+      <strong>{{ localize "CORTEX.Contest.Card.Success" }}</strong>
+      {{else}}
+      <strong>{{ localize "CORTEX.Contest.Card.Failure" }}</strong>
+      {{/if}}
+      <span>{{ localize "CORTEX.Contest.Card.Margin" margin=outcome.margin }}</span>
+    </p>
+    {{else}}
+    <p class="cp-outcome-line">
+      <strong>{{ localize (concat "CORTEX.Contest.Card.Ending." outcome.ending) side=outcome.label }}</strong>
+      {{#if outcome.margin includeZero=true}}<span>{{ localize "CORTEX.Contest.Card.Margin" margin=outcome.margin }}</span>{{/if}}
+    </p>
+    {{/if}}
+    {{#if outcome.heroicSteps}}
+    <p><span class="cp-contest-badge cp-heroic">{{ localize "CORTEX.Contest.Card.Heroic" steps=outcome.heroicSteps }}</span></p>
+    {{/if}}
+    {{#if outcome.pending}}
+    <p class="cp-contest-pending">{{ localize (concat "CORTEX.Contest.Card.Pending." outcome.pending) }}</p>
+    {{/if}}
+  </div>
+  {{/if}}
+
   <div class="cp-controls">
+    {{#if button}}
     <button type="button" data-action="roll-for-contest" data-side="{{ button.side }}" data-roll-index="{{ button.rollIndex }}">
       <i class="fa-solid fa-dice" inert></i><span>{{ button.label }}</span>
     </button>
+    {{/if}}
+    {{#if controls.total}}
+    <button type="button" data-action="enter-total" data-side="{{ controls.total.side }}">
+      <i class="fa-solid fa-keyboard" inert></i><span>{{ localize "CORTEX.Contest.Card.EnterTotal" }}</span>
+    </button>
+    {{/if}}
+    {{#if controls.giveIn}}
+    <button type="button" data-action="give-in" data-side="{{ controls.giveIn.side }}" data-request="{{ controls.giveIn.action }}">
+      <i class="fa-solid fa-flag" inert></i><span>{{ controls.giveIn.label }}</span>
+    </button>
+    {{/if}}
+    {{#if controls.highStakes}}
+    <button type="button" data-action="toggle-high-stakes" data-value="{{ controls.highStakes.value }}">
+      <i class="fa-solid fa-triangle-exclamation" inert></i>
+      <span>{{#if controls.highStakes.value}}{{ localize "CORTEX.Contest.Card.HighStakesOff" }}{{else}}{{ localize "CORTEX.Contest.Card.HighStakesOn" }}{{/if}}</span>
+    </button>
+    {{/if}}
+    {{#if controls.close}}
+    <button type="button" data-action="close-contest">
+      <i class="fa-solid fa-lock" inert></i><span>{{ localize "CORTEX.Contest.Card.Close" }}</span>
+    </button>
+    {{/if}}
   </div>
-  {{/if}}
 </div>

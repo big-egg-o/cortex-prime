@@ -22,7 +22,7 @@ export {
 } from "./contest.mjs";
 export {
   REQUEST_ACTIONS, checkContestRequest, checkStartRequest, dispatchContestRequest, dispatchStartRequest, expectedRoll,
-  mayActFor, rollCardHold
+  mayActFor, offeredActions, rollCardHold
 } from "./contest-request.mjs";
 export {
   OVERFLOW_PENDING, applyOverflowChoice, applyRerolls, applyResults, evaluate, largestEligible, rerollableIds,

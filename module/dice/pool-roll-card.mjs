@@ -260,8 +260,8 @@ export function preparePoolRollCardContext(message) {
 
   // A card rolled for a test or contest (ADR-020, Step 4.4 S3): while held or once sent, its
   // overflow choice is made on the test or contest (RQ-018, RQ-026), and a held, resolved card can
-  // be sent; an open overflow goes with it. The effect-die steps stay, for SFX; locking a sent
-  // card is S4a's.
+  // be sent; an open overflow goes with it. A held card keeps its effect-die steps, for SFX; a sent
+  // card is locked, since its effect dice are on the test or contest now (Step 4.4 S4a).
   const hold = holdOf(message);
   const contestHold = hold === "free" ? null : {
     state: hold, note: game.i18n.localize(hold === "held" ? "CORTEX.Chat.Contest.Held" : "CORTEX.Chat.Contest.Sent")
@@ -275,7 +275,8 @@ export function preparePoolRollCardContext(message) {
   let overflowChoice = null;
   if ( resolvedState && canEdit && !botch && !system.resolution.takeOut ) {
     const overflow = system.resolution.overflow;
-    if ( !overflow ) {
+    if ( hold === "sent" ) effectControls = null;
+    else if ( !overflow ) {
       effectControls = system.resolution.effectDice.map(entry => ({ effectId: entry.id, size: entry.size }));
     } else if ( !contestHold ) {
       overflowChoice = {

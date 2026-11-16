@@ -12,7 +12,9 @@ import { onRenderPoolRollMessage, preloadPoolRollCardTemplate } from "./dice/poo
 import { togglePoolBuilder } from "./apps/pool-builder.mjs";
 import { registerSettings } from "./config/settings.mjs";
 import { registerContestQuery } from "./contest/relay.mjs";
-import { onRenderContestMessage, preloadContestCardTemplate, refreshRollCards } from "./contest/contest-card.mjs";
+import {
+  onRenderContestMessage, preloadContestCardTemplate, refreshContestCards, refreshRollCards
+} from "./contest/contest-card.mjs";
 import { startContestContextOption } from "./contest/start-dialog.mjs";
 import GameConfigApp from "./apps/game-config-app.mjs";
 import CharacterSheet from "./apps/character-sheet.mjs";
@@ -47,6 +49,8 @@ Hooks.once("init", () => {
   // A held roll card turns sent or free on every client when its test or contest changes or goes.
   Hooks.on("updateChatMessage", refreshRollCards);
   Hooks.on("deleteChatMessage", refreshRollCards);
+  // A contest card shows "card deleted" on every client when a roll card it names goes.
+  Hooks.on("deleteChatMessage", refreshContestCards);
   Hooks.on("getChatMessageContextOptions", (_app, options) => options.push(startContestContextOption()));
 
   // "P" isn't used by any core keybinding in 14.369 (checked the whole client bundle) and

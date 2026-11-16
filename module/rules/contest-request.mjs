@@ -18,7 +18,8 @@
  * Starting a test or contest has no message yet, so it has its own pair: checkStartRequest and
  * dispatchStartRequest (Step 4.4 S3), which hand initialSystem what a new message starts from.
  * expectedRoll, mayActFor and rollCardHold answer the card's and the pool builder's questions with
- * the same rules the checks apply.
+ * the same rules the checks apply, and offeredActions says which controls a card may show a sender
+ * by running the dispatcher itself (Step 4.4 S4a).
  *
  * The checks, in order, stopping at the first that fails (ADR-025). As ADR-027 orders them, the
  * messages are looked up and the sender is checked before the revision:
@@ -776,4 +777,43 @@ export function rollCardHold(contest, poolRollId, flag) {
   const expected = expectedRoll(contest);
   if ( !expected || !isPlainObject(flag) ) return "free";
   return (flag.side === expected.side) && (flag.rollIndex === expected.rollIndex) ? "held" : "free";
+}
+
+/**
+ * What a test or contest card may offer a sender now (ADR-027, Step 4.4 S4a proposal review). Each
+ * candidate action is run through dispatchContestRequest with the record's own revision, and only
+ * an accepted one is offered, so the card never shows what the relay would refuse:
+ * - `roll`: the roll the record waits for (expectedRoll), when the sender may act for that side; a
+ *   typed total is offered with it;
+ * - `giveIn`: the side the sender may give in for, with the action to send: "decline" while the
+ *   opposition hasn't rolled (the engine records a decline then, TC-E02), "give-in" afterwards. The
+ *   opposition may decline before the initiator's first roll too (TC-18b). At most one of the two
+ *   is ever accepted. A test has none, and neither has the initiator before the first roll;
+ * - `highStakes` and `close`: whether the sender may change the flag and close the card (the GM's,
+ *   until the card is closed; ADR-022).
+ * @param {RequestSender} sender
+ * @param {ContestRecord|null} contest
+ * @returns {{roll: {side: string, toBeat: number|null, rollIndex: number}|null,
+ *   giveIn: {side: string, action: "give-in"|"decline"}|null, highStakes: boolean, close: boolean}}
+ *   new objects; nothing is offered for a missing record
+ */
+export function offeredActions(sender, contest) {
+  const offered = { roll: null, giveIn: null, highStakes: false, close: false };
+  if ( (contest?.state == null) || !Array.isArray(contest.sides) ) return offered;
+  const accepted = (action, payload) => dispatchContestRequest({
+    sender, contest, request: { action, messageId: "offered", revision: contest.revision, payload }
+  }).ok;
+
+  const expected = expectedRoll(contest);
+  if ( expected && mayActFor(sender, contest, expected.side) ) offered.roll = expected;
+  if ( contest.type === "contest" ) {
+    if ( accepted("decline", {}) ) offered.giveIn = { side: DECLINING_SIDE, action: "decline" };
+    else {
+      const side = contest.sides.find(s => accepted("give-in", { side: s.key }));
+      if ( side ) offered.giveIn = { side: side.key, action: "give-in" };
+    }
+  }
+  offered.highStakes = accepted("set-high-stakes", { highStakes: !contest.state.highStakes });
+  offered.close = accepted("close", {});
+  return offered;
 }

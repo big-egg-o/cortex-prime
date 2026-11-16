@@ -59,7 +59,7 @@
       },
       "Contest": {
         "Held": "This roll waits for its test or contest: send it there. A choice for an effect die past d12 is made on that card.",
-        "Sent": "This roll is on its test or contest card; a choice for an effect die past d12 is made there.",
+        "Sent": "This roll is on its test or contest card, and so are its effect dice now. A choice for an effect die past d12 is made there.",
         "Send": "Send to the card"
       }
     },
@@ -170,7 +170,61 @@
         "RollToBeat": "Roll to beat {total}",
         "Waiting": "Waiting for {side}",
         "Decided": "Decided",
-        "Closed": "Closed"
+        "Closed": "Closed",
+        "HighStakes": "High stakes",
+        "Roles": {
+          "roller": "Roller",
+          "setter": "Setter",
+          "initiator": "Initiator",
+          "opposition": "Opposition"
+        },
+        "Difficulty": "Difficulty:",
+        "DifficultyOrigin": {
+          "card": "From a roll",
+          "deleted": "From a roll (card deleted)",
+          "typed": "Entered by hand"
+        },
+        "OppositionEffects": "Opposition's effect dice:",
+        "OppositionTakeOut": "The setter chose the take-out or victory for an effect die past d12.",
+        "RollOrigin": {
+          "card": "Roll card",
+          "deleted": "Card deleted",
+          "typed": "Entered by hand"
+        },
+        "OverflowOpen": "Past d12: its choice is still open.",
+        "Success": "Success",
+        "Failure": "Failure",
+        "Margin": "Margin: {margin}",
+        "Ending": {
+          "won": "{side} wins",
+          "gaveIn": "{side} wins: the other side gave in",
+          "declined": "{side} wins: the opposition declined"
+        },
+        "Heroic": "Heroic success: {steps} step(s) up",
+        "Pending": {
+          "heroic": "Waiting: the die for the heroic steps hasn't been picked yet.",
+          "overflow": "Waiting: a choice for an effect die past d12 is still open."
+        },
+        "EnterTotal": "Enter a total",
+        "GiveIn": "Give in",
+        "Decline": "Decline to oppose",
+        "HighStakesOn": "Set high stakes",
+        "HighStakesOff": "Clear high stakes",
+        "Close": "Close",
+        "Confirm": {
+          "GiveIn": {
+            "Title": "Give in",
+            "Text": "Give in? The other side wins, and this can't be undone."
+          },
+          "Decline": {
+            "Title": "Decline to oppose",
+            "Text": "Decline to oppose? The initiator wins, and this can't be undone."
+          },
+          "Close": {
+            "Title": "Close",
+            "Text": "Close this card? Nothing on it can be changed afterwards."
+          }
+        }
       },
       "Start": {
         "Title": "Start a test or contest",
@@ -191,6 +245,13 @@
         "CardOption": "{speaker}: {total}",
         "HighStakes": "High stakes",
         "Submit": "Start"
+      },
+      "Total": {
+        "Title": "Enter a total",
+        "Total": "Total",
+        "EffectDice": "Effect dice",
+        "EffectDiceHint": "How many effect dice of each size go with the total. Leave them at 0 for none.",
+        "Submit": "Send"
       }
     },
     "Settings": {

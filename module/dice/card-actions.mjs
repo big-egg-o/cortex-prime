@@ -256,7 +256,12 @@ export async function applyCardChange(message, change) {
   if ( !canEditPoolRollCard(message) ) return;
 
   if ( change.action === "confirm" ) return confirm(message, message.system);
-  if ( change.action === "step-effect-die" ) return stepEffectDieChange(message, change);
+  if ( change.action === "step-effect-die" ) {
+    // A card sent to a test or contest is locked: its effect dice are on that card now, which owns
+    // its copy (ADR-027; ADR-020, Step 4.4 S4a proposal review). A held card still steps, for SFX.
+    if ( holdOf(message) === "sent" ) return;
+    return stepEffectDieChange(message, change);
+  }
   if ( change.action === "overflow-choice" ) {
     // A card held for, or sent to, a test or contest makes its overflow choice there (RQ-018,
     // RQ-026): a leftover taken here couldn't be told apart later (ADR-028, Step 4.3.4
