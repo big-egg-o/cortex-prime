@@ -244,13 +244,14 @@ async function confirmed(key) {
 
 /**
  * Scrolls this client's chat log to a roll card. The chat log has no method for it (14.369
- * client/applications/sidebar/tabs/chat.mjs), so the message's element is scrolled into view.
+ * client/applications/sidebar/tabs/chat.mjs), so the message's element is scrolled into view. The
+ * link carries the id as `data-roll-id`, so only the message itself has `data-message-id`.
  * @param {HTMLElement} from - an element inside the chat log that shows the contest card
  * @param {string} messageId
  */
 function showRollCard(from, messageId) {
   const log = from.closest(".chat-log") ?? document;
-  log.querySelector(`[data-message-id="${CSS.escape(messageId)}"]`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+  log.querySelector(`.chat-message[data-message-id="${CSS.escape(messageId)}"]`)?.scrollIntoView({ behavior: "smooth", block: "center" });
 }
 
 /**
@@ -260,7 +261,7 @@ function showRollCard(from, messageId) {
  * @returns {Promise<unknown>}
  */
 async function onCardClick(message, target) {
-  const { action, side, request, messageId, value } = target.dataset;
+  const { action, side, request, rollId, value } = target.dataset;
   switch ( action ) {
     case "roll-for-contest":
       return openPoolBuilderFor({ messageId: message.id, side, rollIndex: Number(target.dataset.rollIndex) });
@@ -272,7 +273,7 @@ async function onCardClick(message, target) {
     case "close-contest":
       if ( !(await confirmed("Close")) ) return null;
       return sendCardAction(message, "close", {});
-    case "show-roll": return showRollCard(target, messageId);
+    case "show-roll": return showRollCard(target, rollId);
     default: return null;
   }
 }

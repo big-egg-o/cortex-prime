@@ -21,7 +21,7 @@
     </p>
     <p class="cp-contest-origin">
       {{#if difficulty.messageId}}
-      <a data-action="show-roll" data-message-id="{{ difficulty.messageId }}">{{ localize (concat "CORTEX.Contest.Card.DifficultyOrigin." difficulty.origin) }}</a>
+      <a data-action="show-roll" data-roll-id="{{ difficulty.messageId }}">{{ localize (concat "CORTEX.Contest.Card.DifficultyOrigin." difficulty.origin) }}</a>
       {{else}}
       {{ localize (concat "CORTEX.Contest.Card.DifficultyOrigin." difficulty.origin) }}
       {{/if}}
@@ -50,7 +50,7 @@
       </span>
       <span class="cp-roll-origin">
         {{#if this.messageId}}
-        <a data-action="show-roll" data-message-id="{{ this.messageId }}">{{ localize (concat "CORTEX.Contest.Card.RollOrigin." this.origin) }}</a>
+        <a data-action="show-roll" data-roll-id="{{ this.messageId }}">{{ localize (concat "CORTEX.Contest.Card.RollOrigin." this.origin) }}</a>
         {{else}}
         {{ localize (concat "CORTEX.Contest.Card.RollOrigin." this.origin) }}
         {{/if}}
