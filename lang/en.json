@@ -205,6 +205,39 @@
           "heroic": "Waiting: the die for the heroic steps hasn't been picked yet.",
           "overflow": "Waiting: a choice for an effect die past d12 is still open."
         },
+        "End": {
+          "Heroic": "Heroic success: pick the effect die that takes the {steps} step(s) up.",
+          "Overflow": "An effect die is past d12. Choose one:",
+          "Leftover": "Add the leftover d{size} as an effect die",
+          "NewDie": "Add a new d{size} effect die",
+          "TakeOut": "Take-out or victory",
+          "Pick": "Effect dice used against the loser:",
+          "Use": "Use against the loser",
+          "ClosedEarly": "Closed before its end choices were made."
+        },
+        "Result": {
+          "Effects": "Effect dice:",
+          "TakeOut": "The roller chose the take-out or victory for an effect die past d12."
+        },
+        "Consequence": {
+          "Title": "Consequence",
+          "Preview": "Preview",
+          "PreviewHint": "With every effect die used against the loser. The winner hasn't picked yet.",
+          "Against": "against d{size}:",
+          "AgainstNone": "against no effect die:",
+          "Complication": "a d{size} complication",
+          "SteppedDown": "a d{size} complication (stepped down)",
+          "SteppedAway": "no complication (a d4, stepped down)",
+          "TakesOut": "takes the loser out",
+          "TakenOut": "{side} is taken out.",
+          "AvoidWithPP": "One PP may avoid this. The loser then takes instead:",
+          "NoDice": "No effect die is used against the loser.",
+          "GaveIn": "No complication.",
+          "MayEarnPP": "{side} gave in after rolling and may earn a PP.",
+          "RematchBlocked": "{side} can't start another contest against the same opponent straight away.",
+          "WinnerEffects": "The winner's effect dice:",
+          "Unrolled": "No dice were rolled. If an effect die is needed, it is the largest die of the initiator's pool."
+        },
         "EnterTotal": "Enter a total",
         "GiveIn": "Give in",
         "Decline": "Decline to oppose",

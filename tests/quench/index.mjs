@@ -14,6 +14,7 @@ import { registerCharacterBatch } from "./character.mjs";
 import { registerCharacterSheetBatch } from "./character-sheet.mjs";
 import { registerChatBatch } from "./chat.mjs";
 import { registerContestCardBatch } from "./contest-card.mjs";
+import { registerContestEndingBatch } from "./contest-ending.mjs";
 import { registerContestModelBatch } from "./contest-model.mjs";
 import { registerContestRelayBatch } from "./contest-relay.mjs";
 import { registerContestStartBatch } from "./contest-start.mjs";
@@ -52,6 +53,7 @@ export function registerQuenchBatches(quench) {
   registerContestRelayBatch(quench);
   registerContestStartBatch(quench);
   registerContestCardBatch(quench);
+  registerContestEndingBatch(quench);
   registerGameConfigBatch(quench);
 
   quench.registerBatch(

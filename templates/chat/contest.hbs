@@ -90,8 +90,134 @@
     {{#if outcome.heroicSteps}}
     <p><span class="cp-contest-badge cp-heroic">{{ localize "CORTEX.Contest.Card.Heroic" steps=outcome.heroicSteps }}</span></p>
     {{/if}}
-    {{#if outcome.pending}}
+    {{#if closedEarly}}
+    <p class="cp-contest-pending">{{ localize "CORTEX.Contest.Card.End.ClosedEarly" }}</p>
+    {{else}}
+    {{#if outcome.pending}}{{#unless end.heroic}}{{#unless end.overflows.length}}
     <p class="cp-contest-pending">{{ localize (concat "CORTEX.Contest.Card.Pending." outcome.pending) }}</p>
+    {{/unless}}{{/unless}}{{/if}}
+    {{/if}}
+  </div>
+  {{/if}}
+
+  {{#if end.heroic}}
+  <div class="cp-contest-end cp-end-heroic">
+    <p>{{ localize "CORTEX.Contest.Card.End.Heroic" steps=end.heroic.steps }}</p>
+    <div class="cp-controls">
+      {{#each end.heroic.dice}}
+      <button type="button" data-action="apply-heroic-steps" data-effect-id="{{ this.effectId }}">
+        <span class="cp-die">d{{ this.size }}</span>
+      </button>
+      {{/each}}
+    </div>
+  </div>
+  {{/if}}
+
+  {{#each end.overflows}}
+  <div class="cp-contest-end cp-end-overflow" data-effect-id="{{ this.effectId }}">
+    <p>{{ localize "CORTEX.Contest.Card.End.Overflow" }}</p>
+    <div class="cp-controls">
+      {{#each this.leftovers}}
+      <button type="button" data-action="choose-overflow" data-effect-id="{{ ../effectId }}" data-kind="leftover" data-die-id="{{ this.dieId }}">
+        <span>{{ localize "CORTEX.Contest.Card.End.Leftover" size=this.size }}</span>
+      </button>
+      {{/each}}
+      <button type="button" data-action="choose-overflow" data-effect-id="{{ this.effectId }}" data-kind="new-d6">
+        <span>{{ localize "CORTEX.Contest.Card.End.NewDie" size=this.newDie }}</span>
+      </button>
+      {{#if this.takeOut}}
+      <button type="button" data-action="choose-overflow" data-effect-id="{{ this.effectId }}" data-kind="take-out">
+        <span>{{ localize "CORTEX.Contest.Card.End.TakeOut" }}</span>
+      </button>
+      {{/if}}
+    </div>
+  </div>
+  {{/each}}
+
+  {{#if end.pick}}
+  <div class="cp-contest-end cp-end-pick">
+    <p>{{ localize "CORTEX.Contest.Card.End.Pick" }}</p>
+    <div class="cp-pick-dice">
+      {{#each end.pick.dice}}
+      <label><input type="checkbox" data-effect-id="{{ this.effectId }}" {{#if this.checked}}checked{{/if}}><span class="cp-die">d{{ this.size }}</span></label>
+      {{/each}}
+    </div>
+    <div class="cp-controls">
+      <button type="button" data-action="use-against-loser">
+        <span>{{ localize "CORTEX.Contest.Card.End.Use" }}</span>
+      </button>
+    </div>
+  </div>
+  {{/if}}
+
+  {{#if result}}
+  <div class="cp-contest-result">
+    {{#if result.effects.length}}
+    <p>
+      {{ localize "CORTEX.Contest.Card.Result.Effects" }}
+      {{#each result.effects}}<span class="cp-die">d{{ this.size }}</span>{{/each}}
+    </p>
+    {{/if}}
+    {{#if result.takeOut}}
+    <p class="cp-contest-take-out">{{ localize "CORTEX.Contest.Card.Result.TakeOut" }}</p>
+    {{/if}}
+  </div>
+  {{/if}}
+
+  {{#if consequence}}
+  <div class="cp-contest-consequence" data-ending="{{ consequence.ending }}">
+    <p class="cp-consequence-title">
+      <strong>{{ localize "CORTEX.Contest.Card.Consequence.Title" }}</strong>
+      {{#if consequence.preview}}<span class="cp-contest-badge">{{ localize "CORTEX.Contest.Card.Consequence.Preview" }}</span>{{/if}}
+    </p>
+    {{#if consequence.preview}}
+    <p class="cp-contest-origin">{{ localize "CORTEX.Contest.Card.Consequence.PreviewHint" }}</p>
+    {{/if}}
+
+    {{#if (eq consequence.ending "won")}}
+    {{#if consequence.takenOut}}
+    <p class="cp-contest-take-out"><strong>{{ localize "CORTEX.Contest.Card.Consequence.TakenOut" side=consequence.loserLabel }}</strong></p>
+    <p>
+      {{ localize "CORTEX.Contest.Card.Consequence.AvoidWithPP" }}
+      {{#each consequence.avoidWithPP}}<span class="cp-die">d{{ this.size }}</span>{{/each}}
+    </p>
+    {{/if}}
+    {{#if consequence.comparisons.length}}
+    <ul class="cp-consequence-lines">
+      {{#each consequence.comparisons}}
+      <li data-effect-id="{{ this.effectId }}">
+        <span class="cp-die">d{{ this.winnerDie }}</span>
+        {{#if this.loserDie}}{{ localize "CORTEX.Contest.Card.Consequence.Against" size=this.loserDie }}{{else}}{{ localize "CORTEX.Contest.Card.Consequence.AgainstNone" }}{{/if}}
+        {{#if this.takesOut}}
+        {{ localize "CORTEX.Contest.Card.Consequence.TakesOut" }}
+        {{else if this.complication}}
+        {{#if this.steppedDown}}{{ localize "CORTEX.Contest.Card.Consequence.SteppedDown" size=this.complication }}{{else}}{{ localize "CORTEX.Contest.Card.Consequence.Complication" size=this.complication }}{{/if}}
+        {{else}}
+        {{ localize "CORTEX.Contest.Card.Consequence.SteppedAway" }}
+        {{/if}}
+      </li>
+      {{/each}}
+    </ul>
+    {{else}}
+    {{#unless consequence.takenOut}}<p>{{ localize "CORTEX.Contest.Card.Consequence.NoDice" }}</p>{{/unless}}
+    {{/if}}
+    {{/if}}
+
+    {{#if (eq consequence.ending "gaveIn")}}
+    <p>{{ localize "CORTEX.Contest.Card.Consequence.GaveIn" }}</p>
+    {{#if consequence.ppEligible}}<p>{{ localize "CORTEX.Contest.Card.Consequence.MayEarnPP" side=consequence.loserLabel }}</p>{{/if}}
+    {{#if consequence.rematchBlocked}}<p>{{ localize "CORTEX.Contest.Card.Consequence.RematchBlocked" side=consequence.loserLabel }}</p>{{/if}}
+    {{/if}}
+
+    {{#if (eq consequence.ending "declined")}}
+    {{#if consequence.unrolled}}
+    <p>{{ localize "CORTEX.Contest.Card.Consequence.Unrolled" }}</p>
+    {{else}}
+    <p>
+      {{ localize "CORTEX.Contest.Card.Consequence.WinnerEffects" }}
+      {{#each consequence.winnerEffects}}<span class="cp-die">d{{ this.size }}</span>{{/each}}
+    </p>
+    {{/if}}
     {{/if}}
   </div>
   {{/if}}

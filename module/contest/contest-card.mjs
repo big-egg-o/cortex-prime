@@ -4,14 +4,23 @@
  * outcome, with the controls the pure offeredActions offers this user: "Roll" or "Roll to beat N"
  * (opens the pool builder aimed at the roll), a total entered by hand, giving in or declining, and
  * for a GM the high-stakes flag and closing. Every control except "Roll" sends one request through
- * sendCardAction. Rendered from message.system only. The end choices and the consequence come with
- * S4b. When a contest message changes or goes, the roll cards it names or that are flagged for it
- * are rendered again; when a roll card goes, so are the contest cards that name it.
+ * sendCardAction. Rendered from message.system only.
+ *
+ * At the end (Step 4.4 S4b proposal review) the card offers what the pure offeredEndChoices offers
+ * this user: the die for the heroic steps, the choice for each effect die past d12, and for a won
+ * contest the effect dice used against the loser. Everyone then sees a contest's consequence, as a
+ * preview with every effect die until the winner has picked, or a test's result. A card closed
+ * while a choice waited says so and shows neither.
+ *
+ * When a contest message changes or goes, the roll cards it names or that are flagged for it are
+ * rendered again; when a roll card goes, so are the contest cards that name it.
  * @module contest/contest-card
  */
 
 import { openPoolBuilderFor } from "../apps/pool-builder.mjs";
-import { OVERFLOW_PENDING, contestConsequence, expectedRoll, offeredActions, testResult } from "../rules/index.mjs";
+import {
+  OVERFLOW_PENDING, contestConsequence, expectedRoll, liveOverflowIds, offeredActions, offeredEndChoices, testResult
+} from "../rules/index.mjs";
 import { contestRecordOf } from "./records.mjs";
 import { notifyContestResult, sendContestRequest } from "./relay.mjs";
 import { contestFlagOf } from "./roll-card.mjs";
@@ -33,7 +42,8 @@ const HANDLEBARS_OPTIONS = { allowProtoMethodsByDefault: true, allowProtoPropert
  * @property {string} label - the side's label
  * @property {number} total
  * @property {{id: string, size: number, overflowOpen: boolean}[]} effects - the effect dice as the
- *   test or contest holds them; `overflowOpen` marks one past d12 whose choice is still open
+ *   test or contest holds them; `overflowOpen` marks one past d12 whose choice can still be made
+ *   (liveOverflowIds); a lapsed one shows as a plain d12
  * @property {TotalOrigin} origin
  * @property {string|null} messageId - the roll card, while it exists
  * @property {boolean} standing - the roll whose total stands: the last one while a contest is open,
@@ -63,6 +73,19 @@ const HANDLEBARS_OPTIONS = { allowProtoMethodsByDefault: true, allowProtoPropert
  * @property {{total: {side: string}|null, giveIn: {side: string, action: "give-in"|"decline",
  *   label: string}|null, highStakes: {value: boolean}|null, close: boolean}} controls - what else
  *   the user may do now
+ * @property {{heroic: {steps: number, dice: {effectId: string, size: number}[]}|null,
+ *   overflows: {effectId: string, leftovers: {dieId: string, size: number}[], newDie: 6, takeOut: boolean}[],
+ *   pick: {dice: {effectId: string, size: number, checked: boolean}[]}|null}} end - the end choices
+ *   this user may make now. A die of `pick` is checked when it is in the stored pick, and every die
+ *   is before any pick
+ * @property {object|null} consequence - a contest's Consequence (rules/types.mjs) with the stored
+ *   pick, plus `preview` (the winner hasn't picked, so every effect die is used against the loser),
+ *   `unrolled` (the opposition declined before the initiator rolled) and `loserLabel`. Null for a
+ *   test, and while the contest is open, an end choice waits, or the card was closed before it
+ * @property {{effects: {id: string, size: number}[], takeOut: boolean}|null} result - a test's
+ *   effect dice as they stand after its end choices, and whether the take-out or victory was chosen;
+ *   null for a contest, before the roll, and while a choice waits
+ * @property {boolean} closedEarly - the card was closed while an end choice waited
  */
 
 /**
@@ -117,13 +140,12 @@ function rollRows(record, sides) {
   if ( record.type === "contest" ) {
     standing = state.status === "open" ? rolls.length - 1 : rolls.findLastIndex(roll => roll.side === state.winner);
   }
+  const live = liveOverflowIds(record);
   return rolls.map((roll, index) => {
     const origin = originOf(roll.messageRef);
     return {
       side: roll.side, label: sideLabel(sides, roll.side), total: roll.total,
-      effects: roll.effects.map(({ id, size }) => ({
-        id, size, overflowOpen: (roll.overflows ?? []).some(o => (o.effectId === id) && (o.kind == null))
-      })),
+      effects: roll.effects.map(({ id, size }) => ({ id, size, overflowOpen: (live[index] ?? []).includes(id) })),
       origin, messageId: origin === "card" ? roll.messageRef : null, standing: index === standing
     };
   });
@@ -144,6 +166,51 @@ function outcomeOf(record, sides) {
   return {
     winner: state.winner, label: sideLabel(sides, state.winner), ending: state.status, margin: state.margin,
     heroicSteps: state.heroicSteps, pending: pendingOf(record)
+  };
+}
+
+/**
+ * The end choices this user may make now, with the dice's sizes for their labels.
+ * @param {import("../rules/contest-request.mjs").ContestRecord} record
+ * @param {ContestCardRoll[]} rolls - the card's rows
+ * @param {string[]|null} stored - the stored pick, or null before any
+ * @param {User} user
+ * @returns {object} `end`, as ContestCardContext describes it
+ */
+function endChoices(record, rolls, stored, user) {
+  const offered = offeredEndChoices({ userId: user.id, isGM: user.isGM === true }, record);
+  const row = record.type === "test" ? rolls[0] : rolls.find(roll => roll.standing);
+  const die = effectId => ({ effectId, size: row?.effects.find(effect => effect.id === effectId)?.size ?? null });
+  return {
+    heroic: offered.heroic ? { steps: offered.heroic.steps, dice: offered.heroic.effectIds.map(die) } : null,
+    overflows: offered.overflows,
+    pick: offered.pick ? {
+      dice: offered.pick.effectIds.map(id => ({ ...die(id), checked: (stored == null) || stored.includes(id) }))
+    } : null
+  };
+}
+
+/**
+ * A contest's consequence with the stored pick; before any pick, with every effect die of the
+ * winner's last roll used against the loser, as a preview (ADR-020, Step 4.4 S4b proposal review).
+ * @param {import("../rules/contest-request.mjs").ContestRecord} record
+ * @param {{key: string, label: string}[]} sides
+ * @param {ContestCardRoll[]} rolls - the card's rows
+ * @param {string[]|null} stored - the stored pick, or null before any
+ * @returns {object|null} `consequence`, as ContestCardContext describes it
+ */
+function consequenceOf(record, sides, rolls, stored) {
+  const state = record.state;
+  if ( (record.type !== "contest") || (state.status === "open") ) return null;
+  const all = (rolls.find(roll => roll.standing)?.effects ?? []).map(effect => effect.id);
+  const result = contestConsequence(state, { usedAgainstLoser: stored ?? all });
+  if ( !result.ok ) return null;
+  const consequence = result.value;
+  return {
+    ...consequence,
+    preview: (consequence.ending === "won") && (stored == null) && (all.length > 0),
+    unrolled: (consequence.ending === "declined") && (state.hasRolled?.initiator !== true),
+    loserLabel: sideLabel(sides, consequence.loser)
   };
 }
 
@@ -206,10 +273,20 @@ export function prepareContestCardContext(message, user = game.user) {
     close: offered.close
   };
 
+  const rolls = rollRows(record, sides);
+  const outcome = outcomeOf(record, sides);
+  const stored = isTest ? null : (system.flow.usedAgainstLoser ?? null);
+  const closedEarly = (state.closed === true) && (outcome?.pending != null);
+  const tested = isTest && !closedEarly ? testResult(state) : null;
+
   return {
     title: game.i18n.localize(isTest ? "CORTEX.Contest.Card.Test" : "CORTEX.Contest.Card.Contest"),
-    isTest, highStakes: state.highStakes === true, sides, difficulty, rolls: rollRows(record, sides),
-    toBeat: state.difficulty ?? null, status, outcome: outcomeOf(record, sides), button, controls
+    isTest, highStakes: state.highStakes === true, sides, difficulty, rolls,
+    toBeat: state.difficulty ?? null, status, outcome, button, controls,
+    end: endChoices(record, rolls, stored, user),
+    consequence: closedEarly ? null : consequenceOf(record, sides, rolls, stored),
+    result: tested?.ok ? { effects: tested.value.effects, takeOut: tested.value.takeOut } : null,
+    closedEarly
   };
 }
 
@@ -218,8 +295,8 @@ export function prepareContestCardContext(message, user = game.user) {
  * revision on this client, and shows a refusal with notifyContestResult (ADR-020, Step 4.4 S4a
  * proposal review). Every control on the card except "Roll" calls this, and so does Quench.
  * @param {ChatMessage} message - a contest message
- * @param {string} action - "add-roll" (a typed total), "give-in", "decline", "set-high-stakes" or
- *   "close"
+ * @param {string} action - "add-roll" (a typed total), "give-in", "decline", "set-high-stakes",
+ *   "close", or an end choice: "apply-heroic-steps", "choose-overflow" or "use-against-loser"
  * @param {object} [payload] - the action's payload, as ContestRequest describes it
  * @returns {Promise<{ok: boolean, code?: string, value?: object}>} the relay's answer
  */
@@ -261,7 +338,7 @@ function showRollCard(from, messageId) {
  * @returns {Promise<unknown>}
  */
 async function onCardClick(message, target) {
-  const { action, side, request, rollId, value } = target.dataset;
+  const { action, side, request, rollId, value, effectId, kind, dieId } = target.dataset;
   switch ( action ) {
     case "roll-for-contest":
       return openPoolBuilderFor({ messageId: message.id, side, rollIndex: Number(target.dataset.rollIndex) });
@@ -274,6 +351,13 @@ async function onCardClick(message, target) {
       if ( !(await confirmed("Close")) ) return null;
       return sendCardAction(message, "close", {});
     case "show-roll": return showRollCard(target, rollId);
+    case "apply-heroic-steps": return sendCardAction(message, action, { effectId });
+    case "choose-overflow":
+      return sendCardAction(message, action, kind === "leftover" ? { effectId, kind, dieId } : { effectId, kind });
+    case "use-against-loser": {
+      const boxes = target.closest(".cp-end-pick")?.querySelectorAll("input[type=checkbox]:checked") ?? [];
+      return sendCardAction(message, action, { effectIds: Array.from(boxes, box => box.dataset.effectId) });
+    }
     default: return null;
   }
 }

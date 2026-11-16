@@ -817,3 +817,85 @@ export function offeredActions(sender, contest) {
   offered.close = accepted("close", {});
   return offered;
 }
+
+/**
+ * The roll the end choices are made on: a test's roll, or the winner's last roll of a decided
+ * contest.
+ * @param {ContestRecord} contest
+ * @returns {{roll: ContestRoll|null, index: number}} the roll and its position; null and -1 when
+ *   there is none
+ */
+function finalRollOf(contest) {
+  const state = contest.state;
+  if ( contest.type === "test" ) return { roll: state.roll ?? null, index: state.roll ? 0 : -1 };
+  const index = state.status === "open" ? -1 : state.rolls.findLastIndex(roll => roll.side === state.winner);
+  return { roll: index < 0 ? null : state.rolls[index], index };
+}
+
+/**
+ * The end choices a test or contest card may offer a sender now (ADR-027, Step 4.4 S4b proposal
+ * review), found as offeredActions finds its answers: each candidate is run through
+ * dispatchContestRequest with the record's own revision, and only an accepted one is offered.
+ * - `heroic`: the number of heroic steps and the effect dice they may go on, while they wait
+ *   (rules 11-12, RQ-011 a). With one effect die they were applied with the roll (ADR-023);
+ * - `overflows`: each effect die past d12 the sender may answer now, with its options: the eligible
+ *   leftovers, a new d6, and whether the take-out or victory is allowed (rule 12; not after giving
+ *   in or declining, RQ-024). Empty while the heroic steps wait (RQ-023), and for a failed test,
+ *   whose overflow has lapsed (RQ-028);
+ * - `pick`: the effect dice of the winner's last roll that may be used against the loser, on a won
+ *   contest once neither choice waits (rule 20, RQ-011 c). A test has none.
+ * The choices are the winner's side's, or a test's roller's, and a GM's; an open or closed card
+ * offers none.
+ * @param {RequestSender} sender
+ * @param {ContestRecord|null} contest
+ * @returns {{heroic: {steps: number, effectIds: string[]}|null,
+ *   overflows: {effectId: string, leftovers: {dieId: string, size: number}[], newDie: 6, takeOut: boolean}[],
+ *   pick: {effectIds: string[]}|null}} new objects; nothing is offered for a missing record
+ */
+export function offeredEndChoices(sender, contest) {
+  const offered = { heroic: null, overflows: [], pick: null };
+  if ( (contest?.state == null) || !Array.isArray(contest.sides) ) return offered;
+  const { roll } = finalRollOf(contest);
+  if ( !roll ) return offered;
+  const accepted = (action, payload) => dispatchContestRequest({
+    sender, contest, request: { action, messageId: "offered", revision: contest.revision, payload }
+  }).ok;
+
+  const effectIds = roll.effects.map(effect => effect.id);
+  const stepIds = effectIds.filter(effectId => accepted("apply-heroic-steps", { effectId }));
+  if ( stepIds.length > 0 ) offered.heroic = { steps: contest.state.heroicSteps, effectIds: stepIds };
+
+  for ( const { effectId, kind } of roll.overflows ?? [] ) {
+    if ( (kind != null) || !accepted("choose-overflow", { effectId, kind: "new-d6" }) ) continue;
+    offered.overflows.push({
+      effectId, leftovers: roll.leftovers.map(({ dieId, size }) => ({ dieId, size })), newDie: 6,
+      takeOut: accepted("choose-overflow", { effectId, kind: "take-out" })
+    });
+  }
+
+  const won = (contest.type === "contest") && (contest.state.status === "won");
+  if ( won && (effectIds.length > 0) && accepted("use-against-loser", { effectIds }) ) offered.pick = { effectIds };
+  return offered;
+}
+
+/**
+ * For each roll a test or contest holds, in order, the effect ids whose overflow can still be
+ * chosen (rule 21): those of the standing roll while a contest is open, of the winner's last roll
+ * once it is decided (RQ-018), and of a test's roll unless the test failed (RQ-028). An open record
+ * anywhere else has lapsed, and its die counts as a d12. A closed card has none, since nothing on it
+ * can be chosen any more. For display only: the card marks these dice.
+ * @param {ContestRecord|null} contest
+ * @returns {string[][]} one list per roll; empty for a missing record
+ */
+export function liveOverflowIds(contest) {
+  const state = contest?.state;
+  if ( state == null ) return [];
+  const rolls = contest.type === "test" ? (state.roll ? [state.roll] : []) : (state.rolls ?? []);
+  let live = -1;
+  if ( !state.closed ) {
+    if ( contest.type === "test" ) live = state.success === false ? -1 : 0;
+    else live = state.status === "open" ? rolls.length - 1 : finalRollOf(contest).index;
+  }
+  return rolls.map((roll, index) => (index === live
+    ? (roll.overflows ?? []).filter(o => o.kind == null).map(o => o.effectId) : []));
+}
