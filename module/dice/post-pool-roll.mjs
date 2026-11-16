@@ -55,10 +55,14 @@ function withSetLabels(warnings) {
  *   `setLabel` the caller gives is kept
  * @param {{setId: string, count: number}[]} [params.unpricedTraits] - traits with no defined
  *   price (poolTraitCost, RQ-030); none by default
+ * @param {{messageId: string, side: string, rollIndex: number}} [params.contest] - the roll a test
+ *   or contest waits for. The card gets it as its `flags["cortex-prime"].contest`, and is posted in
+ *   the "public" mode whatever the user's setting: rolls are made openly (Handbook p. 17), and the
+ *   total shows on the public contest card anyway (ADR-020, Step 4.4 S3 proposal review)
  * @returns {Promise<ChatMessage>} the created message
  * @throws {Error} if the system data is invalid, or if creation otherwise fails
  */
-export async function postPoolRoll({ pool, speaker, results, warnings = [], unpricedTraits = [] }) {
+export async function postPoolRoll({ pool, speaker, results, warnings = [], unpricedTraits = [], contest }) {
   let roll = null;
   let rolled;
   if ( results ) {
@@ -85,7 +89,12 @@ export async function postPoolRoll({ pool, speaker, results, warnings = [], unpr
     }
   };
   if ( roll ) messageData.rolls = [roll];
-  ChatMessage.applyMode(messageData); // core "messageMode" setting, the way Roll#toMessage does
+  if ( contest ) {
+    const { messageId, side, rollIndex } = contest;
+    messageData.flags = { "cortex-prime": { contest: { messageId, side, rollIndex } } };
+    ChatMessage.applyMode(messageData, "public");
+  }
+  else ChatMessage.applyMode(messageData); // core "messageMode" setting, the way Roll#toMessage does
 
   try {
     new ChatMessage(messageData);

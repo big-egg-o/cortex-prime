@@ -56,6 +56,11 @@
         },
         "UnpricedOne": "No standard cost · 1 trait unpriced",
         "UnpricedMany": "No standard cost · {count} traits unpriced"
+      },
+      "Contest": {
+        "Held": "This roll waits for its test or contest: send it there. A choice for an effect die past d12 is made on that card.",
+        "Sent": "This roll is on its test or contest card; a choice for an effect die past d12 is made there.",
+        "Send": "Send to the card"
       }
     },
     "Builder": {
@@ -97,7 +102,14 @@
         "STATEMENT_RATING_MIXED_SIZES": "A challenge of a rating with mixed die sizes isn't handled automatically. Add the dice and change the rating by hand, as your table decides.",
         "CHALLENGE_NEEDS_OWNER": "Only someone who can edit this character can challenge its statement.",
         "ACTOR_NOT_FOUND": "The character of a challenged trait can't be found, so it wasn't stepped down."
-      }
+      },
+      "DifficultyLevel": "Difficulty level",
+      "SetDifficulty": "Set difficulty dice",
+      "DifficultyDiceLabel": "{level} difficulty",
+      "TargetFirst": "Rolling for {side}",
+      "TargetToBeat": "Rolling for {side}, to beat {total}",
+      "TargetGone": "That test or contest no longer waits for this roll, so nothing was rolled.",
+      "ClearTarget": "Roll for nothing in particular"
     },
     "Keybindings": {
       "OpenPoolBuilder": "Open the Pool Builder"
@@ -149,6 +161,36 @@
         "challenging": "Challenging",
         "hard": "Hard",
         "veryHard": "Very Hard"
+      },
+      "Card": {
+        "Test": "Test",
+        "Contest": "Contest",
+        "ToBeat": "To beat:",
+        "Roll": "Roll",
+        "RollToBeat": "Roll to beat {total}",
+        "Waiting": "Waiting for {side}",
+        "Decided": "Decided",
+        "Closed": "Closed"
+      },
+      "Start": {
+        "Title": "Start a test or contest",
+        "Open": "Start a test or contest",
+        "FromCard": "Start a test against this roll",
+        "Type": "Kind",
+        "StartingSide": "Roller or initiator",
+        "OtherSide": "Setter or opposition",
+        "User": "Player",
+        "Actor": "Character",
+        "NoActor": "None",
+        "GMSide": "GM",
+        "Difficulty": "Difficulty",
+        "Card": "Difficulty roll",
+        "TypedDifficulty": "Typed difficulty",
+        "Level": "Level",
+        "NoLevel": "None",
+        "CardOption": "{speaker}: {total}",
+        "HighStakes": "High stakes",
+        "Submit": "Start"
       }
     },
     "Settings": {

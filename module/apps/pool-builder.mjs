@@ -15,10 +15,13 @@
  */
 
 import {
-  DIE_SIZES, addTraitDice, buildPool, challengedPoolTraits, doubleDie, groupPoolTraitsByActor, poolDieGroupKey,
-  poolTraitReport, poolTraits, rollablePool, stepDownsAfterChallenge, stepPoolDie, traitPoolDice, withoutPoolTraits
+  DIE_SIZES, DIFFICULTY_LEVELS, addTraitDice, appendToPool, challengedPoolTraits, difficultyLevelOfPool, doubleDie,
+  expectedRoll, groupPoolTraitsByActor, mayActFor, poolDieGroupKey, poolTraitReport, poolTraits, rollablePool,
+  setDifficultyDice, stepDownsAfterChallenge, stepPoolDie, traitPoolDice, withoutPoolTraits
 } from "../rules/index.mjs";
 import { getGameConfig } from "../config/settings.mjs";
+import { contestRecordOf, sideActor } from "../contest/records.mjs";
+import { openStartDialog } from "../contest/start-dialog.mjs";
 import { postPoolRoll } from "../dice/post-pool-roll.mjs";
 import { prepareNonstandard } from "../dice/pool-roll-card.mjs";
 
@@ -149,17 +152,31 @@ async function stepDownChallenges(pool) {
 }
 
 /**
- * Adds one custom die to a pool, continuing the pool's own id sequence (buildPool always
- * starts a fresh sequence at d1, which only works for a pool built from nothing at once).
+ * Adds one custom die to a pool, continuing the pool's own id sequence through appendToPool, so
+ * ids are continued in one place (Step 4.4 S3 proposal review).
  * @param {import("../rules/types.mjs").PoolDie[]} pool
  * @param {import("../rules/types.mjs").DieSize} size
  * @param {string} label
- * @returns {import("../rules/types.mjs").PoolDie[]}
+ * @returns {import("../rules/types.mjs").EngineResult<import("../rules/types.mjs").PoolDie[]>}
  */
 function appendCustomDie(pool, size, label) {
-  const [die] = buildPool([{ size, source: { kind: "custom", label } }]);
-  const highest = pool.reduce((max, d) => Math.max(max, Number(d.id.slice(1)) || 0), 0);
-  return [...pool, { ...die, id: `d${highest + 1}` }];
+  return appendToPool(pool, [{ size, source: { kind: "custom", label } }]);
+}
+
+/**
+ * The test or contest a builder target is aimed at, and whether the target still fits it: the
+ * roll that test or contest waits for has the target's side and turn (expectedRoll), and the
+ * current user may act for that side (mayActFor), the same rules the relay applies.
+ * @param {{messageId: string, side: string, rollIndex: number}} target
+ * @returns {{record: import("../rules/contest-request.mjs").ContestRecord, toBeat: number|null}|null}
+ *   null when the target no longer fits
+ */
+function targetFit(target) {
+  const record = contestRecordOf(game.messages.get(target.messageId))?.record ?? null;
+  const expected = expectedRoll(record);
+  if ( !expected || (expected.side !== target.side) || (expected.rollIndex !== target.rollIndex) ) return null;
+  if ( !mayActFor({ userId: game.user.id, isGM: game.user.isGM }, record, target.side) ) return null;
+  return { record, toBeat: expected.toBeat };
 }
 
 /**
@@ -239,9 +256,19 @@ export default class PoolBuilder extends HandlebarsApplicationMixin(ApplicationV
       clearGroup: PoolBuilder.#onClearGroup,
       doubleDie: PoolBuilder.#onDoubleDie,
       stepDie: PoolBuilder.#onStepDie,
+      setDifficulty: PoolBuilder.#onSetDifficulty,
+      clearTarget: PoolBuilder.#onClearTarget,
+      startContest: () => openStartDialog(),
       rollPool: PoolBuilder.#onRollPool
     }
   };
+
+  /**
+   * The roll this builder is aimed at, or null (Step 4.4 S3 proposal review): kept in the app
+   * instance, not in a flag.
+   * @type {{messageId: string, side: string, rollIndex: number}|null}
+   */
+  #target = null;
 
   /** @override */
   static PARTS = {
@@ -270,15 +297,53 @@ export default class PoolBuilder extends HandlebarsApplicationMixin(ApplicationV
   /** @override */
   async _prepareContext(_options) {
     const pool = this.pool;
+    const fit = this.#target ? targetFit(this.#target) : null;
+    const side = fit?.record.sides.find(s => s.key === this.#target.side);
+    const toBeat = fit?.toBeat ?? null;
+    const currentLevel = difficultyLevelOfPool(pool).value;
     return {
       groups: groupBySource(pool),
       summary: poolSummary(pool),
       sizes: DIE_SIZES,
+      levels: DIFFICULTY_LEVELS.map(level => ({
+        value: level, label: game.i18n.localize(`CORTEX.Contest.DifficultyLevels.${level}`), selected: level === currentLevel
+      })),
+      target: fit ? {
+        banner: (toBeat === null)
+          ? game.i18n.format("CORTEX.Builder.TargetFirst", { side: side?.label ?? this.#target.side })
+          : game.i18n.format("CORTEX.Builder.TargetToBeat", { side: side?.label ?? this.#target.side, total: toBeat })
+      } : null,
       buttons: [{
-        type: "button", action: "rollPool", icon: "fa-solid fa-dice", label: "CORTEX.Builder.Roll",
+        type: "button", action: "rollPool", icon: "fa-solid fa-dice",
+        label: (fit && (toBeat !== null)) ? game.i18n.format("CORTEX.Contest.Card.RollToBeat", { total: toBeat }) : "CORTEX.Builder.Roll",
         disabled: pool.length === 0
       }]
     };
+  }
+
+  /**
+   * The roll this builder is aimed at, `{messageId, side, rollIndex}`, or null. Kept in the app
+   * instance, not in a flag; after a reload the player clicks the card's button again.
+   * @type {{messageId: string, side: string, rollIndex: number}|null}
+   */
+  get target() {
+    return this.#target ? { ...this.#target } : null;
+  }
+
+  /**
+   * Aims the builder at one roll of a test or contest and renders it; openPoolBuilderFor calls this.
+   * @param {{messageId: string, side: string, rollIndex: number}} target
+   * @returns {Promise<void>}
+   */
+  async aimAt({ messageId, side, rollIndex }) {
+    this.#target = { messageId, side, rollIndex };
+    await this.render();
+  }
+
+  /** @override */
+  _onClose(options) {
+    super._onClose(options);
+    this.#target = null;
   }
 
   /**
@@ -289,19 +354,38 @@ export default class PoolBuilder extends HandlebarsApplicationMixin(ApplicationV
    * (ADR-029 consequences, RQ-030, ADR-047); the dice are stored without the pool's trait marks
    * (rollablePool). Once the roll is posted, each challenged statement's trait is stepped down
    * and its dice leave the kept pool (ADR-048).
+   *
+   * With a target (Step 4.4 S3 proposal review), the target is checked again first: one that no
+   * longer fits (the test or contest moved on, closed or is gone) is dropped with a notification,
+   * and nothing is rolled. Otherwise the roll carries the target as the card's flag, is posted in
+   * the "public" mode, and is spoken by the target side's actor when it has one; the target is
+   * cleared afterwards and the pool kept (ADR-012).
    * @param {number[]} [results]
-   * @returns {Promise<ChatMessage|void>} nothing if the pool is empty
+   * @returns {Promise<ChatMessage|void>} nothing if the pool is empty or the target no longer fits
    */
   async rollPool(results) {
     const pool = this.pool;
     if ( pool.length === 0 ) return;
+    const target = this.#target;
+    const fit = target ? targetFit(target) : null;
+    if ( target && !fit ) {
+      this.#target = null;
+      ui.notifications.warn(game.i18n.localize("CORTEX.Builder.TargetGone"));
+      await this.render();
+      return;
+    }
     const report = currentPoolReport(pool);
     const rollable = rollablePool(pool);
+    const actor = fit ? sideActor(fit.record.sides.find(s => s.key === target.side)) : null;
     const message = await postPoolRoll({
       pool: rollable.ok ? rollable.value : pool, results,
-      warnings: report?.warnings ?? [], unpricedTraits: report?.unpricedTraits ?? []
+      warnings: report?.warnings ?? [], unpricedTraits: report?.unpricedTraits ?? [],
+      speaker: actor ? ChatMessage.getSpeaker({ actor }) : undefined,
+      contest: target ?? undefined
     });
-    if ( await stepDownChallenges(pool) ) await this.render();
+    if ( target ) this.#target = null;
+    await stepDownChallenges(pool);
+    if ( this.rendered ) await this.render();
     return message;
   }
 
@@ -315,7 +399,8 @@ export default class PoolBuilder extends HandlebarsApplicationMixin(ApplicationV
    */
   async addDie(size, label) {
     const resolvedLabel = label.trim() || game.i18n.localize("CORTEX.Builder.CustomDieDefaultLabel");
-    await this.#savePool(appendCustomDie(this.pool, size, resolvedLabel));
+    const appended = appendCustomDie(this.pool, size, resolvedLabel);
+    if ( appended.ok ) await this.#savePool(appended.value);
   }
 
   /**
@@ -354,6 +439,23 @@ export default class PoolBuilder extends HandlebarsApplicationMixin(ApplicationV
    */
   async stepDie(dieId, steps) {
     await this.#savePool(stepPoolDie(this.pool, dieId, steps));
+  }
+
+  /**
+   * The difficulty helper (TC-01, TC-02): replaces the pool's difficulty dice with the level's
+   * pair through setDifficultyDice, labelled with the level's name, for example "Hard difficulty".
+   * @param {import("../rules/types.mjs").DifficultyLevel} level
+   * @returns {Promise<void>}
+   */
+  async setDifficulty(level) {
+    const name = game.i18n.localize(`CORTEX.Contest.DifficultyLevels.${level}`);
+    const label = game.i18n.format("CORTEX.Builder.DifficultyDiceLabel", { level: name });
+    const result = setDifficultyDice(this.pool, level, label);
+    if ( !result.ok ) {
+      ui.notifications.warn(game.i18n.localize(`CORTEX.Contest.Errors.${result.code}`));
+      return;
+    }
+    await this.#savePool(result.value);
   }
 
   /**
@@ -401,6 +503,23 @@ export default class PoolBuilder extends HandlebarsApplicationMixin(ApplicationV
    */
   static async #onStepDie(_event, target) {
     await this.stepDie(target.dataset.dieId, Number(target.dataset.steps));
+  }
+
+  /**
+   * Reads the difficulty helper's level and delegates to setDifficulty().
+   * @this {PoolBuilder}
+   */
+  static async #onSetDifficulty() {
+    await this.setDifficulty(this.element.querySelector('[name="difficultyLevel"]').value);
+  }
+
+  /**
+   * Drops the target, so the next roll is an ordinary one.
+   * @this {PoolBuilder}
+   */
+  static async #onClearTarget() {
+    this.#target = null;
+    await this.render();
   }
 
   /**
@@ -453,6 +572,22 @@ export async function openPoolBuilder({ beside } = {}) {
   await instance.render(options);
   instance.bringToFront();
   return instance;
+}
+
+/**
+ * Opens the pool builder aimed at one roll of a test or contest: the contest card's button and
+ * the start dialog call this. The builder shows a banner and "Roll to beat N"; before rolling it
+ * checks the target again with expectedRoll and drops one that no longer fits, with a
+ * notification, rolling nothing. A roll for a target is posted in the "public" mode with the
+ * card's flag `{messageId, side, rollIndex}`, the target side's actor as speaker, and the target
+ * is cleared afterwards; the pool is kept (ADR-012).
+ * @param {{messageId: string, side: string, rollIndex: number}} target
+ * @returns {Promise<PoolBuilder>}
+ */
+export async function openPoolBuilderFor(target) {
+  const builder = await openPoolBuilder();
+  await builder.aimAt(target);
+  return builder;
 }
 
 /**

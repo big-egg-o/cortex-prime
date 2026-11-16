@@ -1,0 +1,87 @@
+<div class="cp-start-body">
+  <div class="form-group">
+    <label for="cp-start-type">{{ localize "CORTEX.Contest.Start.Type" }}</label>
+    <div class="form-fields">
+      <select id="cp-start-type" name="type">
+        {{#each types}}<option value="{{ this.value }}" {{#if this.selected}}selected{{/if}}>{{ this.label }}</option>{{/each}}
+      </select>
+    </div>
+  </div>
+
+  <fieldset>
+    <legend>{{ localize "CORTEX.Contest.Start.StartingSide" }}</legend>
+    {{#if startUsers}}
+    <div class="form-group">
+      <label for="cp-start-user">{{ localize "CORTEX.Contest.Start.User" }}</label>
+      <div class="form-fields">
+        <select id="cp-start-user" name="startUser">
+          {{#each startUsers}}<option value="{{ this.value }}" {{#if this.selected}}selected{{/if}}>{{ this.label }}</option>{{/each}}
+        </select>
+      </div>
+    </div>
+    {{/if}}
+    <div class="form-group">
+      <label for="cp-start-actor">{{ localize "CORTEX.Contest.Start.Actor" }}</label>
+      <div class="form-fields">
+        <select id="cp-start-actor" name="startActor">
+          {{#each startActors}}<option value="{{ this.value }}" {{#if this.selected}}selected{{/if}}>{{ this.label }}</option>{{/each}}
+        </select>
+      </div>
+    </div>
+  </fieldset>
+
+  <fieldset>
+    <legend>{{ localize "CORTEX.Contest.Start.OtherSide" }}</legend>
+    <div class="form-group">
+      <label for="cp-other-user">{{ localize "CORTEX.Contest.Start.User" }}</label>
+      <div class="form-fields">
+        <select id="cp-other-user" name="otherUser">
+          {{#each otherUsers}}<option value="{{ this.value }}" {{#if this.selected}}selected{{/if}}>{{ this.label }}</option>{{/each}}
+        </select>
+      </div>
+    </div>
+    <div class="form-group">
+      <label for="cp-other-actor">{{ localize "CORTEX.Contest.Start.Actor" }}</label>
+      <div class="form-fields">
+        <select id="cp-other-actor" name="otherActor">
+          {{#each otherActors}}<option value="{{ this.value }}" {{#if this.selected}}selected{{/if}}>{{ this.label }}</option>{{/each}}
+        </select>
+      </div>
+    </div>
+  </fieldset>
+
+  <fieldset class="cp-test-only">
+    <legend>{{ localize "CORTEX.Contest.Start.Difficulty" }}</legend>
+    <div class="form-group">
+      <label for="cp-start-card">{{ localize "CORTEX.Contest.Start.Card" }}</label>
+      <div class="form-fields">
+        <select id="cp-start-card" name="cardId">
+          {{#each cards}}<option value="{{ this.value }}" {{#if this.selected}}selected{{/if}}>{{ this.label }}</option>{{/each}}
+        </select>
+      </div>
+    </div>
+    <div class="form-group cp-card-only">
+      <label for="cp-start-level">{{ localize "CORTEX.Contest.Start.Level" }}</label>
+      <div class="form-fields">
+        <select id="cp-start-level" name="difficultyLevel">
+          {{#each levels}}<option value="{{ this.value }}" {{#if this.selected}}selected{{/if}}>{{ this.label }}</option>{{/each}}
+        </select>
+      </div>
+    </div>
+    <div class="form-group cp-typed-only">
+      <label for="cp-start-difficulty">{{ localize "CORTEX.Contest.Start.TypedDifficulty" }}</label>
+      <div class="form-fields">
+        <input id="cp-start-difficulty" type="number" name="difficulty" min="0" step="1">
+      </div>
+    </div>
+  </fieldset>
+
+  {{#if isGM}}
+  <div class="form-group">
+    <label for="cp-start-high-stakes">{{ localize "CORTEX.Contest.Start.HighStakes" }}</label>
+    <div class="form-fields">
+      <input id="cp-start-high-stakes" type="checkbox" name="highStakes">
+    </div>
+  </div>
+  {{/if}}
+</div>

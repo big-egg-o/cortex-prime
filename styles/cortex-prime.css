@@ -136,6 +136,19 @@
   gap: 0.25rem;
 }
 
+/* A roll card held for or sent to a test or contest (Step 4.4 S3): a note, not a control. */
+.cortex-prime.poolroll-card .cp-contest-hold {
+  margin: 0.25rem 0;
+  padding: 0.25rem 0.5rem;
+  border-left: 3px solid var(--color-level-info, currentColor);
+  font-size: var(--font-size-12);
+}
+
+.cortex-prime.poolroll-card .cp-send > button {
+  flex: 1 0 auto;
+  white-space: nowrap;
+}
+
 /* ---------------------------------------- */
 /*  game-config (ApplicationV2 window)      */
 /* ---------------------------------------- */
@@ -211,6 +224,36 @@
 .cortex-prime.pool-builder .window-content .cp-add-die > input {
   flex: 1;
   min-width: 0;
+}
+
+/* The roll a test or contest waits for (Step 4.4 S3): icon, text and the clear button in one row. */
+.cortex-prime.pool-builder .window-content .cp-builder-target {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.cortex-prime.pool-builder .window-content .cp-builder-target > span {
+  flex: 1;
+}
+
+.cortex-prime.pool-builder .window-content .cp-builder-target > button {
+  flex: none;
+}
+
+/* The difficulty helper shares one row, as the add-die row does. */
+.cortex-prime.pool-builder .window-content .cp-difficulty {
+  flex-wrap: nowrap;
+}
+
+.cortex-prime.pool-builder .window-content .cp-difficulty > select {
+  flex: 1;
+  min-width: 0;
+}
+
+.cortex-prime.pool-builder .window-content .cp-difficulty > button {
+  flex: none;
+  width: auto;
 }
 
 /* ---------------------------------------- */
