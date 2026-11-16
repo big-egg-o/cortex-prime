@@ -1,4 +1,13 @@
 <div class="cp-builder-body">
+  {{#if target}}
+  <div class="cp-builder-target" role="note">
+    <i class="fa-solid fa-scale-balanced" inert></i>
+    <span>{{ target.banner }}</span>
+    <button type="button" class="ui-control icon" data-action="clearTarget"
+      data-tooltip aria-label="{{ localize "CORTEX.Builder.ClearTarget" }}"><i class="fa-solid fa-xmark" inert></i></button>
+  </div>
+  {{/if}}
+
   {{#each groups}}
   <fieldset class="cp-source">
     <legend class="control">
@@ -59,6 +68,24 @@
       aria-label="{{ localize "CORTEX.Builder.LabelPlaceholder" }}">
     <button type="button" data-action="addDie">
       <i class="fa-solid fa-plus" inert></i><span>{{ localize "CORTEX.Builder.AddDie" }}</span>
+    </button>
+  </div>
+
+  {{!-- The difficulty helper (Tests & Contests TC-01, TC-02): replaces the pool's difficulty dice with a level's pair. --}}
+  <div class="form-group cp-difficulty">
+    <select name="difficultyLevel" aria-label="{{ localize "CORTEX.Builder.DifficultyLevel" }}">
+      {{#each levels}}
+      <option value="{{ this.value }}" {{#if this.selected}}selected{{/if}}>{{ this.label }}</option>
+      {{/each}}
+    </select>
+    <button type="button" data-action="setDifficulty">
+      <i class="fa-solid fa-dice-d10" inert></i><span>{{ localize "CORTEX.Builder.SetDifficulty" }}</span>
+    </button>
+  </div>
+
+  <div class="form-group cp-start-contest">
+    <button type="button" data-action="startContest">
+      <i class="fa-solid fa-scale-balanced" inert></i><span>{{ localize "CORTEX.Contest.Start.Open" }}</span>
     </button>
   </div>
 </div>

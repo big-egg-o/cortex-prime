@@ -1,0 +1,19 @@
+<div class="cortex-prime contest-card">
+  <h4 class="cp-contest-title">{{ title }}</h4>
+  <ul class="cp-contest-sides">
+    {{#each sides}}
+    <li data-side="{{ this.key }}">{{ this.label }}</li>
+    {{/each}}
+  </ul>
+  {{#if toBeat includeZero=true}}
+  <p class="cp-contest-to-beat">{{ localize "CORTEX.Contest.Card.ToBeat" }} <strong>{{ toBeat }}</strong></p>
+  {{/if}}
+  <p class="cp-contest-status" data-status="{{ status.key }}">{{ status.label }}</p>
+  {{#if button}}
+  <div class="cp-controls">
+    <button type="button" data-action="roll-for-contest" data-side="{{ button.side }}" data-roll-index="{{ button.rollIndex }}">
+      <i class="fa-solid fa-dice" inert></i><span>{{ button.label }}</span>
+    </button>
+  </div>
+  {{/if}}
+</div>

@@ -2,14 +2,17 @@
  * Contest actions go to the active GM as a Foundry user query (Decisions ADR-027, Step 4.4
  * proposal review; ADR-039). The sender asks; the GM's client checks the request with the pure
  * dispatcher in module/rules/contest-request.mjs, writes the contest message as its author, and
- * answers with an EngineResult. Nothing here decides an outcome: it loads data, calls the pure
- * functions and writes what they return.
+ * answers with an EngineResult. Starting a test or contest goes the same way, as the action
+ * "start", which creates the message (Step 4.4 S3). Nothing here decides an outcome: it loads data,
+ * calls the pure functions and writes what they return.
  * @module contest/relay
  */
 
 import ContestData from "../data/chat/contest.mjs";
-import { engineStateOf, systemChangesAfter } from "../data/chat/contest-mapping.mjs";
-import { dispatchContestRequest } from "../rules/contest-request.mjs";
+import { initialSystem, systemChangesAfter } from "../data/chat/contest-mapping.mjs";
+import { CONTEST_SIDES, TEST_SIDES } from "../rules/contest.mjs";
+import { dispatchContestRequest, dispatchStartRequest } from "../rules/contest-request.mjs";
+import { contestRecordOf, poolRollRecordOf, sideActor, sideSpeaker } from "./records.mjs";
 
 /** The query name, registered in `CONFIG.queries`. */
 export const CONTEST_QUERY = "cortex-prime.contest";
@@ -89,54 +92,78 @@ export function handleContestQuery(request, { user }) {
 }
 
 /**
- * The record of a contest message that the pure checks read (contest-request.mjs ContestRecord),
- * or null when the id names no contest message a GM wrote. Only the GM's client writes contest
- * messages, as a GM (ADR-027, Step 4.4 proposal review), so one a player wrote is ignored: its
- * author could have changed it directly, past every check.
- * @param {ChatMessage|undefined} message
- * @returns {{record: object, system: object}|null}
+ * For each actor a start request's sides name that exists, whether the sender owns it (Foundry's
+ * OWNER permission, so shared actors work; ADR-027, Step 4.4 S3 proposal review). An actor that
+ * isn't found is left out, which the pure check reports as ACTOR_NOT_FOUND.
+ * @param {unknown} sides - the request's sides, not yet checked
+ * @param {User} user - the sender
+ * @returns {Object<string, {ownedBySender: boolean}>}
  */
-function contestRecordOf(message) {
-  if ( message?.type !== "contest" ) return null;
-  if ( message.author?.isGM !== true ) return null;
-  const system = message.system.toObject();
-  const state = engineStateOf(system.flow);
-  if ( !state.ok ) return null;
-  return {
-    system,
-    record: { type: system.flow.type, revision: system.revision, sides: system.sides, state: state.value }
-  };
+function startActors(sides, user) {
+  const actors = {};
+  for ( const side of Array.isArray(sides) ? sides : [] ) {
+    const actor = sideActor(side);
+    if ( actor ) actors[side.actorUuid] = { ownedBySender: actor.testUserPermission(user, "OWNER") };
+  }
+  return actors;
 }
 
 /**
- * The roll card a request names, as the pure checks read it (PoolRollRecord), or null. The dice
- * always come from the stored card, never from the request (ADR-027: nothing is taken on trust).
+ * Starts a test or contest on the GM's client (ADR-027, Step 4.4 S3 proposal review): checks the
+ * request with dispatchStartRequest, builds the message data with initialSystem, checks it with
+ * ContestData.checkCandidate, and creates the message as this GM, in the "public" mode, spoken by
+ * the starting side's actor or by its label. A message that wasn't stored exactly as built is
+ * deleted again.
  * @param {unknown} request
- * @returns {object|null}
+ * @param {User} user - the querying user
+ * @returns {Promise<{ok: boolean, code?: string, value?: {messageId: string}}>}
  */
-function poolRollRecordOf(request) {
-  const id = request?.payload?.poolRollId;
-  if ( typeof id !== "string" ) return null;
-  const message = game.messages.get(id);
-  if ( message?.type !== "poolRoll" ) return null;
-  const system = message.system.toObject();
-  return { id, authorId: message.author?.id ?? null, rolled: system.rolled, resolution: system.resolution };
+async function startContest(request, user) {
+  const sender = { userId: user.id, isGM: user.isGM === true };
+  const result = dispatchStartRequest({
+    sender, request, difficultyCard: poolRollRecordOf(request?.difficultyMessageId), actors: startActors(request?.sides, user)
+  });
+  if ( !result.ok ) return result;
+
+  const candidate = initialSystem(result.value);
+  if ( !candidate.ok ) {
+    console.error(`${CONTEST_QUERY} | mapping refused the start: ${candidate.code}`);
+    return fail("WRITE_FAILED");
+  }
+  const problem = ContestData.checkCandidate(candidate.value);
+  if ( problem ) {
+    console.error(`${CONTEST_QUERY} | the start would not be stored as given: ${problem}`);
+    return fail("WRITE_FAILED");
+  }
+  const startingKey = (result.value.type === "test" ? TEST_SIDES : CONTEST_SIDES)[0];
+  const starting = result.value.sides.find(side => side.key === startingKey);
+  const data = { type: "contest", system: candidate.value, speaker: sideSpeaker(starting) };
+  ChatMessage.applyMode(data, "public");
+  const message = await ChatMessage.implementation.create(data);
+  if ( !message ) return fail("WRITE_FAILED");
+  if ( !foundry.utils.equals(message.system.toObject(), candidate.value) ) {
+    console.error(`${CONTEST_QUERY} | the start did not land as sent`);
+    await message.delete();
+    return fail("WRITE_FAILED");
+  }
+  return { ok: true, value: { messageId: message.id } };
 }
 
 /**
- * Checks, applies and writes one request on the active GM's client.
+ * Checks, applies and writes one request on the active GM's client. A "start" has no message yet,
+ * so it is routed before the message lookup.
  * @param {unknown} request
  * @param {User} user - the querying user
  * @returns {Promise<{ok: boolean, code?: string, value?: object}>}
  */
 async function processRequest(request, user) {
   if ( game.users.activeGM !== game.user ) return fail("GM_REQUIRED");
+  if ( request?.action === "start" ) return startContest(request, user);
   const message = (typeof request?.messageId === "string") ? game.messages.get(request.messageId) : undefined;
   const loaded = contestRecordOf(message);
   const sender = { userId: user.id, isGM: user.isGM === true };
-  const result = dispatchContestRequest({
-    sender, request, contest: loaded?.record ?? null, poolRoll: poolRollRecordOf(request)
-  });
+  const poolRoll = poolRollRecordOf(request?.payload?.poolRollId, { exceptId: request?.messageId });
+  const result = dispatchContestRequest({ sender, request, contest: loaded?.record ?? null, poolRoll });
   if ( !result.ok ) return result;
 
   const changes = systemChangesAfter(loaded.system, result.value.state, result.value.extras);

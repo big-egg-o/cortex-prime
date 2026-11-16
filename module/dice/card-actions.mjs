@@ -10,6 +10,7 @@ import {
   applyOverflowChoice, applyRerolls, rerollableIds, resolve, stepEffectDie, suggestSelection,
   validateSelection
 } from "../rules/index.mjs";
+import { holdOf } from "../contest/roll-card.mjs";
 import { rerollDice } from "./roll-pool.mjs";
 
 /**
@@ -243,7 +244,8 @@ async function rerollChange(message, change) {
  * `message.update()` call — when the current user may not edit the card, when a die click
  * targets a hitch or an unavailable die, when "confirm" is attempted on an invalid selection,
  * when a step/overflow/reroll change doesn't name a real slot, step, offered option or
- * rerollable id, or when a reroll or step/overflow change is attempted in the wrong state.
+ * rerollable id, when a reroll or step/overflow change is attempted in the wrong state, or when
+ * an overflow choice is made on a card held for or sent to a test or contest.
  * Every selection change is stored even while incomplete, so other viewers see picks live as
  * they're made. Every refusal is silent; only an unexpected engine error can still throw.
  * @param {ChatMessage} message
@@ -255,7 +257,13 @@ export async function applyCardChange(message, change) {
 
   if ( change.action === "confirm" ) return confirm(message, message.system);
   if ( change.action === "step-effect-die" ) return stepEffectDieChange(message, change);
-  if ( change.action === "overflow-choice" ) return overflowChoiceChange(message, change);
+  if ( change.action === "overflow-choice" ) {
+    // A card held for, or sent to, a test or contest makes its overflow choice there (RQ-018,
+    // RQ-026): a leftover taken here couldn't be told apart later (ADR-028, Step 4.3.4
+    // implementation review; ADR-020, Step 4.4 S3 proposal review).
+    if ( holdOf(message) !== "free" ) return;
+    return overflowChoiceChange(message, change);
+  }
   if ( change.action === "reroll" ) return rerollChange(message, change);
 
   const selection = nextSelection(message.system, change);

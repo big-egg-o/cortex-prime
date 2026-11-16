@@ -79,6 +79,18 @@
   {{/unless}}
   {{/if}}
 
+  {{!-- A card rolled for a test or contest (ADR-020, Step 4.4 S3): its overflow choice is made there. --}}
+  {{#if contestHold}}
+  <p class="cp-contest-hold" role="note"><i class="fa-solid fa-scale-balanced" inert></i> {{ contestHold.note }}</p>
+  {{/if}}
+  {{#if send}}
+  <div class="cp-controls cp-send">
+    <button type="button" data-action="send-roll">
+      <i class="fa-solid fa-paper-plane" inert></i><span>{{ localize "CORTEX.Chat.Contest.Send" }}</span>
+    </button>
+  </div>
+  {{/if}}
+
   {{#if effectControls}}
   <div class="cp-controls cp-effect-controls">
     {{#each effectControls}}

@@ -9,6 +9,7 @@
 
 import { evaluate, rerollableIds, resolve, traitSetById, validateSelection } from "../rules/index.mjs";
 import { getGameConfig } from "../config/settings.mjs";
+import { holdOf, sendRollCard } from "../contest/roll-card.mjs";
 import { applyCardChange, canEditPoolRollCard } from "./card-actions.mjs";
 
 const TEMPLATE = "systems/cortex-prime/templates/chat/pool-roll.hbs";
@@ -181,8 +182,11 @@ export function prepareNonstandard(system) {
  *   overflowChoice: {leftovers: {dieId: string, label: string}[], newDieLabel: string,
  *     takeOutAvailable: boolean, takeOutLabel: string}|null,
  *   reroll: {active: boolean, canReroll: boolean}|null,
- *   nonstandard: {title: string, reasons: string[], unpriced: string|null}|null}} `nonstandard`
- *   is shown to everyone who can see the card, in every state (prepareNonstandard)
+ *   nonstandard: {title: string, reasons: string[], unpriced: string|null}|null,
+ *   contestHold: {state: "held"|"sent", note: string}|null, send: boolean}} `nonstandard`
+ *   is shown to everyone who can see the card, in every state (prepareNonstandard); `contestHold`
+ *   is set for a card held for or sent to a test or contest (holdOf), and `send` offers Send on a
+ *   held, resolved card to those who may change it
  */
 export function preparePoolRollCardContext(message) {
   const system = message.system;
@@ -254,6 +258,16 @@ export function preparePoolRollCardContext(message) {
     extraEffectDicePaid: system.selection.extraEffectDicePaid
   } : null;
 
+  // A card rolled for a test or contest (ADR-020, Step 4.4 S3): while held or once sent, its
+  // overflow choice is made on the test or contest (RQ-018, RQ-026), and a held, resolved card can
+  // be sent; an open overflow goes with it. The effect-die steps stay, for SFX; locking a sent
+  // card is S4a's.
+  const hold = holdOf(message);
+  const contestHold = hold === "free" ? null : {
+    state: hold, note: game.i18n.localize(hold === "held" ? "CORTEX.Chat.Contest.Held" : "CORTEX.Chat.Contest.Sent")
+  };
+  const send = (hold === "held") && resolvedState && canEdit;
+
   // Controls for stepping an effect die or resolving a pending overflow (rule 22, rule 23):
   // resolved cards only, and only one of the two panels at a time, since the data model has
   // a single overflow slot for the whole Resolution, not one per die.
@@ -261,7 +275,9 @@ export function preparePoolRollCardContext(message) {
   let overflowChoice = null;
   if ( resolvedState && canEdit && !botch && !system.resolution.takeOut ) {
     const overflow = system.resolution.overflow;
-    if ( overflow ) {
+    if ( !overflow ) {
+      effectControls = system.resolution.effectDice.map(entry => ({ effectId: entry.id, size: entry.size }));
+    } else if ( !contestHold ) {
       overflowChoice = {
         leftovers: overflow.options.leftovers.map(l => ({
           dieId: l.dieId, label: game.i18n.format("CORTEX.Chat.OverflowLeftover", { size: l.size })
@@ -270,8 +286,6 @@ export function preparePoolRollCardContext(message) {
         takeOutAvailable: overflow.options.takeOutAvailable,
         takeOutLabel: game.i18n.localize("CORTEX.Chat.TakeOutVictory")
       };
-    } else {
-      effectControls = system.resolution.effectDice.map(entry => ({ effectId: entry.id, size: entry.size }));
     }
   }
 
@@ -283,7 +297,7 @@ export function preparePoolRollCardContext(message) {
 
   return {
     botch, dice, formula, headline, preview, interactive, selection, effectControls, overflowChoice, reroll,
-    nonstandard: prepareNonstandard(system)
+    nonstandard: prepareNonstandard(system), contestHold, send
   };
 }
 
@@ -354,6 +368,9 @@ function activatePoolRollCardListeners(message, content) {
       return applyCardChange(message, { action, dieIds }).catch(notifyCardError);
     }
 
+    // Send goes through the GM relay, which checks it like any other request (ADR-027).
+    if ( action === "send-roll" ) return sendRollCard(message).catch(notifyCardError);
+
     return applyCardChange(message, { action, ...rest }).catch(notifyCardError);
   });
 }
@@ -395,7 +412,7 @@ export function onRenderPoolRollMessage(message, html) {
   // interactive covers the pre-confirm controls; a resolved card's step/overflow controls are
   // gated the same way (canEditPoolRollCard) but live in effectControls/overflowChoice instead,
   // since interactive itself is specifically "not yet resolved" (used for die clickability too).
-  const hasControls = context.interactive || context.effectControls || context.overflowChoice;
+  const hasControls = context.interactive || context.effectControls || context.overflowChoice || context.send;
 
   const compiled = Handlebars.partials[TEMPLATE];
   if ( typeof compiled === "function" ) {
