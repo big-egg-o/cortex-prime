@@ -18,17 +18,10 @@
 
 import { chromium } from "playwright-core";
 
-const BASE_URL = "http://localhost:30000";
-const DEFAULT_PATTERN = "cortex-prime.**";
-const TIMEOUT_MS = 60_000;
-const RUN_TIMEOUT_MS = 10 * 60_000; // batches do real document create/update/delete round trips
-const WORLD_ID = "cp-tests";
-const WORLD_TITLE = "CP Tests"; // the join page's <title>, before login exposes anything else
+import { TIMEOUT_MS, WORLD_ID, fail, joinWorld } from "./foundry-session.mjs";
 
-/** @param {string} message @returns {never} */
-function fail(message) {
-  throw new Error(message);
-}
+const DEFAULT_PATTERN = "cortex-prime.**";
+const RUN_TIMEOUT_MS = 10 * 60_000; // batches do real document create/update/delete round trips
 
 async function main() {
   const pattern = process.argv[2] ?? DEFAULT_PATTERN;
@@ -36,51 +29,12 @@ async function main() {
 
   const browser = await chromium.launch({ channel: "msedge" });
   try {
-    const page = await browser.newPage();
-    page.setDefaultTimeout(TIMEOUT_MS);
-    page.on("console", msg => {
-      if ( msg.text().startsWith("[quench] ") ) console.log(msg.text());
+    const page = await joinWorld(browser, {
+      userName: "Gamemaster",
+      password,
+      onConsole: text => { if ( text.startsWith("[quench] ") ) console.log(text); }
     });
-
-    console.log(`Opening ${BASE_URL} ...`);
-    await page.goto(BASE_URL, { waitUntil: "domcontentloaded" });
-
-    // The join form is injected by Foundry's own client script after domcontentloaded, not
-    // present in the initial HTML, so this has to wait for it rather than check right away.
-    const usernameSelect = page.locator("#join-username");
-    await usernameSelect.waitFor({ timeout: TIMEOUT_MS }).catch(() => fail(
-      `No join page appeared at ${BASE_URL} within ${TIMEOUT_MS}ms. This script never uses /setup, ` +
-      `so start dev Foundry (npm run foundry) and launch world "cp-tests" yourself first, then run this again.`
-    ));
-
-    // Before logging in at all: the join page's title is the only thing it exposes about
-    // which world is active, so check it names world "cp-tests" and refuse otherwise —
-    // never join, let alone run anything, against some other world.
-    const title = await page.title();
-    if ( title !== WORLD_TITLE ) {
-      fail(`The active world is "${title}", not "${WORLD_TITLE}" (world id "${WORLD_ID}"). This ` +
-        `script never launches or switches worlds — launch "${WORLD_ID}" yourself, then run this again.`);
-    }
-
-    const gmOption = usernameSelect.locator("option", { hasText: "Gamemaster" });
-    if ( (await gmOption.count()) === 0 ) {
-      fail(`No "Gamemaster" user on the join page for world "${title}".`);
-    }
-    await usernameSelect.selectOption({ label: "Gamemaster" });
-    if ( password ) await page.locator("#join-password").fill(password);
-    console.log(`Joining world "${title}" as Gamemaster ...`);
-    await page.locator('form[name="join"] button[name="join"]').click();
-
-    await page.waitForFunction(() => window.game?.ready === true, null, { timeout: TIMEOUT_MS })
-      .catch(() => fail(`Joined, but game.ready never became true in world "${title}".`));
     console.log("game.ready.");
-
-    // Belt and suspenders: confirm the real world id post-login too, in case a world's
-    // display title and id ever drift apart. Still before any batch runs.
-    const worldId = await page.evaluate(() => window.game?.world?.id);
-    if ( worldId !== WORLD_ID ) {
-      fail(`Joined, but game.world.id is "${worldId}", not "${WORLD_ID}". Refusing to run any batches.`);
-    }
 
     await page.waitForFunction(
       () => window.quench?._testBatches?.has("cortex-prime.smoke") === true, null, { timeout: TIMEOUT_MS }

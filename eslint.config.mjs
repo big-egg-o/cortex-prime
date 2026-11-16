@@ -54,9 +54,9 @@ export default [
     languageOptions: { globals: { ...globals.browser, ...foundryGlobals, quench: "readonly" } }
   },
   {
-    // scripts/run-quench.mjs: Node code that also hands small functions to
+    // The command-line test scripts: Node code that also hands small functions to
     // page.evaluate()/waitForFunction(), which run inside the Foundry browser page.
-    files: ["scripts/run-quench.mjs"],
+    files: ["scripts/run-quench.mjs", "scripts/run-quench-players.mjs", "scripts/foundry-session.mjs"],
     languageOptions: {
       globals: { ...globals.node, ...globals.browser, ...foundryGlobals, quench: "readonly", Mocha: "readonly" }
     }
