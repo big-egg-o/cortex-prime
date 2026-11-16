@@ -15,7 +15,8 @@
     "test:watch": "vitest",
     "check": "npm run lint && npm run test",
     "foundry": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/dev-foundry.ps1",
-    "quench": "node scripts/run-quench.mjs"
+    "quench": "node scripts/run-quench.mjs",
+    "quench:players": "node scripts/run-quench-players.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
