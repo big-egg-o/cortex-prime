@@ -333,7 +333,7 @@ export function registerContestStartBatch(quench) {
           assert.equal(holdOf(card), "sent");
         });
 
-        it("a sent card offers neither Send nor the overflow choice, and still steps an effect die (the lock comes in S4a)", async function() {
+        it("a sent card offers neither Send nor the overflow choice, and refuses to step an effect die (the lock, S4a)", async function() {
           needPlayers(this);
           const message = await contest();
           const card = await tc15Card({ flag: { messageId: message.id, side: "initiator", rollIndex: 0 } });
@@ -344,8 +344,8 @@ export function registerContestStartBatch(quench) {
           assert.equal(context.contestHold?.state, "sent");
 
           await applyCardChange(card, { action: "step-effect-die", effectId: "e1", steps: 1 });
-          assert.equal(card.system.resolution.effectDice[0].size, 8);
-          assert.equal(message.system.flow.rolls[0].effects[0].size, 6, "the contest keeps its own copy (ADR-027)");
+          assert.equal(card.system.resolution.effectDice[0].size, 6, "a sent card is locked");
+          assert.equal(message.system.flow.rolls[0].effects[0].size, 6);
         });
 
         it("a second contest refuses the same card with ROLL_IN_OTHER_CONTEST", async function() {

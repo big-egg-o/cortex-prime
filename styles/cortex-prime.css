@@ -578,3 +578,108 @@
   width: auto;
   margin-top: 0.15rem;
 }
+
+/* ---------------------------------------- */
+/*  contest-card (chat message)             */
+/* ---------------------------------------- */
+
+.cortex-prime.contest-card .cp-contest-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.cortex-prime.contest-card .cp-contest-badge {
+  padding: 0 0.4rem;
+  border: 1px solid currentColor;
+  border-radius: 3px;
+  font-size: var(--font-size-12);
+  white-space: nowrap;
+}
+
+.cortex-prime.contest-card .cp-contest-sides,
+.cortex-prime.contest-card .cp-contest-rolls {
+  margin: 0.25rem 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cortex-prime.contest-card .cp-contest-sides > li,
+.cortex-prime.contest-card .cp-contest-rolls > li {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  padding: 0.1rem 0.25rem;
+}
+
+.cortex-prime.contest-card .cp-side-role,
+.cortex-prime.contest-card .cp-roll-origin,
+.cortex-prime.contest-card .cp-contest-origin,
+.cortex-prime.contest-card .cp-contest-pending {
+  font-size: var(--font-size-12);
+  opacity: 0.8;
+}
+
+.cortex-prime.contest-card .cp-side-role {
+  flex: 0 0 5.5rem;
+}
+
+.cortex-prime.contest-card .cp-contest-sides > li.cp-expected .cp-side-label,
+.cortex-prime.contest-card .cp-contest-sides > li.cp-winner .cp-side-label,
+.cortex-prime.contest-card .cp-contest-rolls > li.cp-standing .cp-roll-total {
+  font-weight: bold;
+  text-decoration: underline;
+}
+
+.cortex-prime.contest-card .cp-roll-side {
+  flex: 1;
+}
+
+.cortex-prime.contest-card .cp-roll-origin {
+  margin-left: auto;
+}
+
+.cortex-prime.contest-card .cp-die {
+  margin-left: 0.25rem;
+  padding: 0 0.25rem;
+  border: 1px solid currentColor;
+  border-radius: 3px;
+  font-size: var(--font-size-12);
+}
+
+.cortex-prime.contest-card .cp-contest-difficulty > p,
+.cortex-prime.contest-card .cp-contest-outcome > p {
+  margin: 0.15rem 0;
+}
+
+.cortex-prime.contest-card .cp-contest-take-out,
+.cortex-prime.contest-card .cp-contest-pending {
+  padding-left: 0.5rem;
+  border-left: 3px solid var(--color-level-info, currentColor);
+}
+
+.cortex-prime.contest-card .cp-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+}
+
+.cortex-prime.contest-card .cp-controls > button {
+  flex: 1 0 auto;
+  white-space: nowrap;
+}
+
+/* The typed-total dialog: one small count field per die size, on one row. */
+.cortex-prime.contest-total .cp-total-effects .form-fields {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.cortex-prime.contest-total .cp-total-count {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.15rem;
+}

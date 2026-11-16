@@ -13,6 +13,7 @@ import { registerCharacterMigrationBatch } from "./character-migration.mjs";
 import { registerCharacterBatch } from "./character.mjs";
 import { registerCharacterSheetBatch } from "./character-sheet.mjs";
 import { registerChatBatch } from "./chat.mjs";
+import { registerContestCardBatch } from "./contest-card.mjs";
 import { registerContestModelBatch } from "./contest-model.mjs";
 import { registerContestRelayBatch } from "./contest-relay.mjs";
 import { registerContestStartBatch } from "./contest-start.mjs";
@@ -50,6 +51,7 @@ export function registerQuenchBatches(quench) {
   registerContestModelBatch(quench);
   registerContestRelayBatch(quench);
   registerContestStartBatch(quench);
+  registerContestCardBatch(quench);
   registerGameConfigBatch(quench);
 
   quench.registerBatch(
