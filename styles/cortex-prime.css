@@ -648,6 +648,42 @@
   font-size: var(--font-size-12);
 }
 
+.cortex-prime.contest-card .cp-contest-end,
+.cortex-prime.contest-card .cp-contest-result,
+.cortex-prime.contest-card .cp-contest-consequence {
+  margin: 0.25rem 0;
+  padding-top: 0.25rem;
+  border-top: 1px solid var(--color-border-light-2, currentColor);
+}
+
+.cortex-prime.contest-card .cp-pick-dice {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 0.25rem;
+}
+
+.cortex-prime.contest-card .cp-pick-dice > label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.15rem;
+}
+
+.cortex-prime.contest-card .cp-consequence-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.cortex-prime.contest-card .cp-consequence-lines {
+  margin: 0.15rem 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cortex-prime.contest-card .cp-contest-end > p,
+.cortex-prime.contest-card .cp-contest-result > p,
+.cortex-prime.contest-card .cp-contest-consequence > p,
 .cortex-prime.contest-card .cp-contest-difficulty > p,
 .cortex-prime.contest-card .cp-contest-outcome > p {
   margin: 0.15rem 0;
