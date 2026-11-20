@@ -109,6 +109,7 @@ export default class GameConfigData extends foundry.abstract.DataModel {
         required: true, nullable: false, integer: true, min: 1, initial: GAME_CONFIG_SCHEMA_VERSION
       }),
       traitSets: new ArrayField(new SchemaField(traitSetSchema())),
+      pcKindId: new StringField({ required: false, nullable: true, blank: false, initial: undefined, validate: isValidId }),
       actorKinds: new ArrayField(new SchemaField(actorKindSchema()))
     };
   }

@@ -1,0 +1,15 @@
+{{#if limited}}<div hidden></div>{{else}}
+<footer class="cp-sheet-pool" aria-label="{{ localize "CORTEX.Builder.Title" }}">
+  <div class="cp-pool-preview" aria-live="polite">
+    {{#each pool.groups}}
+    <span class="cp-source">{{#if actorName}}{{ actorName }} · {{/if}}{{ label }}
+      {{#each dice}}<b>d{{ size }}</b>{{/each}}{{#if fallback}} ({{ localize "CORTEX.Builder.Fallback" }}){{/if}}{{#if option}} · {{ option }}{{/if}}
+    </span>
+    {{else}}<span>{{ localize "CORTEX.Sheet.Design.EmptyPool" }}</span>{{/each}}
+    {{#if pool.summary}}<span class="cp-pending">{{ localize "CORTEX.Sheet.Design.Pending" }}
+      {{ pool.summary.cost }} {{ pool.summary.hinderGain }} {{ pool.summary.nonstandard.unpriced }}
+    </span>{{/if}}
+  </div>
+  <button type="button" data-action="reviewPool"><i class="fa-solid fa-dice" inert></i>{{ localize "CORTEX.Sheet.Design.Review" }}</button>
+</footer>
+{{/if}}

@@ -213,6 +213,72 @@ export function registerCharacterSheetBatch(quench) {
     "cortex-prime.character-sheet",
     ({ describe, it, assert, before, after, afterEach }) => {
       let storedConfig;
+
+      describe("Native sheets and reversible copies", () => {
+        it("makes a PC copy with working ratings and an independent id, leaving the classic source intact", async () => {
+          const original = await createCharacter(pcSystem().system);
+          const before = original.toObject();
+          const copy = await original.sheet.copyAs("pc");
+          assert.notEqual(copy.id, original.id);
+          assert.deepEqual(original.toObject(), before);
+          assert.deepEqual(copy.system.toObject().traits, before.system.traits);
+          const sheet = await openSheet(copy);
+          assert.deepEqual(setNames(sheet), ["Distinctions", "Attributes", "Skills"]);
+          assert.isNull(sheet.element.querySelector("select.cp-die"));
+          assert.exists(sheet.element.querySelector(".cp-pick-trait"));
+          assert.exists(sheet.element.querySelector('[data-action="reviewPool"]'));
+          const rendered = nextRender(sheet);
+          sheet.element.querySelector('[data-action="toggleEdit"]').click();
+          await rendered;
+          assert.exists(sheet.element.querySelector("select.cp-die"));
+          assert.exists(sheet.element.querySelector('[name="system.plotPoints"]'));
+        });
+
+        it("copies a compendium entry into the world and preserves the pack entry", async () => {
+          const pack = await foundry.documents.collections.CompendiumCollection.createCompendium({
+            type: "Actor", label: "Quench sheet copy " + newId()
+          });
+          try {
+            const source = await Actor.implementation.create({
+              name: "Pack scout", type: "character", system: pcSystem().system,
+              flags: { [SYSTEM_ID]: { [FLAG_KEY]: true } }
+            }, { pack: pack.collection });
+            const before = source.toObject();
+            const copy = await source.sheet.copyAs("pc");
+            assert.isTrue(game.actors.has(copy.id));
+            assert.notEqual(copy.id, source.id);
+            assert.deepEqual(copy.system.toObject().traits, before.system.traits);
+            assert.deepEqual((await pack.getDocument(source.id)).toObject(), before);
+          }
+          finally {
+            await pack.deleteCompendium();
+          }
+        });
+
+        it("lets the GM hide and restore a GMC block with the same rated entry", async () => {
+          const id = newId();
+          const original = await createCharacter({ kindId: MINOR_GMC_KIND, freeTraits: [{ id, name: "Scout", dice: [8] }] });
+          const gmc = await original.sheet.copyAs("gmc");
+          const sheet = await openSheet(gmc);
+          assert.deepEqual(setNames(sheet), [game.i18n.localize("CORTEX.Sheet.Design.free")]);
+          const rendered = nextRender(sheet);
+          sheet.element.querySelector('[data-action="toggleEdit"]').click();
+          await rendered;
+          let saved = nextUpdate(gmc);
+          sheet.element.querySelector('[data-action="hideBlock"]').click();
+          await saved;
+          await sheet.render();
+          assert.deepEqual(gmc.system.blocks, []);
+          assert.deepEqual(gmc.system.freeTraits[0].dice, [8]);
+          sheet.element.querySelector(".cp-block-choice").value = "free";
+          saved = nextUpdate(gmc);
+          sheet.element.querySelector('[data-action="addBlock"]').click();
+          await saved;
+          await sheet.render();
+          assert.exists(sheet.element.querySelector(`[data-entry-id="${id}"]`));
+          assert.deepEqual(original.system.freeTraits[0].dice, [8]);
+        });
+      });
       before(async () => {
         storedConfig = getGameConfig();
         await cleanUp();
@@ -1065,6 +1131,18 @@ export function registerCharacterSheetBatch(quench) {
         /** @returns {object} the token's actor rebuilt from the stored base actor and delta, as a reload builds it */
         const rebuiltSystem = token => getDocumentClass("ActorDelta")
           .applyDelta(token.delta, game.actors.get(token.actorId)).system.toObject();
+
+        it("copies a synthetic actor with its token delta and keeps the original token link", async () => {
+          const { actor, token } = await unlinkedToken();
+          const free = { id: newId(), name: "Only this token", dice: [10] };
+          await token.actor.update({ "system.freeTraits": [free] });
+          const before = token.delta.toObject();
+          const copy = await token.actor.sheet.copyAs("gmc");
+          assert.deepEqual(copy.system.toObject().freeTraits, [free]);
+          assert.deepEqual(storedSystem(actor).freeTraits, []);
+          assert.equal(token.actorId, actor.id);
+          assert.deepEqual(token.delta.toObject(), before);
+        });
 
         it("CS-17 edits the token's own actor; a set it clears is stored as {entries: []} and keeps its key (ADR-044)", async () => {
           const { actor, token, physical, distinction } = await unlinkedToken();

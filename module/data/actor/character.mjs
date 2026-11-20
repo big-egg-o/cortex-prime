@@ -35,7 +35,7 @@ import { checkMigrations, defineMigrations, migrateSourceInPlace } from "../migr
 import StrictBooleanField from "../fields/strict-boolean-field.mjs";
 import { getGameConfig } from "../../config/settings.mjs";
 import { SHUT_DOWN_REASONS } from "../../rules/statements.mjs";
-import { checkCharacterUpdate, diffCharacterTraits, validateEntryFields } from "../../rules/traits.mjs";
+import { checkCharacterUpdate, diffCharacterTraits, validateEntryFields, validateRating } from "../../rules/traits.mjs";
 
 const { ArrayField, NumberField, SchemaField, StringField, TypedObjectField } = foundry.data.fields;
 const { isValidId } = foundry.data.validators;
@@ -223,5 +223,44 @@ export default class CharacterData extends foundry.abstract.TypeDataModel {
       ),
       freeTraits: new ArrayField(new SchemaField(freeTraitSchema()))
     };
+  }
+}
+
+/** The recorded balance is independent of a pending pool preview. */
+export class PlayerCharacterData extends CharacterData {
+  static defineSchema() {
+    return {
+      ...super.defineSchema(),
+      plotPoints: new NumberField({ required: true, nullable: false, integer: true, min: 0, initial: 0 })
+    };
+  }
+}
+
+/** Special ratings use normal free-trait entries so their stable source ids work in every pool. */
+export class GmcData extends CharacterData {
+  static defineSchema() {
+    return {
+      ...super.defineSchema(),
+      blocks: new ArrayField(new StringField({ required: true, blank: false })),
+      mobTraitId: idField({ nullable: true, initial: null }),
+      bossTraitId: idField({ nullable: true, initial: null }),
+      sfx: new ArrayField(new SchemaField(sfxSchema()))
+    };
+  }
+
+  static validateJoint(data) {
+    super.validateJoint(data);
+    const mob = data.freeTraits.find(entry => entry.id === data.mobTraitId);
+    if ( mob ) {
+      const rating = validateRating(mob.dice, { sameSizeDice: true });
+      if ( !rating.ok ) throw new Error(game.i18n.localize(`CORTEX.Character.Errors.${rating.code}`));
+    }
+  }
+
+  async _preUpdate(changes, options, user) {
+    if ( !user.isGM && changes.system && ["blocks", "mobTraitId", "bossTraitId"].some(key => key in changes.system) ) {
+      return false;
+    }
+    return super._preUpdate(changes, options, user);
   }
 }

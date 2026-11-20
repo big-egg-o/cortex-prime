@@ -319,6 +319,139 @@
   flex: 1;
 }
 
+/* The content width follows the Foundry window even when the tabletop stays wide. */
+.cortex-prime.character-sheet .window-content .cp-native {
+  container-type: inline-size;
+  flex: 1 1 0;
+  height: auto;
+  min-width: 0;
+}
+
+.cortex-prime.character-sheet .cp-native .cp-sheet-header {
+  padding-bottom: 0.65rem;
+  border-bottom: 1px solid var(--color-border-light-primary);
+}
+
+.cortex-prime.character-sheet .cp-native .cp-portrait {
+  width: 48px;
+  height: 48px;
+  border-radius: 4px;
+}
+
+.cortex-prime.character-sheet .cp-play .cp-portrait { cursor: default; }
+.cortex-prime.character-sheet .cp-native .cp-sheet-title { min-width: 0; }
+.cortex-prime.character-sheet .cp-native h2.cp-actor-name {
+  margin: 0;
+  border: 0;
+  overflow-wrap: anywhere;
+}
+
+.cortex-prime.character-sheet .cp-balance {
+  display: grid;
+  justify-items: center;
+  padding-inline: 0.5rem;
+  font-size: var(--font-size-12);
+}
+
+.cortex-prime.character-sheet .cp-balance strong { font-size: var(--font-size-20); }
+.cortex-prime.character-sheet .cp-balance input { width: 4rem; }
+.cortex-prime.character-sheet .cp-native .cp-edit-toggle { width: auto; }
+
+.cortex-prime.character-sheet .window-content .cp-native .cp-sheet-body {
+  display: grid;
+  align-content: start;
+  align-items: start;
+  grid-template-columns: minmax(0, 1fr);
+  min-height: 0;
+  overflow: auto;
+  padding-inline-end: 0.25rem;
+}
+
+@container (min-width: 36rem) {
+  .cortex-prime.character-sheet .window-content .cp-play .cp-sheet-body {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.cortex-prime.character-sheet .cp-native :is(.cp-wide, .notification, .cp-block-tools, .cp-other-traits) {
+  grid-column: 1 / -1;
+}
+
+.cortex-prime.character-sheet .cp-native fieldset { min-inline-size: 0; }
+.cortex-prime.character-sheet .window-content .cp-gmc { flex-basis: auto; }
+.cortex-prime.character-sheet .cp-gmc .cp-sheet-body { max-height: 62vh; }
+.cortex-prime.character-sheet .cp-gmc .cp-trait-set:only-of-type { grid-column: 1 / -1; }
+.cortex-prime.character-sheet .cp-native legend { font-weight: 650; }
+.cortex-prime.character-sheet .cp-block-tools { display: flex; gap: 0.5rem; }
+.cortex-prime.character-sheet .cp-block-tools select { flex: 1; min-width: 0; }
+
+.cortex-prime.character-sheet .cp-play .cp-trait {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  padding-block: 0.25rem;
+}
+
+.cortex-prime.character-sheet .cp-play .cp-trait + .cp-trait {
+  border-top: 1px solid var(--color-border-light-primary);
+}
+
+.cortex-prime.character-sheet .cp-play .cp-pick-trait {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  min-width: 0;
+  height: auto;
+  padding: 0.25rem 0.35rem;
+  background: transparent;
+  color: inherit;
+  border: 1px solid transparent;
+  text-align: start;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.cortex-prime.character-sheet .cp-pick-trait strong {
+  padding: 0.15rem 0.4rem;
+  border: 1px solid var(--color-border-light-primary);
+  border-radius: 4px;
+  font-variant-numeric: tabular-nums;
+}
+
+.cortex-prime.character-sheet .cp-play .cp-pick-trait:is(:hover, :focus-visible) {
+  border-color: var(--color-border-highlight);
+}
+
+.cortex-prime.character-sheet .cp-play .cp-trait > .form-fields { flex: 0 1 auto; flex-wrap: wrap; }
+.cortex-prime.character-sheet .cp-native .cp-pool-buttons { flex-wrap: wrap; }
+.cortex-prime.character-sheet .cp-play .cp-reference { flex: 1 0 100%; }
+.cortex-prime.character-sheet .cp-play summary { cursor: pointer; color: var(--color-text-secondary); }
+.cortex-prime.character-sheet .cp-play .cp-shut-down .cp-pick-trait { opacity: 0.65; }
+.cortex-prime.character-sheet .cp-sheet-pool {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding-top: 0.6rem;
+  border-top: 1px solid var(--color-border-light-primary);
+}
+
+.cortex-prime.character-sheet .cp-pool-preview {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.75rem;
+  overflow-y: auto;
+  max-height: 6rem;
+  font-size: var(--font-size-13);
+}
+
+.cortex-prime.character-sheet .cp-pending { flex-basis: 100%; color: var(--color-text-secondary); }
+.cortex-prime.character-sheet .cp-sheet-pool button { flex: none; }
+
 /* A long trait name wraps; core's form line height would spread it over two tall lines. */
 .cortex-prime.character-sheet .window-content .cp-trait > label {
   line-height: 1.25;

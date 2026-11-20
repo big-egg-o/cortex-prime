@@ -316,6 +316,29 @@
       }
     },
     "Sheet": {
+      "Design": {
+        "PcLayout": "Layout for all player characters",
+        "NoPcLayout": "Choose a player-character layout in Game Configuration.",
+        "PlotPoints": "Plot points",
+        "Edit": "Edit sheet",
+        "Done": "Done editing",
+        "EmptyGmc": "Use Edit sheet to add the blocks this GMC needs.",
+        "Block": "Building block",
+        "AddBlock": "Add block",
+        "HideBlock": "Hide block. Add it again to restore its contents.",
+        "free": "Descriptive traits",
+        "mob": "Mob dice",
+        "boss": "Boss dice",
+        "sfx": "SFX",
+        "LockedSfx": "Locked SFX",
+        "LoseDie": "Lose d{size}",
+        "Pending": "Pending",
+        "EmptyPool": "Your pool is empty",
+        "Review": "Review pool",
+        "CopyPc": "Create PC copy in world",
+        "CopyGmc": "Create GMC copy in world",
+        "CopyName": "{name} ({type})"
+      },
       "Character": "Cortex Prime character sheet",
       "Name": "Name",
       "EditPortrait": "Change the portrait",
@@ -488,7 +511,9 @@
   },
   "TYPES": {
     "Actor": {
-      "character": "Character"
+      "pc": "Player character",
+      "gmc": "GMC",
+      "character": "Classic character / location"
     },
     "ChatMessage": {
       "poolRoll": "Dice Pool Roll",

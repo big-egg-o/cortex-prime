@@ -1,6 +1,8 @@
 /**
- * The character sheet (Roadmap M2): an ApplicationV2 actor sheet for the "character" actor type
- * (Decisions ADR-031). It shows the trait sets of the actor's kind as the game configuration
+ * ApplicationV2 sheets for native PCs, modular GMCs and classic characters (ADR-055).
+ * Native sheets share the user's pool footer and put rating inputs in Edit sheet. Classic
+ * characters retain the M2 behavior described below and can be copied into either native type.
+ * The classic sheet shows the trait sets of the actor's kind as the game configuration
  * defines and names them (ADR-030), so a set the GM adds or renames shows without a code change,
  * and lets an owner edit the rating of a trait the actor holds. What is shown and how the inputs
  * become an update is decided by the pure module/apps/character-sheet-data.mjs.
@@ -53,15 +55,16 @@
 
 import CharacterData from "../data/actor/character.mjs";
 import { getGameConfig } from "../config/settings.mjs";
+import { actorLayout, addGmcBlock, blocksFromCharacter, DEFAULT_MOB_SET, GMC_BLOCKS } from "../rules/actor-layout.mjs";
 import { checkCharacterUpdate } from "../rules/traits.mjs";
 import {
   DESCRIPTION_INPUTS, FREE_NAME_INPUTS, FREE_RATING_INPUTS, NAME_INPUTS, NEW_RATING_INPUTS, RATING_INPUTS, SET_SFX_INPUTS,
   SFX_INPUTS, STATEMENT_INPUTS, SUB_NAME_INPUTS, SUB_RATING_INPUTS, TAG_INPUTS, addFreeTrait, addSetSfx, addSubTrait,
   addTraitEntry, addTraitSfx, characterSheetView, freeTraitChanges, removeFreeTrait, removeSetSfx, removeSubTrait,
   removeTraitEntry, removeTraitSfx, resolveTraitChallenge, setShutDownChange, setTraitShutDown, sheetTraitChanges,
-  storesNoTraits
+  sfxFromInputs, sfxRows, storesNoTraits
 } from "./character-sheet-data.mjs";
-import { addTraitToPool } from "./pool-builder.mjs";
+import { addTraitToPool, openPoolBuilder, sheetPoolContext } from "./pool-builder.mjs";
 
 const { HandlebarsApplicationMixin } = foundry.applications.api;
 const { ActorSheetV2 } = foundry.applications.sheets;
@@ -72,7 +75,7 @@ const TEMPLATE = "systems/cortex-prime/templates/actor/character-sheet.hbs";
 const SFX_LIST = "systems/cortex-prime/templates/actor/sfx-list.hbs";
 
 /**
- * The sheet for "character" actors.
+ * Character sheets share form processing, permission checks and trait actions.
  * @extends {foundry.applications.sheets.ActorSheetV2}
  * @mixes HandlebarsApplicationMixin
  */
@@ -85,6 +88,14 @@ export default class CharacterSheet extends HandlebarsApplicationMixin(ActorShee
     window: { resizable: true, contentClasses: ["standard-form"] },
     form: { submitOnChange: true },
     actions: {
+      reviewPool() { return openPoolBuilder({ beside: this }); },
+      addBlock: CharacterSheet.#onAddBlock,
+      hideBlock: CharacterSheet.#onHideBlock,
+      loseDie: CharacterSheet.#onLoseDie,
+      addGmcSfx: CharacterSheet.#onAddGmcSfx,
+      removeGmcSfx: CharacterSheet.#onRemoveGmcSfx,
+      copyPc() { return this.copyAs("pc"); },
+      copyGmc() { return this.copyAs("gmc"); },
       addToPool: CharacterSheet.#onAddToPool,
       toggleEdit: CharacterSheet.#onToggleEdit,
       addTrait: CharacterSheet.#onAddTrait,
@@ -116,6 +127,13 @@ export default class CharacterSheet extends HandlebarsApplicationMixin(ActorShee
    */
   _initializeApplicationOptions(options) {
     const initialized = super._initializeApplicationOptions(options);
+    if ( ["pc", "gmc"].includes(initialized.document?.type) ) {
+      const gmc = initialized.document.type === "gmc";
+      initialized.position = {
+        ...initialized.position, width: options.position?.width ?? (gmc ? 500 : 680),
+        height: options.position?.height ?? (gmc ? "auto" : initialized.position.height)
+      };
+    }
     if ( initialized.document?.limited ) initialized.position = { ...initialized.position, height: "auto" };
     return initialized;
   }
@@ -131,8 +149,52 @@ export default class CharacterSheet extends HandlebarsApplicationMixin(ActorShee
 
   /** @override */
   static PARTS = {
-    sheet: { template: TEMPLATE, templates: [SFX_LIST], scrollable: [".cp-sheet-body"] }
+    sheet: { template: TEMPLATE, templates: [SFX_LIST], scrollable: [".cp-sheet-body"] },
+    pool: { template: "systems/cortex-prime/templates/actor/pool-footer.hbs" }
   };
+
+  _configureRenderParts(options) {
+    const parts = super._configureRenderParts(options);
+    if ( this.actor.type === "character" ) delete parts.pool;
+    return parts;
+  }
+
+  _getHeaderControls() {
+    const controls = super._getHeaderControls();
+    if ( this.actor.type === "character" && game.user.isGM ) {
+      controls.push(
+        { action: "copyPc", icon: "fa-solid fa-copy", label: "CORTEX.Sheet.Design.CopyPc" },
+        { action: "copyGmc", icon: "fa-solid fa-copy", label: "CORTEX.Sheet.Design.CopyGmc" }
+      );
+    }
+    return controls;
+  }
+
+  /** Copy even a synthetic or compendium Actor to a new world Actor, without altering its source or links. */
+  async copyAs(type) {
+    if ( !game.user.isGM || this.actor.type !== "character" || !["pc", "gmc"].includes(type) ) return;
+    const data = this.actor.toObject();
+    delete data._id;
+    delete data._stats;
+    if ( data.flags?.core ) delete data.flags.core.sheetClass;
+    if ( this.actor.pack ) {
+      data.folder = null;
+      delete data.ownership;
+    }
+    data.type = type;
+    data.name = game.i18n.format("CORTEX.Sheet.Design.CopyName", { name: data.name, type: game.i18n.localize(`TYPES.Actor.${type}`) });
+    if ( type === "gmc" ) data.system.blocks = blocksFromCharacter(data.system, getGameConfig());
+    return Actor.implementation.create(data, { renderSheet: true, keepEmbeddedIds: true });
+  }
+
+  /** Update only the footer so choosing dice on another sheet preserves focus and open details. */
+  static refreshPoolFooters() {
+    for ( const app of foundry.applications.instances.values() ) {
+      if ( app instanceof CharacterSheet && app.rendered && !app.actor.limited && app.actor.type !== "character" ) {
+        app.render({ parts: ["pool"] });
+      }
+    }
+  }
 
   /**
    * Renders every open character sheet again, so a change to the game configuration (a set
@@ -149,14 +211,21 @@ export default class CharacterSheet extends HandlebarsApplicationMixin(ActorShee
     const context = await super._prepareContext(options);
     // A limited user gets the name and portrait only (CS-D4); nothing about the traits is prepared.
     if ( this.actor.limited ) return Object.assign(context, { actor: this.actor, limited: true });
+    const native = this.actor.type !== "character";
+    if ( native ) context.pool = sheetPoolContext();
+    if ( options.parts?.length === 1 && options.parts[0] === "pool" ) return context;
     const config = getGameConfig();
     const system = this.actor.system.toObject();
-    const view = characterSheetView(system, config);
+    const layout = actorLayout(this.actor.type, system, config);
+    const view = characterSheetView(system, config, layout);
     const i18n = game.i18n;
-    const mayChallenge = this.actor.isOwner;
+    const mayChallenge = this.actor.isOwner && this.isEditable;
     const editMode = this.editMode;
+    const play = native && !editMode;
     const row = trait => ({
       ...trait,
+      editable: trait.editable && !play,
+      playRoll: play && trait.rollable,
       label: trait.name || i18n.localize("CORTEX.Sheet.Unnamed"),
       nameInput: editMode ? trait.nameInput : null,
       statementInput: editMode ? trait.statementInput : null,
@@ -171,7 +240,7 @@ export default class CharacterSheet extends HandlebarsApplicationMixin(ActorShee
       shutDownLabel: i18n.format(trait.ownShutDown ? "CORTEX.Sheet.ShutDown.ClearTrait" : "CORTEX.Sheet.ShutDown.SetTrait",
         { trait: trait.name }),
       removeLabel: i18n.format("CORTEX.Sheet.RemoveTrait", { trait: trait.name }),
-      newSlot: (trait.newSlot && this.isEditable)
+      newSlot: (trait.newSlot && this.isEditable && !play)
         ? { ...trait.newSlot, ariaLabel: i18n.format("CORTEX.Sheet.NewRating", { trait: trait.name }) } : null,
       canChallenge: trait.canChallenge && mayChallenge,
       canHinderChallenge: trait.canHinder && trait.canChallenge && mayChallenge,
@@ -207,6 +276,8 @@ export default class CharacterSheet extends HandlebarsApplicationMixin(ActorShee
     // The sheet's sections: the kind's sets, then its free traits, which belong to no set (TS-22).
     const sections = view.sets.map(set => ({
       ...set, free: false, emptyText: i18n.localize("CORTEX.Sheet.NoTraits"), traits: set.traits.map(row),
+      canLoseDice: this.actor.type === "gmc" && set.id === DEFAULT_MOB_SET && set.multiDice,
+      wide: config.traitSets.some(def => def.id === set.id && (def.role === "distinctions" || def.features?.statements)),
       canShutDown: set.canShutDown && this.isEditable,
       shutDownLabel: i18n.format(set.shutDown ? "CORTEX.Sheet.ShutDown.ClearSet" : "CORTEX.Sheet.ShutDown.SetSet",
         { set: set.name }),
@@ -215,21 +286,47 @@ export default class CharacterSheet extends HandlebarsApplicationMixin(ActorShee
       showSetSfx: (set.sfx !== null) && (editMode || (set.sfx.length > 0)),
       addSetSfxLabel: i18n.format("CORTEX.Sheet.Details.AddSetSfx", { set: set.name })
     }));
-    if ( view.freeTraits ) {
+    const gmc = this.actor.type === "gmc";
+    const canBuild = gmc && game.user.isGM && editMode;
+    if ( view.freeTraits && (!gmc || system.blocks.includes("free")) ) {
       sections.push({
-        id: null, name: i18n.localize("CORTEX.Sheet.FreeTraits"), free: true, open: true, shutDown: false,
-        emptyText: i18n.localize("CORTEX.Sheet.NoFreeTraits"), traits: view.freeTraits.map(row)
+        id: null, block: "free", name: i18n.localize(gmc ? "CORTEX.Sheet.Design.free" : "CORTEX.Sheet.FreeTraits"),
+        free: true, open: true, shutDown: false, emptyText: i18n.localize("CORTEX.Sheet.NoFreeTraits"),
+        traits: view.freeTraits.filter(trait => !gmc || ![system.mobTraitId, system.bossTraitId].includes(trait.entryId)).map(row)
       });
     }
+    if ( gmc ) {
+      for ( const block of ["mob", "boss"] ) {
+        if ( !system.blocks.includes(block) ) continue;
+        const trait = view.freeTraits?.find(t => t.entryId === system[block + "TraitId"]);
+        sections.push({
+          block, free: true, threat: true, canLoseDice: true, name: i18n.localize(`CORTEX.Sheet.Design.${block}`),
+          traits: trait ? [row(trait)] : [], emptyText: i18n.localize("CORTEX.Sheet.NoTraits")
+        });
+      }
+      if ( system.blocks.includes("sfx") ) {
+        const name = i18n.localize("CORTEX.Sheet.Design.sfx");
+        sections.push({ block: "sfx", standaloneSfx: true, name, showSetSfx: true, sfxEdit: editMode,
+          sfx: CharacterSheet.#sfxContext(sfxRows(system.sfx, "gmcSfx"), name) });
+      }
+      sections.sort((a, b) => system.blocks.indexOf(a.block ?? a.id) - system.blocks.indexOf(b.block ?? b.id));
+    }
+    const blockChoices = canBuild ? [
+      ...GMC_BLOCKS.map(id => ({ id, name: i18n.localize(`CORTEX.Sheet.Design.${id}`) })),
+      ...config.traitSets
+    ].filter(block => !system.blocks.includes(block.id)) : [];
     return Object.assign(context, {
       actor: this.actor,
-      kindName: view.kind?.name ?? null,
-      notice: CharacterSheet.#notice(view),
+      native, play, gmc, canBuild, blockChoices,
+      pc: this.actor.type === "pc", plotPoints: system.plotPoints,
+      kindName: native ? i18n.localize("TYPES.Actor." + this.actor.type) : view.kind?.name ?? null,
+      notice: gmc ? ((!sections.length && !editMode && this.isEditable && game.user.isGM) ? i18n.localize("CORTEX.Sheet.Design.EmptyGmc") : null)
+        : (native && !layout) ? i18n.localize("CORTEX.Sheet.Design.NoPcLayout") : CharacterSheet.#notice(view),
       sections,
       others: this.#others(view),
       editMode,
       canEdit: this.isEditable,
-      kindPicker: this.#kindPicker(view, system, config)
+      kindPicker: native ? null : this.#kindPicker(view, system, config)
     });
   }
 
@@ -334,7 +431,14 @@ export default class CharacterSheet extends HandlebarsApplicationMixin(ActorShee
     await super._onRender(context, options);
     if ( this.isEditable ) return;
     for ( const fieldset of this.element.querySelectorAll("fieldset.cp-trait-set") ) fieldset.disabled = false;
-    for ( const button of this.element.querySelectorAll('button[data-action="addToPool"]') ) button.disabled = false;
+    for ( const button of this.element.querySelectorAll('button[data-action="addToPool"], button[data-action="reviewPool"]') ) {
+      button.disabled = false;
+    }
+  }
+
+  _onChangeForm(formConfig, event) {
+    if ( event.target.matches(".cp-block-choice") ) return;
+    return super._onChangeForm(formConfig, event);
   }
 
   /**
@@ -348,7 +452,7 @@ export default class CharacterSheet extends HandlebarsApplicationMixin(ActorShee
     const setId = CharacterSheet.#setIdOf(target);
     const traitId = target.closest("[data-pool-trait-id]")?.dataset.poolTraitId;
     if ( (setId === undefined) || !traitId ) return;
-    await addTraitToPool(this.actor, setId, traitId, target.dataset.option ?? null, { beside: this });
+    await addTraitToPool(this.actor, setId, traitId, target.dataset.option ?? null, { beside: this, open: this.actor.type === "character" });
   }
 
   /**
@@ -412,6 +516,53 @@ export default class CharacterSheet extends HandlebarsApplicationMixin(ActorShee
   static #onToggleEdit() {
     this.#editMode = !this.#editMode;
     this.render();
+  }
+
+  static async #onAddBlock() {
+    if ( this.actor.type !== "gmc" || !this.editMode || !game.user.isGM ) return;
+    const block = this.element.querySelector(".cp-block-choice")?.value;
+    if ( !block ) return;
+    const change = addGmcBlock(this.actor.system.toObject(), getGameConfig(), block, () => foundry.utils.randomID(),
+      GMC_BLOCKS.includes(block) ? game.i18n.localize(`CORTEX.Sheet.Design.${block}`) : "");
+    if ( change ) await this.#writeSystem(change);
+  }
+
+  static async #onHideBlock(_event, target) {
+    if ( this.actor.type !== "gmc" || !this.editMode || !game.user.isGM ) return;
+    const block = target.closest("[data-block]")?.dataset.block;
+    const blocks = this.actor.system.blocks.filter(id => id !== block);
+    if ( blocks.length !== this.actor.system.blocks.length ) await this.#writeSystem({ blocks });
+  }
+
+  /** The GM or owner chooses which die was lost, particularly for a mixed boss rating (pp. 117–118). */
+  static async #onLoseDie(_event, target) {
+    if ( this.actor.type !== "gmc" || !this.isEditable ) return;
+    const system = this.actor.system.toObject();
+    const block = target.closest("[data-block]")?.dataset.block;
+    if ( !system.blocks.includes(block) ) return;
+    const set = block === DEFAULT_MOB_SET ? system.traits[block] : null;
+    const id = target.closest("[data-entry-id]")?.dataset.entryId;
+    if ( !set && (!["mob", "boss"].includes(block) || id !== system[block + "TraitId"]) ) return;
+    const trait = (set?.entries ?? system.freeTraits).find(entry => entry.id === id);
+    const index = Number(target.dataset.index);
+    if ( !trait || !Number.isInteger(index) || trait.dice[index] !== Number(target.dataset.size) ) return;
+    trait.dice.splice(index, 1);
+    await this.#writeSystem(set ? { traits: { [block]: { entries: set.entries } } } : { freeTraits: system.freeTraits });
+  }
+
+  static async #onAddGmcSfx() {
+    if ( this.actor.type !== "gmc" || !this.editMode || !this.actor.system.blocks.includes("sfx") ) return;
+    await this.#writeSystem({ sfx: [...this.actor.system.toObject().sfx, { text: "", unlocked: true }] });
+  }
+
+  static async #onRemoveGmcSfx(_event, target) {
+    if ( this.actor.type !== "gmc" || !this.editMode ) return;
+    const index = Number(target.dataset.index);
+    const before = this.actor.system.toObject().sfx;
+    if ( !before[index] || !await CharacterSheet.#confirmRemoval("CORTEX.Sheet.Details.RemoveSfxTitle", target.dataset.tooltip) ) return;
+    const current = this.actor.system.toObject().sfx;
+    if ( JSON.stringify(current) !== JSON.stringify(before) ) return this.render();
+    await this.#writeSystem({ sfx: current.filter((_sfx, i) => i !== index) });
   }
 
   /**
@@ -748,11 +899,22 @@ export default class CharacterSheet extends HandlebarsApplicationMixin(ActorShee
    * @override
    */
   _processFormData(event, form, formData) {
+    // Autosaving one field must not replay stale values from another owner's edit.
+    // A rating is the one composite input: its selects together represent the dice list.
+    if ( this.actor.type !== "character" && event?.type === "change" ) {
+      const name = event.target.closest("[name]")?.name;
+      if ( name && Object.hasOwn(formData.object, name) ) {
+        const isRating = [RATING_INPUTS, FREE_RATING_INPUTS, NEW_RATING_INPUTS, SUB_RATING_INPUTS].includes(name.split(".")[0]);
+        const prefix = name.slice(0, name.lastIndexOf(".") + 1);
+        const fields = Object.entries(formData.object).filter(([key]) => key === name || (isRating && key.startsWith(prefix)));
+        formData = { object: Object.fromEntries(fields) };
+      }
+    }
     const {
       [RATING_INPUTS]: ratings, [NEW_RATING_INPUTS]: newRatings, [NAME_INPUTS]: names, [STATEMENT_INPUTS]: statements,
       [DESCRIPTION_INPUTS]: descriptions, [SFX_INPUTS]: sfx, [TAG_INPUTS]: tags, [SUB_NAME_INPUTS]: subNames,
       [SUB_RATING_INPUTS]: subRatings, [SET_SFX_INPUTS]: setSfx,
-      [FREE_RATING_INPUTS]: freeRatings, [FREE_NAME_INPUTS]: freeNames, ...data
+      [FREE_RATING_INPUTS]: freeRatings, [FREE_NAME_INPUTS]: freeNames, gmcSfx, ...data
     } = super._processFormData(event, form, formData);
     const stored = this.actor.system.toObject();
     const traits = sheetTraitChanges(stored, getGameConfig(), {
@@ -765,6 +927,11 @@ export default class CharacterSheet extends HandlebarsApplicationMixin(ActorShee
     // The kind select submits "system.kindId"; the trait changes go beside it.
     if ( Object.keys(traits.value).length ) data.system = { ...data.system, traits: traits.value };
     if ( freeTraits.value ) data.system = { ...data.system, freeTraits: freeTraits.value };
+    if ( gmcSfx && this.actor.type === "gmc" && this.editMode ) {
+      const changed = sfxFromInputs(stored.sfx, gmcSfx);
+      if ( !changed.ok ) throw new Error(CharacterSheet.#refusalText(changed.code));
+      if ( changed.value ) data.system = { ...data.system, sfx: changed.value };
+    }
     return data;
   }
 

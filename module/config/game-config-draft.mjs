@@ -160,6 +160,7 @@ export function addActorKind(draft, id, name) {
 export function deleteActorKind(draft, kindId) {
   const copy = copyPlain(draft);
   copy.actorKinds = copy.actorKinds.filter(kind => kind.id !== kindId);
+  if ( copy.pcKindId === kindId ) copy.pcKindId = null;
   return copy;
 }
 
@@ -210,6 +211,7 @@ const SET_SIZE_FIELDS = ["usualMin", "usualMax", "startingRating", "fallbackDie"
 export function applyConfigForm(draft, form) {
   const copy = copyPlain(draft);
   if ( !isPlainObject(form) ) return copy;
+  if ( typeof form.pcKindId === "string" ) copy.pcKindId = form.pcKindId || null;
   const setForms = listFromForm(form.traitSets);
   copy.traitSets.forEach((set, i) => {
     const values = setForms[i];

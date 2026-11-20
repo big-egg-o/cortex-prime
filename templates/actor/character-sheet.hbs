@@ -8,13 +8,15 @@
   </header>
 </div>
 {{else}}
-<div class="cp-sheet">
+<div class="cp-sheet{{#if native}} cp-native{{/if}}{{#if play}} cp-play{{/if}}{{#if gmc}} cp-gmc{{/if}}">
   <header class="cp-sheet-header">
-    <img class="cp-portrait" src="{{ actor.img }}" alt="{{ actor.name }}" data-edit="img" data-action="editImage"
-      data-tooltip="{{ localize "CORTEX.Sheet.EditPortrait" }}">
+    <img class="cp-portrait" src="{{ actor.img }}" alt="{{ actor.name }}" {{#unless play}}data-edit="img" data-action="editImage"
+      data-tooltip="{{ localize "CORTEX.Sheet.EditPortrait" }}"{{/unless}}>
     <div class="cp-sheet-title">
+      {{#if play}}<h2 class="cp-actor-name">{{ actor.name }}</h2>{{else}}
       <input class="cp-actor-name" type="text" name="name" value="{{ source.name }}"
         placeholder="{{ localize "CORTEX.Sheet.Name" }}" aria-label="{{ localize "CORTEX.Sheet.Name" }}">
+      {{/if}}
       {{#if kindPicker}}
       <select class="cp-kind-select" name="system.kindId" aria-label="{{ localize "CORTEX.Sheet.Kind" }}">
         {{#if kindPicker.unassigned}}<option value="">{{ localize "CORTEX.Sheet.ChooseKind" }}</option>{{/if}}
@@ -24,20 +26,42 @@
       {{#if kindName}}<p class="hint cp-kind">{{ kindName }}</p>{{/if}}
       {{/if}}
     </div>
+    {{#if pc}}
+    <div class="cp-balance">
+      <span>{{ localize "CORTEX.Sheet.Design.PlotPoints" }}</span>
+      {{#if editMode}}<input name="system.plotPoints" type="number" data-dtype="Number" min="0" step="1"
+        value="{{ plotPoints }}" aria-label="{{ localize "CORTEX.Sheet.Design.PlotPoints" }}">
+      {{else}}<strong>{{ plotPoints }}</strong>{{/if}}
+    </div>
+    {{/if}}
     {{#if canEdit}}
-    <button type="button" class="ui-control icon cp-edit-toggle{{#if editMode}} active{{/if}}" data-action="toggleEdit"
+    <button type="button" class="{{#unless native}}ui-control icon {{/unless}}cp-edit-toggle{{#if editMode}} active{{/if}}" data-action="toggleEdit"
       aria-pressed="{{#if editMode}}true{{else}}false{{/if}}"
-      data-tooltip="{{ localize "CORTEX.Sheet.EditMode" }}" aria-label="{{ localize "CORTEX.Sheet.EditMode" }}"><i class="fa-solid fa-pen-to-square" inert></i></button>
+      data-tooltip="{{ localize "CORTEX.Sheet.EditMode" }}" {{#unless native}}aria-label="{{ localize "CORTEX.Sheet.EditMode" }}"{{/unless}}><i class="fa-solid fa-pen-to-square" inert></i>
+      {{#if native}}{{#if editMode}}{{localize "CORTEX.Sheet.Design.Done"}}{{else}}{{localize "CORTEX.Sheet.Design.Edit"}}{{/if}}{{/if}}</button>
     {{/if}}
   </header>
 
   <section class="cp-sheet-body scrollable">
     {{#if notice}}<p class="notification info">{{ notice }}</p>{{/if}}
 
+    {{#if blockChoices.length}}
+    <div class="cp-block-tools">
+      <select class="cp-block-choice" aria-label="{{ localize "CORTEX.Sheet.Design.Block" }}">
+        {{#each blockChoices}}<option value="{{ id }}">{{ name }}</option>{{/each}}
+      </select>
+      <button type="button" data-action="addBlock">{{ localize "CORTEX.Sheet.Design.AddBlock" }}</button>
+    </div>
+    {{/if}}
     {{#each sections}}
-    <fieldset class="cp-trait-set{{#if this.free}} cp-free-traits{{/if}}{{#if this.shutDown}} cp-shut-down{{/if}}"
+    <fieldset class="cp-trait-set{{#if this.free}} cp-free-traits{{/if}}{{#if this.shutDown}} cp-shut-down{{/if}}{{#if this.wide}} cp-wide{{/if}}"
+      data-block="{{#if this.block}}{{ this.block }}{{else}}{{ this.id }}{{/if}}"
       {{#if this.free}}data-free-traits{{else}}data-set-id="{{ this.id }}"{{/if}}>
       <legend>{{ this.name }}
+        {{#if @root.canBuild}}
+        <button type="button" class="ui-control icon" data-action="hideBlock" aria-label="{{ localize "CORTEX.Sheet.Design.HideBlock" }}"
+          data-tooltip="{{ localize "CORTEX.Sheet.Design.HideBlock" }}"><i class="fa-solid fa-eye-slash" inert></i></button>
+        {{/if}}
         {{#if this.canShutDown}}
         <button type="button" class="ui-control icon cp-shut-down-toggle{{#if this.shutDown}} active{{/if}}"
           data-action="toggleSetShutDown" data-shut-down="{{#if this.shutDown}}true{{else}}false{{/if}}"
@@ -48,6 +72,10 @@
       {{#if this.shutDown}}<p class="hint cp-shut-down-note">{{ localize "CORTEX.Sheet.ShutDown.Set" }}</p>{{/if}}
       {{#if this.showSetSfx}}
       <div class="cp-set-sfx">
+        {{#if this.standaloneSfx}}
+        {{> "systems/cortex-prime/templates/actor/sfx-list.hbs" sfx=this.sfx edit=this.sfxEdit removeAction="removeGmcSfx"}}
+        {{#if this.sfxEdit}}<button type="button" data-action="addGmcSfx">{{ localize "CORTEX.Sheet.Details.AddSfx" }}</button>{{/if}}
+        {{else}}
         <h4>{{ localize "CORTEX.Sheet.Details.SetSfx" }}</h4>
         {{> "systems/cortex-prime/templates/actor/sfx-list.hbs" sfx=this.sfx edit=this.sfxEdit removeAction="removeSetSfx"}}
         {{#if this.sfxEdit}}
@@ -55,9 +83,10 @@
           <i class="fa-solid fa-plus" inert></i><span>{{ localize "CORTEX.Sheet.Details.AddSfx" }}</span>
         </button>
         {{/if}}
+        {{/if}}
       </div>
       {{/if}}
-      {{#unless this.traits.length}}<p class="hint">{{ this.emptyText }}</p>{{/unless}}
+      {{#if (and this.emptyText (not this.traits.length))}}<p class="hint">{{ this.emptyText }}</p>{{/if}}
       {{#each this.traits}}
       <div class="form-group cp-trait{{#if this.shutDown}} cp-shut-down{{/if}}"
         {{#if this.entryId}}data-entry-id="{{ this.entryId }}"{{/if}}
@@ -65,6 +94,10 @@
         {{#if this.nameInput}}
         <label><input type="text" class="cp-trait-name" name="{{ this.nameInput }}" value="{{ this.name }}"
           aria-label="{{ localize "CORTEX.Sheet.TraitName" }}"></label>
+        {{else if this.playRoll}}
+        <button type="button" class="cp-pick-trait" data-action="addToPool" aria-label="{{ this.poolLabels.add }}">
+          <span>{{ this.label }}</span><strong>{{ this.ratingText }}</strong>
+        </button>
         {{else}}
         <label>{{ this.label }}</label>
         {{/if}}
@@ -86,23 +119,25 @@
               {{#each this.newSlot.options}}<option value="{{ this.value }}">{{ this.label }}</option>{{/each}}
             </select>
             {{/if}}
-            <span class="cp-rating-note">{{ this.ratingText }}</span>
+            {{#unless this.playRoll}}<span class="cp-rating-note">{{ this.ratingText }}</span>{{/unless}}
           {{/if}}
           {{#if this.rollable}}
           <span class="cp-pool-buttons">
+            {{#unless this.playRoll}}
             <button type="button" class="ui-control icon" data-action="addToPool"
               data-tooltip="{{ this.poolLabels.add }}" aria-label="{{ this.poolLabels.add }}"><i class="fa-solid fa-dice" inert></i></button>
+            {{/unless}}
             {{#if this.canHinder}}
-            <button type="button" class="ui-control icon" data-action="addToPool" data-option="hinder"
-              data-tooltip="{{ this.poolLabels.hinder }}" aria-label="{{ this.poolLabels.hinder }}"><i class="fa-solid fa-arrow-down-wide-short" inert></i></button>
+            <button type="button" class="{{#unless @root.native}}ui-control icon{{/unless}}" data-action="addToPool" data-option="hinder"
+              data-tooltip="{{ this.poolLabels.hinder }}" aria-label="{{ this.poolLabels.hinder }}">{{#if @root.native}}{{localize "CORTEX.Builder.Option.hinder"}}{{else}}<i class="fa-solid fa-arrow-down-wide-short" inert></i>{{/if}}</button>
             {{/if}}
             {{#if this.canChallenge}}
-            <button type="button" class="ui-control icon" data-action="addToPool" data-option="challenge"
-              data-tooltip="{{ this.poolLabels.challenge }}" aria-label="{{ this.poolLabels.challenge }}"><i class="fa-solid fa-bolt" inert></i></button>
+            <button type="button" class="{{#unless @root.native}}ui-control icon{{/unless}}" data-action="addToPool" data-option="challenge"
+              data-tooltip="{{ this.poolLabels.challenge }}" aria-label="{{ this.poolLabels.challenge }}">{{#if @root.native}}{{localize "CORTEX.Builder.Option.challenge"}}{{else}}<i class="fa-solid fa-bolt" inert></i>{{/if}}</button>
             {{/if}}
             {{#if this.canHinderChallenge}}
-            <button type="button" class="ui-control icon" data-action="addToPool" data-option="hinderChallenge"
-              data-tooltip="{{ this.poolLabels.hinderChallenge }}" aria-label="{{ this.poolLabels.hinderChallenge }}"><i class="fa-solid fa-angles-down" inert></i></button>
+            <button type="button" class="{{#unless @root.native}}ui-control icon{{/unless}}" data-action="addToPool" data-option="hinderChallenge"
+              data-tooltip="{{ this.poolLabels.hinderChallenge }}" aria-label="{{ this.poolLabels.hinderChallenge }}">{{#if @root.native}}{{localize "CORTEX.Builder.Option.hinderChallenge"}}{{else}}<i class="fa-solid fa-angles-down" inert></i>{{/if}}</button>
             {{/if}}
           </span>
           {{/if}}
@@ -112,7 +147,13 @@
             aria-pressed="{{#if this.ownShutDown}}true{{else}}false{{/if}}"
             data-tooltip="{{ this.shutDownLabel }}" aria-label="{{ this.shutDownLabel }}"><i class="fa-solid fa-power-off" inert></i></button>
           {{/if}}
-          {{#if this.nameInput}}
+          {{#if (and ../canLoseDice @root.play @root.canEdit)}}
+          {{#each this.dice}}
+          <button type="button" class="cp-lose-die" data-action="loseDie" data-index="{{ @index }}" data-size="{{ this }}"
+            aria-label="{{ localize "CORTEX.Sheet.Design.LoseDie" size=this }}">{{ localize "CORTEX.Sheet.Design.LoseDie" size=this }}</button>
+          {{/each}}
+          {{/if}}
+          {{#if (and this.nameInput (not ../threat))}}
           <button type="button" class="ui-control icon cp-remove-trait" data-action="removeTrait"
             data-tooltip="{{ this.removeLabel }}" aria-label="{{ this.removeLabel }}"><i class="fa-solid fa-trash" inert></i></button>
           {{/if}}
@@ -121,7 +162,10 @@
         <input type="text" class="cp-description-input" name="{{ this.descriptionInput }}" value="{{ this.description }}"
           placeholder="{{ localize "CORTEX.Sheet.Details.Description" }}" aria-label="{{ this.descriptionLabel }}">
         {{else if this.description}}
-        <p class="cp-description">{{ this.description }}</p>
+        {{#if @root.play}}
+        <details class="cp-reference"><summary>{{ localize "CORTEX.Sheet.Details.Description" }}</summary>
+          <p class="cp-description">{{ this.description }}</p></details>
+        {{else}}<p class="cp-description">{{ this.description }}</p>{{/if}}
         {{/if}}
         {{#if this.statementInput}}
         <input type="text" class="cp-statement-input" name="{{ this.statementInput }}" value="{{ this.statement }}"

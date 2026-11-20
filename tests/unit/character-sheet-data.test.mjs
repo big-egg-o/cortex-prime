@@ -923,7 +923,7 @@ describe("character sheet strings", () => {
   it("has every string the sheet and its template use", () => {
     const used = new Set();
     for ( const path of ["module/apps/character-sheet.mjs", "templates/actor/character-sheet.hbs", "templates/actor/sfx-list.hbs",
-      "module/cortex-prime.mjs"] ) {
+      "templates/actor/pool-footer.hbs", "module/cortex-prime.mjs"] ) {
       const source = readFileSync(resolve(ROOT, path), "utf8");
       for ( const match of source.matchAll(/"(CORTEX\.Sheet\.[A-Za-z.]+)"/g) ) used.add(match[1]);
     }

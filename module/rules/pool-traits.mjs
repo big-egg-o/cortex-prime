@@ -25,9 +25,9 @@
  */
 
 import { fail, ok } from "./result.mjs";
-import { traitDefById, traitSetById } from "./game-config.mjs";
+import { actorKindById, traitDefById, traitSetById } from "./game-config.mjs";
 import { challengeStatement } from "./statements.mjs";
-import { effectiveRating, poolTraitCost, traitPoolEntries } from "./trait-pool.mjs";
+import { effectiveRating, missingPrimeWarnings, poolTraitCost, traitPoolEntries } from "./trait-pool.mjs";
 
 /** How a trait can be added besides plainly (Character Sheets CS-D10 and CS-D14). */
 export const POOL_TRAIT_OPTIONS = Object.freeze(["hinder", "challenge", "hinderChallenge"]);
@@ -309,7 +309,7 @@ export function poolTraits(pool) {
  * The warnings name each trait's actor by the die's `actorId`, as the roll card matches them
  * (RQ-031). Hinder's plot points are summed for display only; nothing is paid (ADR-014, ADR-029).
  * @param {import("./types.mjs").PoolDie[]} pool
- * @param {Record<string, {kindId?: string|null, traits?: object}>} actors - each pool actor's
+ * @param {Record<string, {kindId?: string|null, traitSetIds?: string[], traits?: object}>} actors - each pool actor's
  *   kind and stored trait data, by the die's `actorRef` (or `actorId` where it has no reference)
  * @param {import("./types.mjs").GameConfig} config
  * @returns {import("./types.mjs").EngineResult<{traitCount: number, ppCost: number,
@@ -343,16 +343,11 @@ export function poolTraitReport(pool, actors, config) {
   const base = poolTraitCost(costTraits, config, null);
   if ( !base.ok ) return base;
 
-  const primeWarnings = [];
-  const missing = new Set();
-  const kinds = [...new Set(traits.map(trait => holderOf(trait)?.kindId).filter(kindId => typeof kindId === "string"))];
-  for ( const kindId of kinds ) {
-    for ( const warning of poolTraitCost(costTraits, config, kindId).value.warnings ) {
-      if ( (warning.code !== "PRIME_SET_MISSING") || missing.has(warning.setId) ) continue;
-      missing.add(warning.setId);
-      primeWarnings.push(warning);
-    }
-  }
+  const layoutSets = new Set(traits.flatMap(trait => {
+    const holder = holderOf(trait);
+    return holder?.traitSetIds ?? actorKindById(config, holder?.kindId)?.traitSetIds ?? [];
+  }));
+  const primeWarnings = missingPrimeWarnings(config, layoutSets, new Set(traits.map(trait => trait.setId)));
   const conflicts = traits.filter(trait => trait.ratingConflict).map(trait => {
     const warning = { code: "RATING_CONFLICTS_WITH_SET" };
     if ( trait.setId !== null ) warning.setId = trait.setId;

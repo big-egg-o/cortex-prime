@@ -20,6 +20,7 @@ import {
   setDifficultyDice, stepDownsAfterChallenge, stepPoolDie, traitPoolDice, withoutPoolTraits
 } from "../rules/index.mjs";
 import { getGameConfig } from "../config/settings.mjs";
+import { actorLayout } from "../rules/actor-layout.mjs";
 import { contestRecordOf, sideActor } from "../contest/records.mjs";
 import { openStartDialog } from "../contest/start-dialog.mjs";
 import { postPoolRoll } from "../dice/post-pool-roll.mjs";
@@ -30,6 +31,15 @@ const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
 const FLAG_SCOPE = "cortex-prime";
 const FLAG_KEY = "pool";
 const TEMPLATE = "systems/cortex-prime/templates/apps/pool-builder.hbs";
+// Clicks on different sheets and the builder share one read-modify-write sequence on this client.
+const poolWrites = new foundry.utils.Semaphore(1);
+
+async function changePool(transform) {
+  return poolWrites.add(async () => {
+    const next = transform(userPool());
+    if ( next ) await game.user.setFlag(FLAG_SCOPE, FLAG_KEY, next);
+  });
+}
 
 /** @returns {import("../rules/types.mjs").PoolDie[]} the current user's pool (ADR-012) */
 function userPool() {
@@ -51,9 +61,8 @@ function findPoolActor({ actorRef, actorId }) {
     catch {
       actor = null;
     }
-  }
-  if ( !actor && actorId ) actor = game.actors.get(actorId) ?? null;
-  return (actor?.documentName === "Actor") ? actor : null;
+  } else if ( actorId ) actor = game.actors.get(actorId) ?? null;
+  return (actor?.documentName === "Actor" && actor.system?.toObject) ? actor : null;
 }
 
 /**
@@ -61,18 +70,19 @@ function findPoolActor({ actorRef, actorId }) {
  * actor reference, as poolTraitReport reads them. A character that can't be found is left out,
  * and its traits count without flags.
  * @param {import("../rules/types.mjs").PoolDie[]} pool
- * @returns {Record<string, {kindId: string|null, traits: object}>}
+ * @param {import("../rules/types.mjs").GameConfig} config
+ * @returns {Record<string, {traitSetIds: string[], traits: object}>}
  */
-function poolActorData(pool) {
+function poolActorData(pool, config) {
   const data = {};
   const listed = poolTraits(pool);
   if ( !listed.ok ) return data;
   for ( const trait of listed.value ) {
     if ( !trait.actorRef || (trait.actorRef in data) ) continue;
     const actor = findPoolActor(trait);
-    if ( actor?.type !== "character" ) continue;
+    if ( !actor || !["pc", "gmc", "character"].includes(actor.type) ) continue;
     const system = actor.system.toObject();
-    data[trait.actorRef] = { kindId: system.kindId, traits: system.traits };
+    data[trait.actorRef] = { traitSetIds: actorLayout(actor.type, system, config)?.traitSetIds ?? [], traits: system.traits };
   }
   return data;
 }
@@ -93,7 +103,7 @@ function currentPoolReport(pool) {
     console.error(err);
     return null;
   }
-  const report = poolTraitReport(pool, poolActorData(pool), config);
+  const report = poolTraitReport(pool, poolActorData(pool, config), config);
   if ( report.ok ) return report.value;
   console.warn(`cortex-prime | The pool's traits couldn't be costed: ${report.code}`);
   return null;
@@ -128,7 +138,7 @@ async function stepDownChallenges(pool) {
       refusePoolTrait("ACTOR_NOT_FOUND");
       continue;
     }
-    if ( !actor.isOwner ) {
+    if ( !actor.isOwner || actor.compendium?.locked ) {
       refusePoolTrait("CHALLENGE_NEEDS_OWNER");
       continue;
     }
@@ -146,8 +156,7 @@ async function stepDownChallenges(pool) {
       ui.notifications.info(game.i18n.format("CORTEX.Builder.SteppedDown", { trait: trait.label }));
     }
   }
-  const kept = withoutPoolTraits(userPool(), challenged.value.map(trait => trait.key));
-  if ( kept.ok ) await game.user.setFlag(FLAG_SCOPE, FLAG_KEY, kept.value);
+  await changePool(current => withoutPoolTraits(current, challenged.value.map(trait => trait.key)).value);
   return true;
 }
 
@@ -190,7 +199,7 @@ function targetFit(target) {
  *   actorName?: string|null, option?: string|null, ppGained?: string|null, hint?: string|null,
  *   fallback?: boolean}[]}
  */
-function groupBySource(pool) {
+function groupBySource(pool, { showActor = false } = {}) {
   const listed = poolTraits(pool);
   const traits = new Map((listed.ok ? listed.value : []).map(trait => [`trait:${trait.key}`, trait]));
   const severalActors = new Set([...traits.values()].map(trait => trait.actorRef)).size > 1;
@@ -205,7 +214,7 @@ function groupBySource(pool) {
     if ( !trait ) return group;
     return {
       ...group,
-      actorName: severalActors ? (findPoolActor(trait)?.name ?? null) : null,
+      actorName: (showActor || severalActors) ? (findPoolActor(trait)?.name ?? null) : null,
       option: trait.option ? game.i18n.localize(`CORTEX.Builder.Option.${trait.option}`) : null,
       ppGained: (trait.ppGained > 0) ? `+${trait.ppGained} PP` : null,
       hint: trait.hint ? game.i18n.localize(`CORTEX.Builder.Hints.${trait.hint}`) : null,
@@ -232,6 +241,12 @@ function poolSummary(pool) {
     hinderGain: report.ppGained ? game.i18n.format("CORTEX.Builder.HinderGain", { pp: report.ppGained }) : null,
     nonstandard: prepareNonstandard({ pool, warnings: report.warnings, unpricedTraits: report.unpricedTraits })
   };
+}
+
+/** The footer reads the same user flag, source groups and PP calculation as Review pool. */
+export function sheetPoolContext() {
+  const pool = userPool();
+  return { groups: groupBySource(pool, { showActor: true }), summary: poolSummary(pool) };
 }
 
 /**
@@ -286,11 +301,11 @@ export default class PoolBuilder extends HandlebarsApplicationMixin(ApplicationV
 
   /**
    * Writes a new pool to the user flag, then re-renders.
-   * @param {import("../rules/types.mjs").PoolDie[]} pool
+   * @param {Function} transform - compute the next pool when earlier flag writes have completed
    * @returns {Promise<void>}
    */
-  async #savePool(pool) {
-    await game.user.setFlag(FLAG_SCOPE, FLAG_KEY, pool);
+  async #savePool(transform) {
+    await changePool(transform);
     await this.render();
   }
 
@@ -364,7 +379,7 @@ export default class PoolBuilder extends HandlebarsApplicationMixin(ApplicationV
    * @returns {Promise<ChatMessage|void>} nothing if the pool is empty or the target no longer fits
    */
   async rollPool(results) {
-    const pool = this.pool;
+    const pool = await poolWrites.add(userPool);
     if ( pool.length === 0 ) return;
     const target = this.#target;
     const fit = target ? targetFit(target) : null;
@@ -399,8 +414,7 @@ export default class PoolBuilder extends HandlebarsApplicationMixin(ApplicationV
    */
   async addDie(size, label) {
     const resolvedLabel = label.trim() || game.i18n.localize("CORTEX.Builder.CustomDieDefaultLabel");
-    const appended = appendCustomDie(this.pool, size, resolvedLabel);
-    if ( appended.ok ) await this.#savePool(appended.value);
+    await this.#savePool(pool => appendCustomDie(pool, size, resolvedLabel).value);
   }
 
   /**
@@ -409,7 +423,7 @@ export default class PoolBuilder extends HandlebarsApplicationMixin(ApplicationV
    * @returns {Promise<void>}
    */
   async removeDie(dieId) {
-    await this.#savePool(this.pool.filter(d => d.id !== dieId));
+    await this.#savePool(pool => pool.filter(d => d.id !== dieId));
   }
 
   /**
@@ -418,7 +432,7 @@ export default class PoolBuilder extends HandlebarsApplicationMixin(ApplicationV
    * @returns {Promise<void>}
    */
   async clearGroup(groupKey) {
-    await this.#savePool(this.pool.filter(d => poolDieGroupKey(d) !== groupKey));
+    await this.#savePool(pool => pool.filter(d => poolDieGroupKey(d) !== groupKey));
   }
 
   /**
@@ -427,7 +441,7 @@ export default class PoolBuilder extends HandlebarsApplicationMixin(ApplicationV
    * @returns {Promise<void>}
    */
   async doubleDie(dieId) {
-    await this.#savePool(doubleDie(this.pool, dieId));
+    await this.#savePool(pool => doubleDie(pool, dieId));
   }
 
   /**
@@ -438,7 +452,7 @@ export default class PoolBuilder extends HandlebarsApplicationMixin(ApplicationV
    * @returns {Promise<void>}
    */
   async stepDie(dieId, steps) {
-    await this.#savePool(stepPoolDie(this.pool, dieId, steps));
+    await this.#savePool(pool => stepPoolDie(pool, dieId, steps));
   }
 
   /**
@@ -450,12 +464,11 @@ export default class PoolBuilder extends HandlebarsApplicationMixin(ApplicationV
   async setDifficulty(level) {
     const name = game.i18n.localize(`CORTEX.Contest.DifficultyLevels.${level}`);
     const label = game.i18n.format("CORTEX.Builder.DifficultyDiceLabel", { level: name });
-    const result = setDifficultyDice(this.pool, level, label);
-    if ( !result.ok ) {
-      ui.notifications.warn(game.i18n.localize(`CORTEX.Contest.Errors.${result.code}`));
-      return;
-    }
-    await this.#savePool(result.value);
+    await this.#savePool(pool => {
+      const result = setDifficultyDice(pool, level, label);
+      if ( !result.ok ) ui.notifications.warn(game.i18n.localize(`CORTEX.Contest.Errors.${result.code}`));
+      return result.value;
+    });
   }
 
   /**
@@ -566,6 +579,7 @@ function positionBeside(app) {
  * @returns {Promise<PoolBuilder>}
  */
 export async function openPoolBuilder({ beside } = {}) {
+  await poolWrites.add(() => {});
   instance ??= new PoolBuilder();
   const options = { force: true };
   if ( !instance.rendered && beside?.rendered ) options.position = positionBeside(beside);
@@ -591,23 +605,25 @@ export async function openPoolBuilderFor(target) {
 }
 
 /**
- * Adds a trait of an actor to the current user's pool, whichever actor it belongs to, and opens
- * the pool builder (Character Sheets behaviours 20, 21 and 24; ADR-016, ADR-049). The character
+ * Adds a trait to the current user's pool. Classic sheets also open the builder; native sheets
+ * leave it behind the sheet until Review pool (ADR-049, ADR-055). The character
  * sheet's add, Hinder and challenge buttons call this. The dice and whether the option exists for
  * the trait come from traitPoolDice; a trait already in the pool is replaced by the new choice,
  * and the same choice again changes nothing (CS-D8). A challenge needs a user who can update the
  * actor, since its step-down is written after the roll (ADR-048). A refusal is shown as a
  * notification and leaves the pool as it was.
- * @param {Actor} actor - a "character" actor, world or unlinked token
+ * @param {Actor} actor - the Actor supplying the trait, including a token's synthetic Actor
  * @param {string|null} setId - null for a free trait (TS-22)
  * @param {string} traitId - a fixed set's definition id or an open set's entry id
  * @param {"hinder"|"challenge"|"hinderChallenge"|null} [option]
- * @param {{beside?: foundry.applications.api.ApplicationV2}} [options] - the sheet the builder
- *   opens beside
+ * @param {{beside?: foundry.applications.api.ApplicationV2, open?: boolean}} [options]
  * @returns {Promise<boolean>} whether the trait is in the pool afterwards
  */
-export async function addTraitToPool(actor, setId, traitId, option = null, { beside } = {}) {
-  if ( ["challenge", "hinderChallenge"].includes(option) && !actor.isOwner ) return refusePoolTrait("CHALLENGE_NEEDS_OWNER");
+export async function addTraitToPool(actor, setId, traitId, option = null, { beside, open = true } = {}) {
+  if ( !actor.testUserPermission(game.user, "OBSERVER") ) return false;
+  if ( ["challenge", "hinderChallenge"].includes(option) && (!actor.isOwner || actor.compendium?.locked) ) {
+    return refusePoolTrait("CHALLENGE_NEEDS_OWNER");
+  }
   let config;
   try {
     config = getGameConfig();
@@ -618,9 +634,13 @@ export async function addTraitToPool(actor, setId, traitId, option = null, { bes
   }
   const dice = traitPoolDice(actor.system.toObject(), config, setId, traitId, { actorId: actor.id, option });
   if ( !dice.ok ) return refusePoolTrait(dice.code);
-  const added = addTraitDice(userPool(), dice.value, { actorRef: actor.uuid });
+  const added = await poolWrites.add(async () => {
+    const result = addTraitDice(userPool(), dice.value, { actorRef: actor.uuid });
+    if ( result.ok && result.value.changed ) await game.user.setFlag(FLAG_SCOPE, FLAG_KEY, result.value.pool);
+    return result;
+  });
   if ( !added.ok ) return refusePoolTrait(added.code);
-  if ( added.value.changed ) await game.user.setFlag(FLAG_SCOPE, FLAG_KEY, added.value.pool);
-  await openPoolBuilder({ beside });
+  if ( open ) await openPoolBuilder({ beside });
+  else if ( instance?.rendered ) await instance.render();
   return true;
 }

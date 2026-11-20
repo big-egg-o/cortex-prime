@@ -248,7 +248,7 @@ function ratingSlots(prefix, dice, multiDice) {
  * @param {string|null} prefix - the inputs' name up to the SFX's index; null for no inputs
  * @returns {SheetSfx[]}
  */
-function sfxRows(stored, prefix) {
+export function sfxRows(stored, prefix) {
   return (Array.isArray(stored) ? stored : []).map((sfx, index) => ({
     index,
     text: (typeof sfx?.text === "string") ? sfx.text : "",
@@ -354,7 +354,7 @@ function traitRow(set, def, entry, setShutDown) {
  * @param {object} entry - what the actor stores
  * @returns {SheetTrait}
  */
-function freeTraitRow(entry) {
+function freeTraitRow(entry, multiDice = false) {
   const dice = storedDice(entry);
   const hasId = typeof entry.id === "string";
   const rating = effectiveRating(null, null, entry);
@@ -364,7 +364,7 @@ function freeTraitRow(entry) {
     name: (typeof entry.name === "string") ? entry.name : "",
     dice: [...dice],
     editable: hasId,
-    slots: hasId ? ratingSlots(`${FREE_RATING_INPUTS}.${entry.id}`, dice, false) : [],
+    slots: hasId ? ratingSlots(`${FREE_RATING_INPUTS}.${entry.id}`, dice, multiDice) : [],
     fallbackDie: null,
     unrated: !rating.ok && (rating.code === "TRAIT_UNRATED"),
     noDice: false,
@@ -440,11 +440,14 @@ function otherStoredTraits(system, config, kind, listed) {
  * the sheet writes.
  * @param {import("../rules/types.mjs").CharacterTraitData} system - the actor's system data
  * @param {import("../rules/types.mjs").GameConfig} config - the current game configuration
+ * @param {object|null} [layout] - explicit layout for a native PC or modular GMC
  * @returns {SheetView}
  */
-export function characterSheetView(system, config) {
+export function characterSheetView(system, config, layout) {
   const kindId = system?.kindId ?? null;
-  const kind = ((kindId !== null) && Array.isArray(config?.actorKinds)) ? (actorKindById(config, kindId) ?? null) : null;
+  const kind = layout === undefined
+    ? (((kindId !== null) && Array.isArray(config?.actorKinds)) ? actorKindById(config, kindId) : null)
+    : layout;
   if ( !kind ) {
     return {
       kindStatus: (kindId === null) ? "unassigned" : "unknown", kind: null, sets: [], freeTraits: null,
@@ -477,7 +480,8 @@ export function characterSheetView(system, config) {
       };
     });
   const freeTraits = (kind.freeTraits === true)
-    ? (Array.isArray(system.freeTraits) ? system.freeTraits : []).filter(isPlainObject).map(freeTraitRow) : null;
+    ? (Array.isArray(system.freeTraits) ? system.freeTraits : []).filter(isPlainObject)
+      .map(entry => freeTraitRow(entry, !!entry.id && [system.mobTraitId, system.bossTraitId].includes(entry.id))) : null;
   return {
     kindStatus: "assigned", kind: { id: kind.id, name: kind.name }, sets, freeTraits,
     others: otherStoredTraits(system, config, kind, listed)
@@ -776,7 +780,7 @@ function indexedInputs(inputs) {
  * @returns {import("../rules/types.mjs").EngineResult<object[]|null>} the new list, or null when
  *   nothing changed; refuses INVALID_TRAIT_DATA
  */
-function sfxFromInputs(stored, inputs) {
+export function sfxFromInputs(stored, inputs) {
   const pairs = indexedInputs(inputs);
   if ( !pairs ) return fail("INVALID_TRAIT_DATA");
   const list = Array.isArray(stored) ? stored.map(copyStored) : [];

@@ -11,6 +11,8 @@
       {{ localize "CORTEX.Sheet.Details.Unlocked" }}</label>
     <button type="button" class="ui-control icon" data-action="{{ ../removeAction }}" data-index="{{ this.index }}"
       data-tooltip="{{ this.removeLabel }}" aria-label="{{ this.removeLabel }}"><i class="fa-solid fa-trash" inert></i></button>
+    {{else if (and @root.play (not this.unlocked))}}
+    <details><summary>{{ localize "CORTEX.Sheet.Design.LockedSfx" }}</summary><span>{{ this.label }}</span></details>
     {{else}}
     <i class="fa-solid {{#if this.unlocked}}fa-lock-open{{else}}fa-lock{{/if}}" data-tooltip="{{ this.stateLabel }}"
       role="img" aria-label="{{ this.stateLabel }}"></i>

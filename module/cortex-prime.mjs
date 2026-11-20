@@ -5,7 +5,7 @@
  * @module cortex-prime
  */
 
-import CharacterData from "./data/actor/character.mjs";
+import CharacterData, { GmcData, PlayerCharacterData } from "./data/actor/character.mjs";
 import ContestData from "./data/chat/contest.mjs";
 import PoolRollData from "./data/chat/pool-roll.mjs";
 import { onRenderPoolRollMessage, preloadPoolRollCardTemplate } from "./dice/pool-roll-card.mjs";
@@ -26,11 +26,19 @@ Hooks.once("init", () => {
   console.log(`${SYSTEM_ID} | Initializing`);
 
   CONFIG.Actor.dataModels.character = CharacterData;
+  CONFIG.Actor.dataModels.pc = PlayerCharacterData;
+  CONFIG.Actor.dataModels.gmc = GmcData;
+  CONFIG.Actor.defaultType = "pc";
   CONFIG.ChatMessage.dataModels.poolRoll = PoolRollData;
   CONFIG.ChatMessage.dataModels.contest = ContestData;
   // Core 14.369 registers no Actor sheet, so this one is the only and default sheet for characters.
   foundry.applications.apps.DocumentSheetConfig.registerSheet(Actor, SYSTEM_ID, CharacterSheet, {
-    types: ["character"], makeDefault: true, label: "CORTEX.Sheet.Character"
+    types: ["character", "pc", "gmc"], makeDefault: true, label: "CORTEX.Sheet.Character"
+  });
+  Hooks.on("updateUser", (user, changes) => {
+    if ( user.id === game.user.id && foundry.utils.hasProperty(changes, "flags.cortex-prime.pool") ) {
+      CharacterSheet.refreshPoolFooters();
+    }
   });
   registerSettings({ onGameConfigChange: () => CharacterSheet.renderOpenSheets() });
   registerContestQuery();

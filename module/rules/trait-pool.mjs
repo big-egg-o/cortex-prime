@@ -261,11 +261,13 @@ export function poolTraitCost(traits, config, kindId) {
   }
 
   const kind = actorKindById(config, kindId);
-  for ( const setId of kind?.traitSetIds ?? [] ) {
-    if ( (traitSetById(config, setId)?.role === "prime") && !traitsBySet.has(setId) ) {
-      warnings.push({ code: "PRIME_SET_MISSING", setId });
-    }
-  }
+  warnings.push(...missingPrimeWarnings(config, kind?.traitSetIds ?? [], traitsBySet));
 
   return ok({ ppCost, extraTraits, unpricedTraits, warnings });
+}
+
+/** Compare configured or individually assembled layouts against all the sets used in the pool. */
+export function missingPrimeWarnings(config, layoutSets, selectedSets) {
+  return [...layoutSets].filter(id => !selectedSets.has(id) && traitSetById(config, id)?.role === "prime")
+    .map(setId => ({ code: "PRIME_SET_MISSING", setId }));
 }

@@ -14,6 +14,7 @@ import {
   draftErrors, draftRenderKey, draftWarnings, moveTraitDef, moveTraitSet
 } from "../config/game-config-draft.mjs";
 import { getGameConfig, setGameConfig } from "../config/settings.mjs";
+import { pcLayoutId } from "../rules/actor-layout.mjs";
 import {
   DIE_SIZES, EXTRA_TRAIT_RULES, TRAIT_SET_FEATURES, TRAIT_SET_LISTS, TRAIT_SET_ROLES, defaultGameConfig,
   validateGameConfig
@@ -101,6 +102,7 @@ export default class GameConfigApp extends HandlebarsApplicationMixin(Applicatio
     }));
     context.kinds = draft.actorKinds.map((kind, i) => ({
       ...kind,
+      pcLayout: kind.id === pcLayoutId(draft),
       index: i,
       path: `actorKinds.${i}`,
       sets: draft.traitSets.map(set => ({ id: set.id, name: set.name, on: kind.traitSetIds.includes(set.id) })),

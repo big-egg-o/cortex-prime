@@ -360,6 +360,7 @@ export const SHUT_DOWN_REASONS = Object.freeze(["manual", STATEMENT_SHUT_DOWN_RE
 /**
  * The game configuration a world setting holds (ADR-030).
  * @typedef {Object} GameConfig
+ * @property {string|null} [pcKindId] - world layout used by native PCs; older worlds use the default PC kind
  * @property {number} schemaVersion
  * @property {TraitSetDef[]} traitSets
  * @property {ActorKindDef[]} actorKinds

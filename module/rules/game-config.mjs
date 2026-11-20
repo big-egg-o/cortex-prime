@@ -242,6 +242,7 @@ export function validateGameConfig(input) {
   config.traitSets.forEach((set, i) => checkTraitSet(set, `traitSets.${i}`, report, claimId));
   const setIds = new Set(config.traitSets.filter(set => isPlainObject(set) && isId(set.id)).map(set => set.id));
   config.actorKinds.forEach((kind, i) => checkActorKind(kind, `actorKinds.${i}`, setIds, report, claimId));
+  if ( config.pcKindId != null && !actorKindById(config, config.pcKindId) ) report("INVALID_ACTOR_KIND", "pcKindId");
 
   const warnings = [];
   const roleCount = role => config.traitSets.filter(set => isPlainObject(set) && (set.role === role)).length;

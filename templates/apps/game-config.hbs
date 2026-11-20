@@ -104,6 +104,13 @@
   <button type="button" data-action="addSet"><i class="fa-solid fa-plus" inert></i><span>{{ localize "CORTEX.Config.AddSet" }}</span></button>
 
   <h3>{{ localize "CORTEX.Config.ActorKinds" }}</h3>
+  <label class="form-group">
+    <span>{{ localize "CORTEX.Sheet.Design.PcLayout" }}</span>
+    <select name="pcKindId">
+      <option value="">{{ localize "CORTEX.Config.None" }}</option>
+      {{#each kinds}}<option value="{{ id }}" {{#if pcLayout}}selected{{/if}}>{{ name }}</option>{{/each}}
+    </select>
+  </label>
   {{#each kinds}}
   <fieldset class="cp-config-kind" data-kind-id="{{ this.id }}">
     <legend class="control">
