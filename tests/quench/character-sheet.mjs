@@ -163,7 +163,7 @@ async function openSheet(actor) {
 
 /** @returns {string[]} the set names a rendered sheet shows, in order */
 function setNames(sheet) {
-  return [...sheet.element.querySelectorAll("fieldset.cp-trait-set > legend")].map(el => el.textContent.trim());
+  return [...sheet.element.querySelectorAll("fieldset.cp-trait-set > legend .cp-set-name")].map(el => el.textContent.trim());
 }
 
 /** @returns {HTMLSelectElement|null} the input of one die of a trait's rating */

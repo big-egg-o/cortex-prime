@@ -272,6 +272,12 @@ export function registerContestStartBatch(quench) {
           try {
             assert.deepEqual(builder.target, target);
             await builder.addDie(8, "Test die");
+            await builder.close();
+            assert.deepEqual((await openPoolBuilder()).target, target);
+            const count = game.messages.size;
+            assert.isUndefined(await builder.rollPool([5], ""), "a stale standalone button cannot post to the request");
+            assert.equal(game.messages.size, count);
+            assert.deepEqual(builder.target, target);
             const card = await builder.rollPool([5]);
             assert.isDefined(card);
             tracked.push(card);

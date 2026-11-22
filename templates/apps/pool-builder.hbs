@@ -1,12 +1,10 @@
 <div class="cp-builder-body">
-  {{#if target}}
-  <div class="cp-builder-target" role="note">
+  <div class="cp-builder-target" data-target-key="{{ targetKey }}" role="note">
     <i class="fa-solid fa-scale-balanced" inert></i>
-    <span>{{ target.banner }}</span>
-    <button type="button" class="ui-control icon" data-action="clearTarget"
-      data-tooltip aria-label="{{ localize "CORTEX.Builder.ClearTarget" }}"><i class="fa-solid fa-xmark" inert></i></button>
+    <span>{{ destination.banner }}</span>
+    {{#if targeted}}<button type="button" class="ui-control icon" data-action="clearTarget"
+      data-tooltip aria-label="{{ localize "CORTEX.Builder.ClearTarget" }}"><i class="fa-solid fa-xmark" inert></i></button>{{/if}}
   </div>
-  {{/if}}
 
   {{#each groups}}
   <fieldset class="cp-source">
@@ -73,7 +71,7 @@
 
   {{!-- The difficulty helper (Tests & Contests TC-01, TC-02): replaces the pool's difficulty dice with a level's pair. --}}
   <div class="form-group cp-difficulty">
-    <select name="difficultyLevel" aria-label="{{ localize "CORTEX.Builder.DifficultyLevel" }}">
+    <select name="difficultyLevel" data-initial-level="{{ initialLevel }}" aria-label="{{ localize "CORTEX.Builder.DifficultyLevel" }}">
       {{#each levels}}
       <option value="{{ this.value }}" {{#if this.selected}}selected{{/if}}>{{ this.label }}</option>
       {{/each}}

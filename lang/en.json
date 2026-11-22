@@ -106,8 +106,11 @@
       "DifficultyLevel": "Difficulty level",
       "SetDifficulty": "Set difficulty dice",
       "DifficultyDiceLabel": "{level} difficulty",
+      "Standalone": "Standalone roll · {name}",
+      "StaleTarget": "This request is no longer awaiting your roll.",
       "TargetFirst": "Rolling for {side}",
       "TargetToBeat": "Rolling for {side}, to beat {total}",
+      "TargetChanged": "The roll destination changed. Check the destination and roll again.",
       "TargetGone": "That test or contest no longer waits for this roll, so nothing was rolled.",
       "ClearTarget": "Roll for nothing in particular"
     },
@@ -332,6 +335,8 @@
         "sfx": "SFX",
         "LockedSfx": "Locked SFX",
         "LoseDie": "Lose d{size}",
+        "OtherFallbackTraits": "Other {set} · {die}",
+        "RemovePoolDie": "Remove {die} from {label}",
         "Pending": "Pending",
         "EmptyPool": "Your pool is empty",
         "Review": "Review pool",
@@ -381,7 +386,9 @@
         "SetTrait": "Shut down {trait}",
         "ClearTrait": "Clear the shut-down of {trait}",
         "SetSet": "Shut down the whole set {set}",
-        "ClearSet": "Clear the shut-down of the set {set}"
+        "ClearSet": "Clear the shut-down of the set {set}",
+        "SetToggle": "Set shutdown",
+        "SetToggleLabel": "Set shutdown for {set}"
       },
       "Details": {
         "Description": "Description",

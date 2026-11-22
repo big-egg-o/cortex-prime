@@ -64,7 +64,7 @@ import {
   removeTraitEntry, removeTraitSfx, resolveTraitChallenge, setShutDownChange, setTraitShutDown, sheetTraitChanges,
   sfxFromInputs, sfxRows, storesNoTraits
 } from "./character-sheet-data.mjs";
-import { addTraitToPool, openPoolBuilder, sheetPoolContext } from "./pool-builder.mjs";
+import { addTraitToPool, openPoolBuilder, removePoolDie, rollSheetPool, sheetPoolContext } from "./pool-builder.mjs";
 
 const { HandlebarsApplicationMixin } = foundry.applications.api;
 const { ActorSheetV2 } = foundry.applications.sheets;
@@ -88,7 +88,9 @@ export default class CharacterSheet extends HandlebarsApplicationMixin(ActorShee
     window: { resizable: true, contentClasses: ["standard-form"] },
     form: { submitOnChange: true },
     actions: {
+      rollSheetPool(_event, target) { return rollSheetPool(target.dataset.targetKey); },
       reviewPool() { return openPoolBuilder({ beside: this }); },
+      removePoolDie(_event, target) { return removePoolDie(target.dataset.dieId); },
       addBlock: CharacterSheet.#onAddBlock,
       hideBlock: CharacterSheet.#onHideBlock,
       loseDie: CharacterSheet.#onLoseDie,
@@ -150,7 +152,7 @@ export default class CharacterSheet extends HandlebarsApplicationMixin(ActorShee
   /** @override */
   static PARTS = {
     sheet: { template: TEMPLATE, templates: [SFX_LIST], scrollable: [".cp-sheet-body"] },
-    pool: { template: "systems/cortex-prime/templates/actor/pool-footer.hbs" }
+    pool: { template: "systems/cortex-prime/templates/actor/pool-footer.hbs", scrollable: [".cp-pool-preview"] }
   };
 
   _configureRenderParts(options) {
@@ -212,7 +214,7 @@ export default class CharacterSheet extends HandlebarsApplicationMixin(ActorShee
     // A limited user gets the name and portrait only (CS-D4); nothing about the traits is prepared.
     if ( this.actor.limited ) return Object.assign(context, { actor: this.actor, limited: true });
     const native = this.actor.type !== "character";
-    if ( native ) context.pool = sheetPoolContext();
+    if ( native ) context.pool = sheetPoolContext(this.actor.uuid);
     if ( options.parts?.length === 1 && options.parts[0] === "pool" ) return context;
     const config = getGameConfig();
     const system = this.actor.system.toObject();
@@ -274,18 +276,29 @@ export default class CharacterSheet extends HandlebarsApplicationMixin(ActorShee
       addSubLabel: i18n.format("CORTEX.Sheet.Details.AddSubTo", { trait: trait.name })
     });
     // The sheet's sections: the kind's sets, then its free traits, which belong to no set (TS-22).
-    const sections = view.sets.map(set => ({
-      ...set, free: false, emptyText: i18n.localize("CORTEX.Sheet.NoTraits"), traits: set.traits.map(row),
-      canLoseDice: this.actor.type === "gmc" && set.id === DEFAULT_MOB_SET && set.multiDice,
-      wide: config.traitSets.some(def => def.id === set.id && (def.role === "distinctions" || def.features?.statements)),
-      canShutDown: set.canShutDown && this.isEditable,
-      shutDownLabel: i18n.format(set.shutDown ? "CORTEX.Sheet.ShutDown.ClearSet" : "CORTEX.Sheet.ShutDown.SetSet",
-        { set: set.name }),
-      sfx: CharacterSheet.#sfxContext(set.sfx, set.name),
-      sfxEdit: editMode && (set.sfx !== null),
-      showSetSfx: (set.sfx !== null) && (editMode || (set.sfx.length > 0)),
-      addSetSfxLabel: i18n.format("CORTEX.Sheet.Details.AddSetSfx", { set: set.name })
-    }));
+    const sections = view.sets.map(set => {
+      const traits = [];
+      const fallbackTraits = [];
+      for ( const trait of set.traits ) {
+        // An entry the character holds may have its own details or play controls even without dice.
+        const group = (play && trait.entryId === null && trait.rollable && trait.fallbackDie !== null)
+          ? fallbackTraits : traits;
+        group.push(row(trait));
+      }
+      return {
+        ...set, free: false, emptyText: i18n.localize("CORTEX.Sheet.NoTraits"), traits,
+        fallback: fallbackTraits.length ? { die: `d${fallbackTraits[0].fallbackDie}`, traits: fallbackTraits } : null,
+        canLoseDice: this.actor.type === "gmc" && set.id === DEFAULT_MOB_SET && set.multiDice,
+        wide: config.traitSets.some(def => def.id === set.id && (def.role === "distinctions" || def.features?.statements)),
+        canShutDown: set.canShutDown && this.isEditable,
+        shutDownLabel: i18n.format(set.shutDown ? "CORTEX.Sheet.ShutDown.ClearSet" : "CORTEX.Sheet.ShutDown.SetSet",
+          { set: set.name }),
+        sfx: CharacterSheet.#sfxContext(set.sfx, set.name),
+        sfxEdit: editMode && (set.sfx !== null),
+        showSetSfx: (set.sfx !== null) && (editMode || (set.sfx.length > 0)),
+        addSetSfxLabel: i18n.format("CORTEX.Sheet.Details.AddSetSfx", { set: set.name })
+      };
+    });
     const gmc = this.actor.type === "gmc";
     const canBuild = gmc && game.user.isGM && editMode;
     if ( view.freeTraits && (!gmc || system.blocks.includes("free")) ) {
@@ -431,9 +444,24 @@ export default class CharacterSheet extends HandlebarsApplicationMixin(ActorShee
     await super._onRender(context, options);
     if ( this.isEditable ) return;
     for ( const fieldset of this.element.querySelectorAll("fieldset.cp-trait-set") ) fieldset.disabled = false;
-    for ( const button of this.element.querySelectorAll('button[data-action="addToPool"], button[data-action="reviewPool"]') ) {
+    for ( const button of this.element.querySelectorAll('button[data-action="addToPool"], button[data-action="reviewPool"], button[data-action="removePoolDie"], button[data-action="rollSheetPool"]') ) {
       button.disabled = false;
     }
+  }
+
+  /** Keep keyboard focus in the pool when the focused die disappears. */
+  _preSyncPartState(partId, newElement, priorElement, state) {
+    super._preSyncPartState(partId, newElement, priorElement, state);
+    if ( partId !== "pool" ) return;
+    const focused = priorElement.querySelector(".cp-pool-die:focus");
+    if ( !focused ) return;
+    const selectorFor = button => `.cp-pool-die[data-die-id="${CSS.escape(button.dataset.dieId)}"]`;
+    const sameDie = selectorFor(focused);
+    const index = [...priorElement.querySelectorAll(".cp-pool-die")].indexOf(focused);
+    const remaining = newElement.querySelectorAll(".cp-pool-die");
+    const next = remaining[Math.min(index, remaining.length - 1)];
+    state.focus = newElement.querySelector(sameDie) ? sameDie
+      : next ? selectorFor(next) : 'button[data-action="reviewPool"]';
   }
 
   _onChangeForm(formConfig, event) {

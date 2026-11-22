@@ -2,14 +2,23 @@
 <footer class="cp-sheet-pool" aria-label="{{ localize "CORTEX.Builder.Title" }}">
   <div class="cp-pool-preview" aria-live="polite">
     {{#each pool.groups}}
-    <span class="cp-source">{{#if actorName}}{{ actorName }} · {{/if}}{{ label }}
-      {{#each dice}}<b>d{{ size }}</b>{{/each}}{{#if fallback}} ({{ localize "CORTEX.Builder.Fallback" }}){{/if}}{{#if option}} · {{ option }}{{/if}}
-    </span>
+    <div class="cp-source">
+      <span class="cp-pool-source-name">{{ label }}{{#if fallback}} <small>({{ localize "CORTEX.Builder.Fallback" }})</small>{{/if}}{{#if option}} <small>· {{ option }}</small>{{/if}}</span>
+      {{#each dice}}
+      <button type="button" class="cp-pool-die" data-action="removePoolDie" data-die-id="{{ id }}"
+        aria-label="{{ removeLabel }}" data-tooltip="{{ removeLabel }}">d{{ size }} <i class="fa-solid fa-xmark" inert></i></button>
+      {{/each}}
+    </div>
     {{else}}<span>{{ localize "CORTEX.Sheet.Design.EmptyPool" }}</span>{{/each}}
     {{#if pool.summary}}<span class="cp-pending">{{ localize "CORTEX.Sheet.Design.Pending" }}
       {{ pool.summary.cost }} {{ pool.summary.hinderGain }} {{ pool.summary.nonstandard.unpriced }}
+      {{#each pool.summary.nonstandard.reasons}}<span>{{ this }}</span>{{/each}}
     </span>{{/if}}
   </div>
-  <button type="button" data-action="reviewPool"><i class="fa-solid fa-dice" inert></i>{{ localize "CORTEX.Sheet.Design.Review" }}</button>
+  <div class="cp-roll-actions">
+    <span>{{ pool.destination.banner }}</span>
+    <button type="button" data-action="reviewPool"><i class="fa-solid fa-dice" inert></i>{{ localize "CORTEX.Sheet.Design.Review" }}</button>
+    {{#if pool.groups.length}}<button type="button" data-action="rollSheetPool" data-target-key="{{ pool.targetKey }}"><i class="fa-solid fa-dice-d20" inert></i>{{ localize "CORTEX.Builder.Roll" }}</button>{{/if}}
+  </div>
 </footer>
 {{/if}}

@@ -175,6 +175,33 @@ export function registerBuilderBatch(quench) {
           assert.isAtMost(content.scrollWidth, content.clientWidth, "nothing overflows sideways");
         });
 
+        it("scrolls large pools inside the builder and keeps Roll visible", async () => {
+          const app = await openBuilder();
+          for ( const size of [4, 6, 8, 10, 12] ) await app.addDie(size, `Source d${size}`);
+          app.setPosition({ height: 400 });
+          const body = app.element.querySelector(".cp-builder-body");
+          const footer = app.element.querySelector(".form-footer");
+          assert.isAbove(body.scrollHeight, body.clientHeight);
+          assert.isAtMost(footer.getBoundingClientRect().bottom, app.element.getBoundingClientRect().bottom);
+          body.scrollTop = body.scrollHeight;
+          assert.isAbove(body.scrollTop, 0);
+        });
+
+        it("keeps a pending die and difficulty choice when the builder refreshes", async () => {
+          const app = await openBuilder();
+          const field = name => app.element.querySelector(`[name="${name}"]`);
+          field("size").value = "10";
+          field("label").value = "Dust-blinded";
+          field("difficultyLevel").value = "hard";
+          await app.addDie(6, "Another source");
+          assert.equal(field("size").value, "10");
+          assert.equal(field("label").value, "Dust-blinded");
+          assert.equal(field("difficultyLevel").value, "hard");
+          await app.setDifficulty("hard");
+          await app.setDifficulty("easy");
+          assert.equal(field("difficultyLevel").value, "easy", "a submitted choice follows the stored dice");
+        });
+
         it("can't roll an empty pool", async () => {
           const app = await openBuilder();
           assert.lengthOf(app.pool, 0);

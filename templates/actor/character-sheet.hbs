@@ -57,16 +57,20 @@
     <fieldset class="cp-trait-set{{#if this.free}} cp-free-traits{{/if}}{{#if this.shutDown}} cp-shut-down{{/if}}{{#if this.wide}} cp-wide{{/if}}"
       data-block="{{#if this.block}}{{ this.block }}{{else}}{{ this.id }}{{/if}}"
       {{#if this.free}}data-free-traits{{else}}data-set-id="{{ this.id }}"{{/if}}>
-      <legend>{{ this.name }}
+      <legend><span class="cp-set-name">{{ this.name }}</span>
         {{#if @root.canBuild}}
         <button type="button" class="ui-control icon" data-action="hideBlock" aria-label="{{ localize "CORTEX.Sheet.Design.HideBlock" }}"
           data-tooltip="{{ localize "CORTEX.Sheet.Design.HideBlock" }}"><i class="fa-solid fa-eye-slash" inert></i></button>
         {{/if}}
         {{#if this.canShutDown}}
-        <button type="button" class="ui-control icon cp-shut-down-toggle{{#if this.shutDown}} active{{/if}}"
+        <button type="button" class="{{#unless @root.play}}ui-control icon {{/unless}}cp-set-shutdown cp-shut-down-toggle{{#if this.shutDown}} active{{/if}}"
           data-action="toggleSetShutDown" data-shut-down="{{#if this.shutDown}}true{{else}}false{{/if}}"
           aria-pressed="{{#if this.shutDown}}true{{else}}false{{/if}}"
-          data-tooltip="{{ this.shutDownLabel }}" aria-label="{{ this.shutDownLabel }}"><i class="fa-solid fa-power-off" inert></i></button>
+          data-tooltip="{{ this.shutDownLabel }}"
+          aria-label="{{#if @root.play}}{{localize "CORTEX.Sheet.ShutDown.SetToggleLabel" set=this.name}}{{else}}{{this.shutDownLabel}}{{/if}}">
+          {{#if @root.play}}<i class="fa-solid {{#if this.shutDown}}fa-rotate-left{{else}}fa-layer-group{{/if}}" inert></i>
+          {{localize "CORTEX.Sheet.ShutDown.SetToggle"}}{{else}}<i class="fa-solid fa-power-off" inert></i>{{/if}}
+        </button>
         {{/if}}
       </legend>
       {{#if this.shutDown}}<p class="hint cp-shut-down-note">{{ localize "CORTEX.Sheet.ShutDown.Set" }}</p>{{/if}}
@@ -86,22 +90,25 @@
         {{/if}}
       </div>
       {{/if}}
-      {{#if (and this.emptyText (not this.traits.length))}}<p class="hint">{{ this.emptyText }}</p>{{/if}}
-      {{#each this.traits}}
+      {{#if (and this.emptyText (not this.traits.length) (not this.fallback))}}<p class="hint">{{ this.emptyText }}</p>{{/if}}
+      {{#*inline "traitRows"}}
+      {{#each rows}}
       <div class="form-group cp-trait{{#if this.shutDown}} cp-shut-down{{/if}}"
         {{#if this.entryId}}data-entry-id="{{ this.entryId }}"{{/if}}
         {{#if this.poolTraitId}}data-pool-trait-id="{{ this.poolTraitId }}"{{/if}}>
+        {{#if @root.play}}<div class="cp-trait-line">{{/if}}
         {{#if this.nameInput}}
         <label><input type="text" class="cp-trait-name" name="{{ this.nameInput }}" value="{{ this.name }}"
           aria-label="{{ localize "CORTEX.Sheet.TraitName" }}"></label>
         {{else if this.playRoll}}
         <button type="button" class="cp-pick-trait" data-action="addToPool" aria-label="{{ this.poolLabels.add }}">
-          <span>{{ this.label }}</span><strong>{{ this.ratingText }}</strong>
+          <span>{{ this.label }}</span>
+          {{#if ../sharedRating}}<i class="fa-solid fa-plus" inert></i>{{else}}<strong>{{ this.ratingText }}</strong>{{/if}}
         </button>
         {{else}}
         <label>{{ this.label }}</label>
         {{/if}}
-        <div class="form-fields">
+        <div class="{{#if @root.play}}cp-trait-actions{{else}}form-fields{{/if}}">
           {{#if this.editable}}
             {{#each this.slots}}
             <select name="{{ this.inputName }}" class="cp-die{{#if this.adds}} cp-die-add{{/if}}"
@@ -121,7 +128,7 @@
             {{/if}}
             {{#unless this.playRoll}}<span class="cp-rating-note">{{ this.ratingText }}</span>{{/unless}}
           {{/if}}
-          {{#if this.rollable}}
+          {{#if (and this.rollable (or (not this.playRoll) this.canHinder this.canChallenge))}}
           <span class="cp-pool-buttons">
             {{#unless this.playRoll}}
             <button type="button" class="ui-control icon" data-action="addToPool"
@@ -145,7 +152,10 @@
           <button type="button" class="ui-control icon cp-shut-down-toggle{{#if this.ownShutDown}} active{{/if}}"
             data-action="toggleShutDown" data-shut-down="{{#if this.ownShutDown}}true{{else}}false{{/if}}"
             aria-pressed="{{#if this.ownShutDown}}true{{else}}false{{/if}}"
-            data-tooltip="{{ this.shutDownLabel }}" aria-label="{{ this.shutDownLabel }}"><i class="fa-solid fa-power-off" inert></i></button>
+            data-tooltip="{{ this.shutDownLabel }}"
+            aria-label="{{#if @root.play}}{{localize "CORTEX.Sheet.ShutDown.SetTrait" trait=this.label}}{{else}}{{this.shutDownLabel}}{{/if}}">
+            <i class="fa-solid {{#if (and @root.play this.ownShutDown)}}fa-rotate-left{{else}}fa-power-off{{/if}}" inert></i>
+          </button>
           {{/if}}
           {{#if (and ../canLoseDice @root.play @root.canEdit)}}
           {{#each this.dice}}
@@ -158,6 +168,7 @@
             data-tooltip="{{ this.removeLabel }}" aria-label="{{ this.removeLabel }}"><i class="fa-solid fa-trash" inert></i></button>
           {{/if}}
         </div>
+        {{#if @root.play}}</div>{{/if}}
         {{#if this.descriptionInput}}
         <input type="text" class="cp-description-input" name="{{ this.descriptionInput }}" value="{{ this.description }}"
           placeholder="{{ localize "CORTEX.Sheet.Details.Description" }}" aria-label="{{ this.descriptionLabel }}">
@@ -232,6 +243,16 @@
         {{#each this.hintTexts}}<p class="hint">{{ this }}</p>{{/each}}
       </div>
       {{/each}}
+      {{/inline}}
+      {{> traitRows rows=this.traits}}
+      {{#if this.fallback}}
+      <details class="cp-fallback-traits" data-sync="fallback-{{ this.id }}">
+        <summary>{{ localize "CORTEX.Sheet.Design.OtherFallbackTraits" set=this.name die=this.fallback.die }}</summary>
+        <div class="cp-fallback-choices">
+          {{> traitRows rows=this.fallback.traits sharedRating=true}}
+        </div>
+      </details>
+      {{/if}}
       {{#if @root.editMode}}{{#if this.open}}
       <button type="button" class="cp-add-trait" data-action="addTrait">
         <i class="fa-solid fa-plus" inert></i><span>{{ localize "CORTEX.Sheet.AddTrait" }}</span>

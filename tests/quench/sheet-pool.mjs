@@ -167,6 +167,22 @@ function nextBuilderRender() {
   });
 }
 
+/** Wait for a local user flag update that leaves the pool in the requested state. */
+function waitForPool(predicate) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      Hooks.off("updateUser", id);
+      reject(new Error("the user's pool did not reach the expected state"));
+    }, WAIT_MS);
+    const id = Hooks.on("updateUser", user => {
+      if ( user.id !== game.user.id || !predicate(userPool()) ) return;
+      clearTimeout(timer);
+      Hooks.off("updateUser", id);
+      resolve();
+    });
+  });
+}
+
 /**
  * Runs something and collects the notifications of one kind it shows instead of showing them.
  * @param {"warn"|"info"} kind
@@ -227,6 +243,39 @@ export function registerSheetPoolBatch(quench) {
       });
 
       describe("the sheet's pool buttons", () => {
+        it("adds a named fallback trait in play and removes its die from the footer", async () => {
+          const { system } = pcSystem();
+          const actor = await createCharacter(system, "fallbacks", { type: "pc" });
+          const sheet = await openSheet(actor);
+          const skills = sheet.element.querySelector(`fieldset[data-set-id="${SKILLS}"]`);
+          const fallback = skills.querySelector("details.cp-fallback-traits");
+          assert.lengthOf(skills.querySelectorAll(".cp-fallback-traits"), 1);
+          assert.isFalse(fallback.open);
+          assert.equal(fallback.querySelector("summary").textContent.trim(), "Other Skills · d4");
+          assert.exists(skills.querySelector(`[data-pool-trait-id="${FIGHT}"]:not(details *)`));
+          fallback.querySelector("summary").click();
+          const shoot = fallback.querySelector(`[data-pool-trait-id="${SHOOT}"] button[data-action="addToPool"]`);
+          assert.isTrue(fallback.open);
+          let changed = waitForPool(pool => pool.length === 1);
+          shoot.click();
+          await changed;
+          const [die] = userPool();
+          assert.lengthOf(userPool(), 1);
+          assert.equal(die.size, 4);
+          assert.include(die.source, { setId: SKILLS, traitId: SHOOT, label: "Shoot", isFallback: true });
+          assert.isNotOk(builderApp()?.rendered);
+          assert.isUndefined(storedEntry(actor, SKILLS, SHOOT));
+          changed = waitForPool(pool => pool.length === 2);
+          skills.querySelector(`[data-pool-trait-id="${FIGHT}"] button[data-action="addToPool"]`).click();
+          await changed;
+          await sheet.render({ parts: ["pool"] });
+          changed = waitForPool(pool => pool.length === 1);
+          sheet.element.querySelector(`button[data-action="removePoolDie"][data-die-id="${die.id}"]`).click();
+          await changed;
+          assert.deepEqual(userPool().map(remaining => remaining.source.traitId), [FIGHT]);
+          assert.isNotOk(builderApp()?.rendered);
+        });
+
         it("offer add on every trait with a die, Hinder on distinctions, and a challenge only on a statement", async () => {
           await storeConfig(configWithStatements(ATTRIBUTES));
           const { system, smuggler } = pcSystem();
@@ -515,6 +564,19 @@ export function registerSheetPoolBatch(quench) {
           assert.deepEqual(storedEntry(actor, ATTRIBUTES, PHYSICAL).dice, [8]);
           assert.deepEqual(userPool().map(d => d.source.traitId), [PHYSICAL]);
           assert.include(shown, game.i18n.format("CORTEX.Builder.SteppedDown", { trait: "Social" }));
+        });
+
+        it("queues the next pick until a rolled challenge has stepped down", async () => {
+          await storeConfig(configWithStatements(ATTRIBUTES));
+          const actor = await createCharacter(pcSystem().system, "next roll");
+          await addTraitToPool(actor, ATTRIBUTES, SOCIAL, "challenge");
+          const posting = builderApp().rollPool([5, 4, 3]);
+          const nextPick = addTraitToPool(actor, ATTRIBUTES, SOCIAL, null, { open: false });
+          const [message, added] = await Promise.all([posting, nextPick]);
+          messages.push(message);
+          assert.isTrue(added);
+          assert.lengthOf(message.system.pool, 3);
+          assert.deepEqual(userPool().map(d => [d.source.traitId, d.size]), [[SOCIAL, 6]]);
         });
 
         it("ADR-048 a challenge cleared from the pool before the roll changes nothing", async () => {

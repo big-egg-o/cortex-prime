@@ -9,7 +9,7 @@ import CharacterData, { GmcData, PlayerCharacterData } from "./data/actor/charac
 import ContestData from "./data/chat/contest.mjs";
 import PoolRollData from "./data/chat/pool-roll.mjs";
 import { onRenderPoolRollMessage, preloadPoolRollCardTemplate } from "./dice/pool-roll-card.mjs";
-import { togglePoolBuilder } from "./apps/pool-builder.mjs";
+import { openPoolBuilder, refreshPoolDestination, togglePoolBuilder } from "./apps/pool-builder.mjs";
 import { registerSettings } from "./config/settings.mjs";
 import { registerContestQuery } from "./contest/relay.mjs";
 import {
@@ -35,6 +35,14 @@ Hooks.once("init", () => {
   foundry.applications.apps.DocumentSheetConfig.registerSheet(Actor, SYSTEM_ID, CharacterSheet, {
     types: ["character", "pc", "gmc"], makeDefault: true, label: "CORTEX.Sheet.Character"
   });
+  Hooks.on("cortexPrimePoolDestinationChanged", () => CharacterSheet.refreshPoolFooters());
+  Hooks.on("controlToken", () => {
+    CharacterSheet.refreshPoolFooters();
+    const builder = foundry.applications.instances.get("cortex-prime-pool-builder");
+    if ( builder?.rendered ) builder.render();
+  });
+  Hooks.on("updateChatMessage", refreshPoolDestination);
+  Hooks.on("deleteChatMessage", refreshPoolDestination);
   Hooks.on("updateUser", (user, changes) => {
     if ( user.id === game.user.id && foundry.utils.hasProperty(changes, "flags.cortex-prime.pool") ) {
       CharacterSheet.refreshPoolFooters();
@@ -60,6 +68,15 @@ Hooks.once("init", () => {
   // A contest card shows "card deleted" on every client when a roll card it names goes.
   Hooks.on("deleteChatMessage", refreshContestCards);
   Hooks.on("getChatMessageContextOptions", (_app, options) => options.push(startContestContextOption()));
+
+  Hooks.on("getSceneControlButtons", controls => {
+    if ( !controls.tokens ) return;
+    controls.tokens.tools.cortexPool = {
+      name: "cortexPool", title: "CORTEX.Builder.Title", icon: "fa-solid fa-dice-d12",
+      order: Object.keys(controls.tokens.tools).length + 1, button: true, control: true,
+      onChange: () => openPoolBuilder()
+    };
+  });
 
   // "P" isn't used by any core keybinding in 14.369 (checked the whole client bundle) and
   // reads as "Pool" (Decisions ADR-015); rebindable in Configure Controls.

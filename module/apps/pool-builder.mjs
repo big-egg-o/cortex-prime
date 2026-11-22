@@ -21,7 +21,7 @@ import {
 } from "../rules/index.mjs";
 import { getGameConfig } from "../config/settings.mjs";
 import { actorLayout } from "../rules/actor-layout.mjs";
-import { contestRecordOf, sideActor } from "../contest/records.mjs";
+import { contestRecordOf, sideSpeaker } from "../contest/records.mjs";
 import { openStartDialog } from "../contest/start-dialog.mjs";
 import { postPoolRoll } from "../dice/post-pool-roll.mjs";
 import { prepareNonstandard } from "../dice/pool-roll-card.mjs";
@@ -31,7 +31,7 @@ const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
 const FLAG_SCOPE = "cortex-prime";
 const FLAG_KEY = "pool";
 const TEMPLATE = "systems/cortex-prime/templates/apps/pool-builder.hbs";
-// Clicks on different sheets and the builder share one read-modify-write sequence on this client.
+// Queue local edits and rolls together so a later trait pick reads any step-down caused by the roll.
 const poolWrites = new foundry.utils.Semaphore(1);
 
 async function changePool(transform) {
@@ -156,7 +156,8 @@ async function stepDownChallenges(pool) {
       ui.notifications.info(game.i18n.format("CORTEX.Builder.SteppedDown", { trait: trait.label }));
     }
   }
-  await changePool(current => withoutPoolTraits(current, challenged.value.map(trait => trait.key)).value);
+  const kept = withoutPoolTraits(userPool(), challenged.value.map(trait => trait.key)).value;
+  await game.user.setFlag(FLAG_SCOPE, FLAG_KEY, kept);
   return true;
 }
 
@@ -199,7 +200,7 @@ function targetFit(target) {
  *   actorName?: string|null, option?: string|null, ppGained?: string|null, hint?: string|null,
  *   fallback?: boolean}[]}
  */
-function groupBySource(pool, { showActor = false } = {}) {
+function groupBySource(pool, { sheetActorRef } = {}) {
   const listed = poolTraits(pool);
   const traits = new Map((listed.ok ? listed.value : []).map(trait => [`trait:${trait.key}`, trait]));
   const severalActors = new Set([...traits.values()].map(trait => trait.actorRef)).size > 1;
@@ -214,7 +215,7 @@ function groupBySource(pool, { showActor = false } = {}) {
     if ( !trait ) return group;
     return {
       ...group,
-      actorName: (showActor || severalActors) ? (findPoolActor(trait)?.name ?? null) : null,
+      actorName: (severalActors || (sheetActorRef && trait.actorRef !== sheetActorRef)) ? (findPoolActor(trait)?.name ?? null) : null,
       option: trait.option ? game.i18n.localize(`CORTEX.Builder.Option.${trait.option}`) : null,
       ppGained: (trait.ppGained > 0) ? `+${trait.ppGained} PP` : null,
       hint: trait.hint ? game.i18n.localize(`CORTEX.Builder.Hints.${trait.hint}`) : null,
@@ -243,10 +244,44 @@ function poolSummary(pool) {
   };
 }
 
+/** Identifies the request shown when a roll control was rendered. */
+function targetKey(target) {
+  return target ? `${target.messageId}/${target.side}/${target.rollIndex}` : "";
+}
+
+/** Resolve both the visible destination and the speaker from the same pool and request. */
+function rollDestination(pool, target) {
+  const fit = target && targetFit(target);
+  if ( target && !fit ) return { banner: game.i18n.localize("CORTEX.Builder.StaleTarget"), stale: true };
+  if ( fit ) {
+    const side = fit.record.sides.find(s => s.key === target.side);
+    const speaker = sideSpeaker(side);
+    const kind = game.i18n.localize(fit.record.type === "test" ? "CORTEX.Contest.Card.Test" : "CORTEX.Contest.Card.Contest");
+    const banner = game.i18n.format(fit.toBeat === null ? "CORTEX.Builder.TargetFirst" : "CORTEX.Builder.TargetToBeat",
+      { side: side.label || speaker.alias, total: fit.toBeat });
+    const participants = fit.record.sides.map(s => s.label).filter(Boolean).join(" / ");
+    return { speaker, banner: `${kind} · ${participants} · ${banner}`, toBeat: fit.toBeat };
+  }
+  const traits = poolTraits(pool).value ?? [];
+  const refs = new Set(traits.map(trait => trait.actorRef));
+  const actor = refs.size === 1 ? findPoolActor(traits[0]) : null;
+  const speaker = actor ? ChatMessage.getSpeaker({ actor }) : ChatMessage.getSpeaker();
+  return { speaker, banner: game.i18n.format("CORTEX.Builder.Standalone", { name: speaker.alias }) };
+}
+
 /** The footer reads the same user flag, source groups and PP calculation as Review pool. */
-export function sheetPoolContext() {
+export function sheetPoolContext(sheetActorRef) {
   const pool = userPool();
-  return { groups: groupBySource(pool, { showActor: true }), summary: poolSummary(pool) };
+  const groups = groupBySource(pool, { sheetActorRef }).map(group => {
+    const label = group.actorName ? `${group.actorName} · ${group.label}` : group.label;
+    return {
+      ...group, label,
+      dice: group.dice.map(die => ({
+        ...die, removeLabel: game.i18n.format("CORTEX.Sheet.Design.RemovePoolDie", { die: `d${die.size}`, label })
+      }))
+    };
+  });
+  return { groups, summary: poolSummary(pool), destination: rollDestination(pool, instance?.target), targetKey: targetKey(instance?.target) };
 }
 
 /**
@@ -285,9 +320,11 @@ export default class PoolBuilder extends HandlebarsApplicationMixin(ApplicationV
    */
   #target = null;
 
+  #rolling = false;
+
   /** @override */
   static PARTS = {
-    body: { template: TEMPLATE },
+    body: { template: TEMPLATE, scrollable: [""] },
     footer: { template: "templates/generic/form-footer.hbs" }
   };
 
@@ -312,28 +349,35 @@ export default class PoolBuilder extends HandlebarsApplicationMixin(ApplicationV
   /** @override */
   async _prepareContext(_options) {
     const pool = this.pool;
-    const fit = this.#target ? targetFit(this.#target) : null;
-    const side = fit?.record.sides.find(s => s.key === this.#target.side);
-    const toBeat = fit?.toBeat ?? null;
+    const destination = rollDestination(pool, this.#target);
     const currentLevel = difficultyLevelOfPool(pool).value;
     return {
       groups: groupBySource(pool),
       summary: poolSummary(pool),
       sizes: DIE_SIZES,
+      initialLevel: currentLevel ?? DIFFICULTY_LEVELS[0],
       levels: DIFFICULTY_LEVELS.map(level => ({
         value: level, label: game.i18n.localize(`CORTEX.Contest.DifficultyLevels.${level}`), selected: level === currentLevel
       })),
-      target: fit ? {
-        banner: (toBeat === null)
-          ? game.i18n.format("CORTEX.Builder.TargetFirst", { side: side?.label ?? this.#target.side })
-          : game.i18n.format("CORTEX.Builder.TargetToBeat", { side: side?.label ?? this.#target.side, total: toBeat })
-      } : null,
+      targeted: Boolean(this.#target), targetKey: targetKey(this.#target), destination,
       buttons: [{
         type: "button", action: "rollPool", icon: "fa-solid fa-dice",
-        label: (fit && (toBeat !== null)) ? game.i18n.format("CORTEX.Contest.Card.RollToBeat", { total: toBeat }) : "CORTEX.Builder.Roll",
+        label: (destination.toBeat != null) ? game.i18n.format("CORTEX.Contest.Card.RollToBeat", { total: destination.toBeat }) : "CORTEX.Builder.Roll",
         disabled: pool.length === 0
       }]
     };
+  }
+
+  /** Keep unfinished input when a pool, token or request update replaces the body. */
+  _preSyncPartState(partId, newElement, priorElement, state) {
+    super._preSyncPartState(partId, newElement, priorElement, state);
+    if ( partId !== "body" ) return;
+    for ( const name of ["size", "label", "difficultyLevel"] ) {
+      const selector = `[name="${name}"]`;
+      const prior = priorElement.querySelector(selector);
+      if ( name === "difficultyLevel" && prior.value === prior.dataset.initialLevel ) continue;
+      newElement.querySelector(selector).value = prior.value;
+    }
   }
 
   /**
@@ -352,13 +396,9 @@ export default class PoolBuilder extends HandlebarsApplicationMixin(ApplicationV
    */
   async aimAt({ messageId, side, rollIndex }) {
     this.#target = { messageId, side, rollIndex };
-    await this.render();
-  }
-
-  /** @override */
-  _onClose(options) {
-    super._onClose(options);
-    this.#target = null;
+    Hooks.callAll("cortexPrimePoolDestinationChanged");
+    await poolWrites.add(() => {});
+    await this.render({ force: true });
   }
 
   /**
@@ -376,31 +416,49 @@ export default class PoolBuilder extends HandlebarsApplicationMixin(ApplicationV
    * the "public" mode, and is spoken by the target side's actor when it has one; the target is
    * cleared afterwards and the pool kept (ADR-012).
    * @param {number[]} [results]
+   * @param {string} [shownTarget] - the destination on the clicked control
    * @returns {Promise<ChatMessage|void>} nothing if the pool is empty or the target no longer fits
    */
-  async rollPool(results) {
-    const pool = await poolWrites.add(userPool);
+  async rollPool(results, shownTarget = targetKey(this.#target)) {
+    if ( this.#rolling ) return;
+    this.#rolling = true;
+    try {
+      const message = await poolWrites.add(() => this.#postRoll(results, shownTarget));
+      if ( this.rendered ) await this.render();
+      return message;
+    } finally {
+      this.#rolling = false;
+    }
+  }
+
+  async #postRoll(results, shownTarget) {
+    if ( shownTarget !== targetKey(this.#target) ) {
+      ui.notifications.warn(game.i18n.localize("CORTEX.Builder.TargetChanged"));
+      return;
+    }
+    const pool = userPool();
     if ( pool.length === 0 ) return;
     const target = this.#target;
-    const fit = target ? targetFit(target) : null;
-    if ( target && !fit ) {
+    const destination = rollDestination(pool, target);
+    if ( destination.stale ) {
       this.#target = null;
       ui.notifications.warn(game.i18n.localize("CORTEX.Builder.TargetGone"));
-      await this.render();
+      Hooks.callAll("cortexPrimePoolDestinationChanged");
       return;
     }
     const report = currentPoolReport(pool);
     const rollable = rollablePool(pool);
-    const actor = fit ? sideActor(fit.record.sides.find(s => s.key === target.side)) : null;
     const message = await postPoolRoll({
       pool: rollable.ok ? rollable.value : pool, results,
       warnings: report?.warnings ?? [], unpricedTraits: report?.unpricedTraits ?? [],
-      speaker: actor ? ChatMessage.getSpeaker({ actor }) : undefined,
+      speaker: destination.speaker,
       contest: target ?? undefined
     });
-    if ( target ) this.#target = null;
+    if ( target && this.#target === target ) {
+      this.#target = null;
+      Hooks.callAll("cortexPrimePoolDestinationChanged");
+    }
     await stepDownChallenges(pool);
-    if ( this.rendered ) await this.render();
     return message;
   }
 
@@ -423,7 +481,7 @@ export default class PoolBuilder extends HandlebarsApplicationMixin(ApplicationV
    * @returns {Promise<void>}
    */
   async removeDie(dieId) {
-    await this.#savePool(pool => pool.filter(d => d.id !== dieId));
+    await removePoolDie(dieId, this);
   }
 
   /**
@@ -478,8 +536,10 @@ export default class PoolBuilder extends HandlebarsApplicationMixin(ApplicationV
   static async #onAddDie() {
     const sizeInput = this.element.querySelector('[name="size"]');
     const labelInput = this.element.querySelector('[name="label"]');
-    await this.addDie(Number(sizeInput.value), labelInput.value);
-    labelInput.value = "";
+    const label = labelInput.value;
+    await this.addDie(Number(sizeInput.value), label);
+    const current = this.element?.querySelector('[name="label"]');
+    if ( current?.value === label ) current.value = "";
   }
 
   /**
@@ -532,6 +592,7 @@ export default class PoolBuilder extends HandlebarsApplicationMixin(ApplicationV
    */
   static async #onClearTarget() {
     this.#target = null;
+    Hooks.callAll("cortexPrimePoolDestinationChanged");
     await this.render();
   }
 
@@ -539,12 +600,32 @@ export default class PoolBuilder extends HandlebarsApplicationMixin(ApplicationV
    * @this {PoolBuilder}
    */
   static async #onRollPool() {
-    await this.rollPool();
+    const shownTarget = this.element.querySelector(".cp-builder-target").dataset.targetKey;
+    await this.rollPool(undefined, shownTarget);
   }
 }
 
 /** @type {PoolBuilder|null} */
 let instance = null;
+
+/** Use the same roll path and addressed request even while the builder window is closed. */
+export function rollSheetPool(shownTarget) {
+  instance ??= new PoolBuilder();
+  return instance.rollPool(undefined, shownTarget);
+}
+
+/** Update an addressed request when another participant changes or deletes its chat card. */
+export function refreshPoolDestination(message) {
+  if ( instance?.target?.messageId !== message.id ) return;
+  Hooks.callAll("cortexPrimePoolDestinationChanged");
+  if ( instance.rendered ) instance.render();
+}
+
+/** Remove a single die from the shared pool without opening the builder or changing its target. */
+export async function removePoolDie(dieId, builder = instance) {
+  await changePool(pool => pool.filter(die => die.id !== dieId));
+  if ( builder?.rendered ) await builder.render();
+}
 
 /** Opens the pool builder, bringing it to front if already open, or closes it if it is. */
 export function togglePoolBuilder() {
@@ -599,9 +680,9 @@ export async function openPoolBuilder({ beside } = {}) {
  * @returns {Promise<PoolBuilder>}
  */
 export async function openPoolBuilderFor(target) {
-  const builder = await openPoolBuilder();
-  await builder.aimAt(target);
-  return builder;
+  instance ??= new PoolBuilder();
+  await instance.aimAt(target);
+  return instance;
 }
 
 /**
@@ -632,9 +713,9 @@ export async function addTraitToPool(actor, setId, traitId, option = null, { bes
     console.error(err);
     return refusePoolTrait("INVALID_GAME_CONFIG");
   }
-  const dice = traitPoolDice(actor.system.toObject(), config, setId, traitId, { actorId: actor.id, option });
-  if ( !dice.ok ) return refusePoolTrait(dice.code);
   const added = await poolWrites.add(async () => {
+    const dice = traitPoolDice(actor.system.toObject(), config, setId, traitId, { actorId: actor.id, option });
+    if ( !dice.ok ) return dice;
     const result = addTraitDice(userPool(), dice.value, { actorRef: actor.uuid });
     if ( result.ok && result.value.changed ) await game.user.setFlag(FLAG_SCOPE, FLAG_KEY, result.value.pool);
     return result;
