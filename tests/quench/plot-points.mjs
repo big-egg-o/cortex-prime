@@ -153,9 +153,16 @@ export function registerPlotPointsBatch(quench) {
           const pc = await createPc(1, "sheet");
           const sheet = await pc.sheet.render({ force: true });
           try {
-            const updated = new Promise(resolve => Hooks.once("updateActor", resolve));
+            // The ledger entry is posted after the balance is written, so wait for it, not the update.
+            const recorded = new Promise(resolve => {
+              const id = Hooks.on("createChatMessage", message => {
+                if ( message.type !== "plotPoints" ) return;
+                Hooks.off("createChatMessage", id);
+                resolve();
+              });
+            });
             sheet.element.querySelector('[data-action="ppGain"]').click();
-            await updated;
+            await recorded;
             assert.equal(pc.system.plotPoints, 2);
             assert.equal(ledgerSince(before_)[0]?.system.reason, "AWARD");
           }

@@ -327,7 +327,9 @@ export function registerSheetPoolBatch(quench) {
           });
           const text = builderApp().element.textContent;
           assert.include(text, game.i18n.format("CORTEX.Builder.Cost", { cost: 0 }));
-          assert.notInclude(text, actor.name, "a pool of one actor's traits doesn't repeat its name");
+          // The destination banner names the roller; the trait's own group doesn't repeat it.
+          const groups = [...builderApp().element.querySelectorAll(".cp-source")].map(group => group.textContent).join(" ");
+          assert.notInclude(groups, actor.name, "a pool of one actor's traits doesn't repeat its name");
         });
       });
 
