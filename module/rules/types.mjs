@@ -435,4 +435,42 @@ export const SHUT_DOWN_REASONS = Object.freeze(["manual", STATEMENT_SHUT_DOWN_RE
  *   the order they first appear in the current data; for information, nothing to check
  */
 
+/**
+ * Who pays or receives a roll's plot points (Plot Points P1): a character, or the GM's bank.
+ * @typedef {{kind: "actor", actorId: string} | {kind: "bank"}} AccountRef
+ */
+
+/**
+ * One plot point cost or gain of a roll (Plot Points, implementation notes). A gain says whether
+ * it may pay for the same roll (rule 4, RQ-039, P10); a spend carries no such mark.
+ * @typedef {Object} PpLine
+ * @property {string} reason - a key of PP_REASONS
+ * @property {"gain"|"spend"} direction - the reason's direction
+ * @property {number} amount - a whole number from 1
+ * @property {string} [label]
+ * @property {string} [sourceId] - the trait or set the line comes from
+ * @property {boolean} [usableThisRoll] - gains only
+ */
+
+/**
+ * A plot point warning: shown, never a refusal (P11).
+ * @typedef {Object} PpWarning
+ * @property {string} code
+ * @property {string} [setId]
+ * @property {number} [count] - BANK_SPEND_NOT_LISTED only
+ * @property {string} [label]
+ * @property {string} [actorId]
+ */
+
+/**
+ * Where a contest or test PP change goes: a side's character (the caller maps it to an actor),
+ * or the bank.
+ * @typedef {{kind: "side", side: string} | {kind: "bank"}} PpTarget
+ */
+
+/**
+ * @typedef {{target: PpTarget, delta: number, reason: string}} PpChange
+ * @typedef {{route: "pay"|"bank", changes: PpChange[]}} StayInRoute
+ */
+
 export {};

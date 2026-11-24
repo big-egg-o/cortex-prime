@@ -75,9 +75,8 @@ describe("changeBalance (rules 5, 8, 15; P5)", () => {
     expect(changeBalance(balance, 1)).toEqual(refused("INVALID_PP_AMOUNT"));
   });
 
-  it("checks the balance before the change", () => {
-    expect(changeBalance(-1, 0)).toEqual(refused("INVALID_PP_AMOUNT"));
-    expect(changeBalance(0, 0.5)).toEqual(refused("INVALID_PP_AMOUNT"));
+  it("rejects a bad balance even with a change that would be valid", () => {
+    expect(changeBalance(-1, 1)).toEqual(refused("INVALID_PP_AMOUNT"));
   });
 });
 
