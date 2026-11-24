@@ -532,6 +532,7 @@
         "INVALID_ACTOR_KIND": "This actor kind has a missing or invalid value.",
         "INVALID_DIE_SIZE": "That isn't a die size: use d4, d6, d8, d10 or d12.",
         "DUPLICATE_CONFIG_ID": "Two entries share one id.",
+        "UNKNOWN_MOD": "This configuration turns on a mod this version of the system doesn't know.",
         "UNKNOWN_TRAIT_SET": "This actor kind names a trait set that doesn't exist.",
         "GM_ONLY": "Only a GM can change the game configuration.",
         "WRITE_FAILED": "The game configuration could not be saved; see the console."
