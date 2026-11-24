@@ -9,6 +9,7 @@
  * @module rules/plot-points
  */
 
+import { AC_PP_REASONS } from "./assets.mjs";
 import { fail, ok } from "./result.mjs";
 import { DIE_SIZES } from "./types.mjs";
 import { CONTEST_SIDES } from "./contest.mjs";
@@ -31,7 +32,8 @@ export const PP_REASONS = Object.freeze({
   EXTRA_EFFECT_DIE: "spend",
   SFX_SPEND: "spend",
   STAY_IN: "spend",
-  GM_ADJUST: "adjust"
+  GM_ADJUST: "adjust",
+  ...AC_PP_REASONS
 });
 
 /** The reasons a roll's lines may carry: the pool, the roll card, and gains other specs add (P10). */

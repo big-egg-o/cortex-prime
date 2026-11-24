@@ -29,6 +29,7 @@ import { registerRatingFieldBatch } from "./rating-field.mjs";
 import { registerRerollBatch } from "./reroll.mjs";
 import { registerSelectionBatch } from "./selection.mjs";
 import { registerSheetPoolBatch } from "./sheet-pool.mjs";
+import { registerTraitStoreBatch } from "./trait-store.mjs";
 
 /**
  * Register all Cortex Prime batches with Quench.
@@ -57,6 +58,7 @@ export function registerQuenchBatches(quench) {
   registerContestEndingBatch(quench);
   registerGameConfigBatch(quench);
   registerPlotPointsBatch(quench);
+  registerTraitStoreBatch(quench);
 
   quench.registerBatch(
     "cortex-prime.smoke",
