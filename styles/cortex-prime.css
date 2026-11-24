@@ -940,3 +940,25 @@
 .cortex-prime.character-sheet .cp-balance:has(button) { grid-template-columns: auto auto auto; align-items: center; column-gap: 0.25rem; }
 .cortex-prime.character-sheet .cp-balance:has(button) > span { grid-column: 1 / -1; }
 .cortex-prime.character-sheet .cp-balance button { width: 1.5rem; height: 1.5rem; font-size: var(--font-size-11); }
+
+/* A roll's plot points (P4, P15): its lines, warnings, SFX lines and Settle. */
+.cortex-prime.poolroll-card .cp-roll-pp {
+  margin: 0.25rem 0;
+  padding: 0.25rem 0.5rem;
+  border-left: 3px solid var(--color-border-highlight, var(--color-text-secondary));
+  font-size: var(--font-size-12);
+}
+.cortex-prime.poolroll-card .cp-roll-pp.cp-settled { opacity: 0.8; }
+.cortex-prime.poolroll-card .cp-roll-pp-title { display: flex; gap: 0.35rem; align-items: center; margin: 0; border: none; font-size: var(--font-size-12); font-weight: bold; }
+.cortex-prime.poolroll-card .cp-roll-pp-account { font-weight: normal; }
+.cortex-prime.poolroll-card .cp-roll-pp-net { margin-left: auto; }
+.cortex-prime.poolroll-card .cp-roll-pp-lines { margin: 0; padding-left: 1.1em; }
+.cortex-prime.poolroll-card .cp-roll-pp-lines .cp-sfx { display: flex; align-items: center; gap: 0.25rem; }
+.cortex-prime.poolroll-card .cp-roll-pp-lines .cp-sfx > span { flex: 1; }
+.cortex-prime.poolroll-card .cp-roll-pp-lines .cp-later { font-style: italic; }
+.cortex-prime.poolroll-card .cp-roll-pp-lines button[aria-pressed="true"] { color: var(--color-text-emphatic, inherit); }
+.cortex-prime .cp-roll-pp-warnings { margin: 0; padding-left: 1.1em; color: var(--color-level-warning); }
+.cortex-prime.poolroll-card .cp-roll-pp-settled { margin: 0; font-style: italic; }
+.cortex-prime.poolroll-card .cp-roll-pp-sfx { display: flex; gap: 0.25rem; align-items: center; margin-top: 0.25rem; }
+.cortex-prime.poolroll-card .cp-roll-pp-sfx input { flex: 1; height: 1.5rem; }
+.cp-pp-lines { margin: 0; padding-left: 1.1em; font-size: var(--font-size-12); }

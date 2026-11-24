@@ -6,15 +6,17 @@
  */
 
 import { DIE_SIZES } from "../../rules/types.mjs";
+import { ppLineFields, ppWarningFields } from "./plot-points.mjs";
 
 const { ArrayField, BooleanField, NumberField, SchemaField, StringField } = foundry.data.fields;
 
 /**
  * The current poolRoll schema version. 2: effect dice have ids and kinds, and the Resolution
  * has consumedDieIds and nextEffectNumber (Decisions ADR-026). 3: the roll stores its pool's
- * warnings and unpriced traits (ADR-029 consequences, RQ-030).
+ * warnings and unpriced traits (ADR-029 consequences, RQ-030). 4: the roll stores its plot point
+ * account, lines and settlement (Plot Points spec, implementation notes; ADR-056).
  */
-export const POOL_ROLL_SCHEMA_VERSION = 3;
+export const POOL_ROLL_SCHEMA_VERSION = 4;
 
 /** Options for a field that stays absent until it is set. */
 const OPTIONAL = Object.freeze({ required: false, nullable: false, initial: undefined });
@@ -145,6 +147,28 @@ function resolutionSchema() {
 }
 
 /**
+ * @returns {Record<string, DataField>} the roll's plot points (P1, P4, P10, P15): the account it
+ *   pays from (null when a player rolled with no character, PP-E17), the pool-stage lines and
+ *   warnings stored when it was rolled, the SFX lines recorded on the card, the lines other specs
+ *   add, whether it was settled and the ledger entry that settled it. The roll-stage lines aren't
+ *   stored: they come from the Selection (rollPpFacts)
+ */
+function ppSchema() {
+  return {
+    payer: new SchemaField({
+      kind: new StringField({ required: true, blank: false, choices: ["actor", "bank"], initial: "bank" }),
+      actorId: new StringField({ required: false, nullable: true, blank: false, initial: null })
+    }, { nullable: true, initial: null }),
+    poolLines: new ArrayField(new SchemaField(ppLineFields())),
+    poolWarnings: new ArrayField(new SchemaField(ppWarningFields())),
+    sfxLines: new ArrayField(new SchemaField(ppLineFields())),
+    otherLines: new ArrayField(new SchemaField(ppLineFields())),
+    settled: new BooleanField({ required: true, initial: false }),
+    ledgerId: new StringField({ required: false, nullable: true, blank: false, initial: null })
+  };
+}
+
+/**
  * Schema version 1 to 2 for one Resolution, in place (ADR-026): entries without an id get the
  * next `e<n>` in order, entries without a kind get one from their shape, a pending overflow's
  * effectIndex becomes the effectId of that entry, and missing consumedDieIds and
@@ -200,7 +224,8 @@ export default class PoolRollData extends foundry.abstract.TypeDataModel {
       // allows no further trait, which have no defined price (RQ-030). Empty for a pool of
       // dice from no trait.
       warnings: new ArrayField(new SchemaField(warningSchema())),
-      unpricedTraits: new ArrayField(new SchemaField(unpricedTraitsSchema()))
+      unpricedTraits: new ArrayField(new SchemaField(unpricedTraitsSchema())),
+      pp: new SchemaField(ppSchema())
     };
   }
 
@@ -217,7 +242,8 @@ export default class PoolRollData extends foundry.abstract.TypeDataModel {
    * `unpricedTraits` lists from the schema's initial values when it is cleaned, not from this
    * step, which never fills in defaults: Foundry also runs this on partial update data, which
    * must stay partial, so a step that filled them could overwrite stored lists (see the notes in
-   * module/data/migration-runner.mjs).
+   * module/data/migration-runner.mjs). Version 3 to 4 works the same way: an older roll gets the
+   * schema's `pp` (no payer, no lines, not settled), so it offers no Settle.
    * @override
    * @param {object} source
    * @returns {object} the same source, migrated in place
@@ -232,6 +258,7 @@ export default class PoolRollData extends foundry.abstract.TypeDataModel {
     }
     if ( old ) source.schemaVersion = 2;
     if ( (source.schemaVersion !== undefined) && (source.schemaVersion < 3) ) source.schemaVersion = 3;
+    if ( (source.schemaVersion !== undefined) && (source.schemaVersion < 4) ) source.schemaVersion = 4;
     return source;
   }
 

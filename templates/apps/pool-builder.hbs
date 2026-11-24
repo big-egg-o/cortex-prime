@@ -42,6 +42,10 @@
   <div class="cp-pool-summary">
     {{#if summary.cost}}<p class="cp-pool-cost">{{ summary.cost }}</p>{{/if}}
     {{#if summary.hinderGain}}<p class="hint cp-pool-hinder">{{ summary.hinderGain }}</p>{{/if}}
+    {{#if summary.pp.text}}<p class="cp-pool-pp">{{ summary.pp.text }}</p>{{/if}}
+    {{#if summary.pp.warnings.length}}
+    <ul class="cp-roll-pp-warnings" role="note">{{#each summary.pp.warnings}}<li>{{ this }}</li>{{/each}}</ul>
+    {{/if}}
     {{#if summary.nonstandard}}
     <section class="cp-nonstandard" role="note">
       <h5 class="cp-nonstandard-title"><i class="fa-solid fa-triangle-exclamation" inert></i> {{ summary.nonstandard.title }}</h5>

@@ -539,7 +539,8 @@
         "EXTRA_EFFECT_DIE": "Extra effect die",
         "SFX_SPEND": "SFX",
         "STAY_IN": "Stayed in",
-        "GM_ADJUST": "GM adjustment"
+        "GM_ADJUST": "GM adjustment",
+        "ROLL": "Roll settled"
       },
       "Errors": {
         "INVALID_PP_AMOUNT": "Plot points change by whole numbers only.",
@@ -552,14 +553,23 @@
         "PP_NO_ACCOUNT": "That character doesn't hold plot points.",
         "NO_TAKE_OUT": "Nobody is taken out here.",
         "NO_OVERFLOW_TAKE_OUT": "No take-out was chosen for that effect die.",
-        "WRITE_FAILED": "The change couldn't be saved; see the console."
+        "WRITE_FAILED": "The change couldn't be saved; see the console.",
+        "PP_NOT_CONFIRMED": "Confirm the roll before settling its plot points.",
+        "PP_NO_LINES": "This roll has no plot points to settle."
       },
       "Warnings": {
         "PP_SHORT": "Costs more plot points than the payer holds.",
         "PP_NOT_YET_USABLE": "Only a plot point from this roll's own dice would cover this.",
         "BANK_SPEND_NOT_LISTED": "The bank has no price for this; the GM adjusts by hand if the table charges one.",
         "D4_COMPLICATION_NOT_OWN": "Only the roller's own d4 complication earns a plot point."
-      }
+      },
+      "Settle": "Settle plot points",
+      "Settled": "Plot points settled.",
+      "Preview": "{name} holds {balance} PP; this pool {net}",
+      "Later": "Usable once the roll is settled",
+      "UsableThisRoll": "Usable on this roll",
+      "RemoveLine": "Remove this line",
+      "SfxLabel": "SFX name"
     }
   },
   "TYPES": {

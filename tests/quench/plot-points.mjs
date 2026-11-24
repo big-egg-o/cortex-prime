@@ -1,15 +1,20 @@
 /**
  * Quench batch "cortex-prime.plot-points": PC balances, the GM's bank and the ledger in Foundry
- * (Decisions ADR-056; the Plot Points spec's P1 to P3, P5, P7, P9). Runs as a GM. Every actor and
+ * (Decisions ADR-056; the Plot Points spec's P1 to P5, P7, P9), and settling a roll card's plot
+ * points (P4, P6, P10, P15). Runs as a GM. Every actor and
  * ledger message the batch makes carries a test flag or names a test actor and is deleted after
- * each test; the bank is put back afterwards.
+ * each test, with the batch's roll cards; the bank is put back afterwards.
  * @module tests/quench/plot-points
  */
 
 import {
   BANK_SETTING, changePlotPoints, getBank, payerFor, sessionCharacters, startPlotPointSession
 } from "../../module/plot-points/accounts.mjs";
+import { rollPpData, settleRollPp } from "../../module/plot-points/roll-pp.mjs";
 import PlotPointsApp from "../../module/apps/plot-points-app.mjs";
+import { applyCardChange } from "../../module/dice/card-actions.mjs";
+import { preparePoolRollCardContext } from "../../module/dice/pool-roll-card.mjs";
+import { postPoolRoll } from "../../module/dice/post-pool-roll.mjs";
 
 const SYSTEM_ID = "cortex-prime";
 const TEST_FLAG = "quenchPlotPoints";
@@ -34,6 +39,33 @@ async function cleanUp(keep = new Set()) {
   if ( messages.length ) await ChatMessage.implementation.deleteDocuments(messages);
 }
 
+/**
+ * Posts a roll of four d8s with fixed results, three of them a total with one paid extra result
+ * when `paid` is set, and the given plot points.
+ * @param {object} pp - system.pp, over an empty one
+ * @returns {Promise<ChatMessage>}
+ */
+function postRoll(pp) {
+  const results = [6, 5, 4, 3];
+  const pool = results.map((_r, i) => ({ id: `d${i + 1}`, size: 8, source: { kind: "custom", label: `Die ${i + 1}` }, origin: "rating" }));
+  return postPoolRoll({
+    pool, results,
+    pp: { payer: null, poolLines: [], poolWarnings: [], sfxLines: [], otherLines: [], settled: false, ledgerId: null, ...pp }
+  });
+}
+
+/** Picks three dice for the total with one paid extra result, and confirms. */
+async function confirmWithExtraResult(message) {
+  await message.update({ system: { selection: { totalIds: ["d1", "d2", "d3"], effectDieIds: ["d4"], extraResultsPaid: 1 } } });
+  await applyCardChange(message, { action: "confirm" });
+  assert_(message.system.state === "resolved", "the roll was confirmed");
+}
+
+/** @param {boolean} condition @param {string} what */
+function assert_(condition, what) {
+  if ( !condition ) throw new Error(`setup failed: ${what}`);
+}
+
 /** @param {object} quench */
 export function registerPlotPointsBatch(quench) {
   quench.registerBatch(
@@ -47,6 +79,9 @@ export function registerPlotPointsBatch(quench) {
         bank = getBank();
       });
       afterEach(async () => {
+        const rolls = game.messages.filter(m => (m.type === "poolRoll") && m.system.pool.some(d => d.source.label === "Die 1")
+          && (m.system.pp.payer !== null || m.system.pp.poolLines.length > 0)).map(m => m.id);
+        if ( rolls.length ) await ChatMessage.implementation.deleteDocuments(rolls);
         await cleanUp(before_);
         await game.settings.set(SYSTEM_ID, BANK_SETTING, bank);
       });
@@ -135,6 +170,111 @@ export function registerPlotPointsBatch(quench) {
           finally {
             await player.update({ character: previous?.id ?? null });
           }
+        });
+      });
+
+      describe("settling a roll (P4)", () => {
+        const actorPayer = pc => ({ kind: "actor", actorId: pc.id });
+
+        it("rollPpData stores the rolling PC as payer and Hinder's usable gain (P1, RQ-039)", async () => {
+          const pc = await createPc(0, "hinder");
+          const pool = [{ id: "d1", size: 4, origin: "rating", source: { kind: "trait", actorId: pc.id, traitId: "t1", label: "Sneaky", ppGained: 1 } }];
+          const pp = rollPpData({ pool, traitCost: null, actor: pc });
+          assert.deepEqual(pp.payer, actorPayer(pc));
+          assert.deepEqual(pp.poolLines, [{ reason: "HINDER", direction: "gain", amount: 1, label: "Sneaky", sourceId: "t1", usableThisRoll: true }]);
+          assert.deepEqual(rollPpData({ pool, traitCost: null, actor: null }).payer, { kind: "bank" }, "a GM with no actor pays from the bank");
+        });
+
+        it("offers Settle once confirmed, writes every line once and records them on one ledger entry", async () => {
+          const pc = await createPc(2, "settle");
+          const message = await postRoll({ payer: actorPayer(pc) });
+          assert.isFalse(preparePoolRollCardContext(message).pp.canSettle, "not before Confirm");
+          await confirmWithExtraResult(message);
+          assert.isTrue(preparePoolRollCardContext(message).pp.canSettle);
+
+          const result = await settleRollPp(message);
+          assert.isTrue(result.ok);
+          assert.equal(pc.system.plotPoints, 1);
+          assert.isTrue(message.system.pp.settled);
+          const entries = ledgerSince(before_);
+          assert.lengthOf(entries, 1);
+          assert.equal(entries[0].system.reason, "ROLL");
+          assert.equal(entries[0].system.delta, -1);
+          assert.equal(entries[0].system.messageRef, message.id);
+          assert.deepEqual(entries[0].system.toObject().lines, [{ reason: "EXTRA_RESULT", direction: "spend", amount: 1 }]);
+          assert.equal(message.system.pp.ledgerId, entries[0].id);
+          assert.isFalse(preparePoolRollCardContext(message).pp.canSettle, "not twice");
+
+          assert.deepEqual(await settleRollPp(message), { ok: false, code: "PP_ALREADY_SETTLED" });
+          assert.equal(pc.system.plotPoints, 1);
+          assert.lengthOf(ledgerSince(before_), 1);
+        });
+
+        it("PP-E04 a reroll before Confirm keeps the paid counter, and the roll is charged once", async () => {
+          const pc = await createPc(3, "reroll");
+          const message = await postRoll({ payer: actorPayer(pc) });
+          await applyCardChange(message, { action: "increment-extra-results" });
+          await applyCardChange(message, { action: "reroll", dieIds: ["d1"], results: { d1: 7 } });
+          assert.equal(message.system.selection.extraResultsPaid, 1, "the counter is kept (P6)");
+          await confirmWithExtraResult(message);
+          assert.isTrue((await settleRollPp(message)).ok);
+          assert.equal(pc.system.plotPoints, 2);
+        });
+
+        it("P5 a refused settle writes nothing and keeps offering Settle", async () => {
+          const pc = await createPc(0, "refused");
+          const message = await postRoll({ payer: actorPayer(pc) });
+          await confirmWithExtraResult(message);
+          assert.deepEqual(await settleRollPp(message), { ok: false, code: "PP_INSUFFICIENT" });
+          assert.equal(pc.system.plotPoints, 0);
+          assert.isFalse(message.system.pp.settled);
+          assert.lengthOf(ledgerSince(before_), 0);
+          assert.isTrue(preparePoolRollCardContext(message).pp.canSettle);
+          assert.include(preparePoolRollCardContext(message).pp.warnings,
+            game.i18n.localize("CORTEX.PlotPoints.Warnings.PP_SHORT"));
+        });
+
+        it("P10 a gain from the roll's own dice can't pay for it: PP_NOT_YET_USABLE", async () => {
+          const pc = await createPc(0, "later");
+          const message = await postRoll({
+            payer: actorPayer(pc), otherLines: [{ reason: "HITCH_COMPLICATION", direction: "gain", amount: 1, usableThisRoll: false }]
+          });
+          await confirmWithExtraResult(message);
+          assert.deepEqual(await settleRollPp(message), { ok: false, code: "PP_NOT_YET_USABLE" });
+          assert.equal(pc.system.plotPoints, 0);
+        });
+
+        it("P15 an SFX gain switched to usable pays for the roll; a net change of 0 is still recorded", async () => {
+          const pc = await createPc(0, "sfx");
+          const message = await postRoll({ payer: actorPayer(pc) });
+          await applyCardChange(message, { action: "sfx-add", kind: "gain", label: "Lucky" });
+          await applyCardChange(message, { action: "sfx-usable", index: "0" });
+          await confirmWithExtraResult(message);
+          const result = await settleRollPp(message);
+          assert.isTrue(result.ok);
+          assert.equal(result.value.delta, 0);
+          assert.equal(pc.system.plotPoints, 0);
+          assert.isTrue(message.system.pp.settled);
+          assert.lengthOf(ledgerSince(before_)[0].system.lines, 2);
+          await applyCardChange(message, { action: "sfx-add", kind: "spend" });
+          assert.lengthOf(message.system.pp.sfxLines, 1, "a settled card's lines are fixed");
+        });
+
+        it("a GM settles a bank payment from the bank (rule 17)", async () => {
+          await game.settings.set(SYSTEM_ID, BANK_SETTING, 2);
+          const message = await postRoll({ payer: { kind: "bank", actorId: null } });
+          await confirmWithExtraResult(message);
+          assert.isTrue((await settleRollPp(message)).ok);
+          assert.equal(getBank(), 1);
+        });
+
+        it("PP-E17 a roll with no payer shows its lines but offers no Settle", async () => {
+          const message = await postRoll({ poolLines: [{ reason: "EXTRA_TRAIT", direction: "spend", amount: 1, sourceId: "s" }] });
+          await confirmWithExtraResult(message);
+          const pp = preparePoolRollCardContext(message).pp;
+          assert.lengthOf(pp.lines, 2);
+          assert.isFalse(pp.canSettle);
+          assert.deepEqual(await settleRollPp(message), { ok: false, code: "PP_NO_ACCOUNT" });
         });
       });
 
