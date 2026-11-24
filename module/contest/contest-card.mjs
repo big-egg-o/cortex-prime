@@ -21,6 +21,7 @@ import { openPoolBuilderFor } from "../apps/pool-builder.mjs";
 import {
   OVERFLOW_PENDING, contestConsequence, expectedRoll, liveOverflowIds, offeredActions, offeredEndChoices, testResult
 } from "../rules/index.mjs";
+import { prepareContestPp } from "../plot-points/contest-pp.mjs";
 import { contestRecordOf } from "./records.mjs";
 import { notifyContestResult, sendContestRequest } from "./relay.mjs";
 import { contestFlagOf } from "./roll-card.mjs";
@@ -86,6 +87,8 @@ const HANDLEBARS_OPTIONS = { allowProtoMethodsByDefault: true, allowProtoPropert
  *   effect dice as they stand after its end choices, and whether the take-out or victory was chosen;
  *   null for a contest, before the roll, and while a choice waits
  * @property {boolean} closedEarly - the card was closed while an end choice waited
+ * @property {object|null} pp - the plot points paid for giving in and staying in, and the Stay in
+ *   offer for this user (prepareContestPp; P8)
  */
 
 /**
@@ -286,7 +289,8 @@ export function prepareContestCardContext(message, user = game.user) {
     end: endChoices(record, rolls, stored, user),
     consequence: closedEarly ? null : consequenceOf(record, sides, rolls, stored),
     result: tested?.ok ? { effects: tested.value.effects, takeOut: tested.value.takeOut } : null,
-    closedEarly
+    closedEarly,
+    pp: closedEarly ? null : prepareContestPp(message, loaded, key => sideLabel(sides, key), user)
   };
 }
 
@@ -332,6 +336,23 @@ function showRollCard(from, messageId) {
 }
 
 /**
+ * The GM's answers for staying in after a test (rule 15; RQ-035, RQ-044), read from the card's
+ * form: the opposition effect dice marked as acting on the character, the size when there is none,
+ * and whether the setter's take-out applies. A contest's Stay in has no form and sends nothing.
+ * @param {HTMLElement|null} form
+ * @returns {{overflowApplies?: boolean, usedAgainst?: string[], gmSize?: number|"none"}}
+ */
+function stayInAnswers(form) {
+  if ( !form?.dataset.test ) return {};
+  const overflowApplies = form.querySelector('input[name="overflowApplies"]')?.checked === true;
+  if ( overflowApplies ) return { overflowApplies };
+  const boxes = form.querySelectorAll('input[name="usedAgainst"]');
+  if ( boxes.length ) return { overflowApplies, usedAgainst: Array.from(boxes).filter(box => box.checked).map(box => box.value) };
+  const size = form.querySelector('select[name="gmSize"]')?.value;
+  return { overflowApplies, gmSize: size === "none" ? "none" : Number(size) };
+}
+
+/**
  * Handles one click on a card control.
  * @param {ChatMessage} message
  * @param {HTMLElement} target - the clicked element, with `data-action`
@@ -354,6 +375,10 @@ async function onCardClick(message, target) {
     case "apply-heroic-steps": return sendCardAction(message, action, { effectId });
     case "choose-overflow":
       return sendCardAction(message, action, kind === "leftover" ? { effectId, kind, dieId } : { effectId, kind });
+    case "stay-in": {
+      if ( !(await confirmed("StayIn")) ) return null;
+      return sendCardAction(message, action, stayInAnswers(target.closest(".cp-pp-stay-in")));
+    }
     case "use-against-loser": {
       const boxes = target.closest(".cp-end-pick")?.querySelectorAll("input[type=checkbox]:checked") ?? [];
       return sendCardAction(message, action, { effectIds: Array.from(boxes, box => box.dataset.effectId) });

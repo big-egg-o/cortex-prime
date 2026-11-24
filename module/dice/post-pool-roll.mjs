@@ -55,6 +55,8 @@ function withSetLabels(warnings) {
  *   `setLabel` the caller gives is kept
  * @param {{setId: string, count: number}[]} [params.unpricedTraits] - traits with no defined
  *   price (poolTraitCost, RQ-030); none by default
+ * @param {object} [params.pp] - the roll's plot points as rollPpData gives them: its account and
+ *   pool-stage lines (Plot Points P1, P4); left out, the schema's (no account, no lines)
  * @param {{messageId: string, side: string, rollIndex: number}} [params.contest] - the roll a test
  *   or contest waits for. The card gets it as its `flags["cortex-prime"].contest`, and is posted in
  *   the "public" mode whatever the user's setting: rolls are made openly (Handbook p. 17), and the
@@ -62,7 +64,7 @@ function withSetLabels(warnings) {
  * @returns {Promise<ChatMessage>} the created message
  * @throws {Error} if the system data is invalid, or if creation otherwise fails
  */
-export async function postPoolRoll({ pool, speaker, results, warnings = [], unpricedTraits = [], contest }) {
+export async function postPoolRoll({ pool, speaker, results, warnings = [], unpricedTraits = [], pp, contest }) {
   let roll = null;
   let rolled;
   if ( results ) {
@@ -88,6 +90,7 @@ export async function postPoolRoll({ pool, speaker, results, warnings = [], unpr
       unpricedTraits: foundry.utils.deepClone(unpricedTraits)
     }
   };
+  if ( pp ) messageData.system.pp = foundry.utils.deepClone(pp);
   if ( roll ) messageData.rolls = [roll];
   if ( contest ) {
     const { messageId, side, rollIndex } = contest;

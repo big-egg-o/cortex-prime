@@ -56,7 +56,7 @@ export function payerFor(actor) {
  * @returns {{balance: number, actor: Actor|null}|null} the stored balance, or null when the account
  *   names no PC
  */
-function readAccount(account) {
+export function readAccount(account) {
   if ( account?.kind === "bank" ) return { balance: getBank(), actor: null };
   const actor = (account?.kind === "actor") ? game.actors.get(account.actorId) : null;
   if ( !holdsPlotPoints(actor) ) return null;
@@ -83,8 +83,7 @@ export async function changePlotPoints({ account, delta, reason, label = "", mes
   const changed = changeBalance(read.balance, delta);
   if ( !changed.ok ) return changed;
   try {
-    if ( read.actor ) await read.actor.update({ "system.plotPoints": changed.value.balance });
-    else await game.settings.set(SYSTEM_ID, BANK_SETTING, changed.value.balance);
+    await writeBalance(read, changed.value.balance);
     await postLedgerEntry({ account, actor: read.actor, delta, balance: changed.value.balance, reason, label, messageRef });
   }
   catch( err ) {
@@ -95,11 +94,41 @@ export async function changePlotPoints({ account, delta, reason, label = "", mes
 }
 
 /**
- * Posts one ledger entry.
+ * Stores a new balance for an account readAccount found.
+ * @param {{actor: Actor|null}} read
+ * @param {number} balance
+ * @returns {Promise<unknown>}
+ */
+export function writeBalance(read, balance) {
+  if ( read.actor ) return read.actor.update({ "system.plotPoints": balance });
+  return game.settings.set(SYSTEM_ID, BANK_SETTING, balance);
+}
+
+/**
+ * @param {import("../rules/types.mjs").PpLine} line
+ * @returns {string} the line as the ledger and the roll card show it, such as "−1 Extra result" or
+ *   "+1 Hinder: Sneaky"
+ */
+export function lineText(line) {
+  const sign = (line.direction === "spend") ? "\u2212" : "+";
+  const reason = game.i18n.localize(`CORTEX.PlotPoints.Reasons.${line.reason}`);
+  return `${sign}${line.amount} ${line.label ? `${reason}: ${line.label}` : reason}`;
+}
+
+/**
+ * Posts one ledger entry (P3).
  * @param {object} entry
+ * @param {import("../rules/types.mjs").AccountRef} entry.account
+ * @param {Actor|null} entry.actor
+ * @param {number} entry.delta
+ * @param {number} entry.balance - the balance the change left
+ * @param {string} entry.reason - a key of PP_REASONS, or ROLL for a roll's settlement
+ * @param {string} [entry.label]
+ * @param {string|null} [entry.messageRef]
+ * @param {import("../rules/types.mjs").PpLine[]} [entry.lines] - a settled roll's lines
  * @returns {Promise<ChatMessage>}
  */
-function postLedgerEntry({ account, actor, delta, balance, reason, label, messageRef }) {
+export function postLedgerEntry({ account, actor, delta, balance, reason, label = "", messageRef = null, lines = [] }) {
   const i18n = game.i18n;
   const name = actor?.name ?? i18n.localize("CORTEX.PlotPoints.Bank");
   const reasonText = i18n.localize(`CORTEX.PlotPoints.Reasons.${reason}`);
@@ -107,14 +136,15 @@ function postLedgerEntry({ account, actor, delta, balance, reason, label, messag
     name, delta: (delta > 0) ? `+${delta}` : String(delta), reason: label ? `${reasonText}: ${label}` : reasonText, balance
   });
   const adjustment = reason === "GM_ADJUST";
-  const content = `<p class="cp-pp-entry${adjustment ? " cp-pp-adjustment" : ""}">${foundry.utils.escapeHTML(text)}</p>`;
+  let content = `<p class="cp-pp-entry${adjustment ? " cp-pp-adjustment" : ""}">${foundry.utils.escapeHTML(text)}</p>`;
+  if ( lines.length ) content += `<ul class="cp-pp-lines">${lines.map(line => `<li>${foundry.utils.escapeHTML(lineText(line))}</li>`).join("")}</ul>`;
   return ChatMessage.implementation.create({
     type: "plotPoints",
     content,
     speaker: actor ? ChatMessage.implementation.getSpeaker({ actor }) : { alias: name },
     system: {
       account: { kind: account.kind, actorId: actor?.id ?? null, name },
-      delta, balance, reason, label, messageRef, adjustment
+      delta, balance, reason, label, messageRef, adjustment, lines
     }
   });
 }

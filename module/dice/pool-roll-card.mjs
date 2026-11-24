@@ -10,6 +10,7 @@
 import { evaluate, rerollableIds, resolve, traitSetById, validateSelection } from "../rules/index.mjs";
 import { getGameConfig } from "../config/settings.mjs";
 import { holdOf, sendRollCard } from "../contest/roll-card.mjs";
+import { prepareRollPp, settleRollPp } from "../plot-points/roll-pp.mjs";
 import { applyCardChange, canEditPoolRollCard } from "./card-actions.mjs";
 
 const TEMPLATE = "systems/cortex-prime/templates/chat/pool-roll.hbs";
@@ -183,10 +184,10 @@ export function prepareNonstandard(system) {
  *     takeOutAvailable: boolean, takeOutLabel: string}|null,
  *   reroll: {active: boolean, canReroll: boolean}|null,
  *   nonstandard: {title: string, reasons: string[], unpriced: string|null}|null,
- *   contestHold: {state: "held"|"sent", note: string}|null, send: boolean}} `nonstandard`
+ *   contestHold: {state: "held"|"sent", note: string}|null, send: boolean, pp: object|null}} `nonstandard`
  *   is shown to everyone who can see the card, in every state (prepareNonstandard); `contestHold`
  *   is set for a card held for or sent to a test or contest (holdOf), and `send` offers Send on a
- *   held, resolved card to those who may change it
+ *   held, resolved card to those who may change it; `pp` is the plot point section (prepareRollPp)
  */
 export function preparePoolRollCardContext(message) {
   const system = message.system;
@@ -298,7 +299,7 @@ export function preparePoolRollCardContext(message) {
 
   return {
     botch, dice, formula, headline, preview, interactive, selection, effectControls, overflowChoice, reroll,
-    nonstandard: prepareNonstandard(system), contestHold, send
+    nonstandard: prepareNonstandard(system), contestHold, send, pp: prepareRollPp(message, canEdit)
   };
 }
 
@@ -372,8 +373,30 @@ function activatePoolRollCardListeners(message, content) {
     // Send goes through the GM relay, which checks it like any other request (ADR-027).
     if ( action === "send-roll" ) return sendRollCard(message).catch(notifyCardError);
 
+    // Settle tells the user why it was refused; nothing was written then (P4).
+    if ( action === "settle-pp" ) {
+      target.disabled = true;
+      return settleRollPp(message).then(result => {
+        target.disabled = false;
+        if ( result && !result.ok ) notifyPpRefusal(result.code);
+      }).catch(notifyCardError);
+    }
+    if ( action === "sfx-add" ) {
+      const label = content.querySelector('input[name="sfxLabel"]')?.value ?? "";
+      return applyCardChange(message, { action, kind: rest.kind, label }).catch(notifyCardError);
+    }
+
     return applyCardChange(message, { action, ...rest }).catch(notifyCardError);
   });
+}
+
+/**
+ * Shows why a roll's plot points weren't settled.
+ * @param {string} code
+ */
+function notifyPpRefusal(code) {
+  const key = `CORTEX.PlotPoints.Errors.${code}`;
+  ui.notifications.warn(game.i18n.has(key) ? game.i18n.localize(key) : code);
 }
 
 /**
@@ -413,7 +436,8 @@ export function onRenderPoolRollMessage(message, html) {
   // interactive covers the pre-confirm controls; a resolved card's step/overflow controls are
   // gated the same way (canEditPoolRollCard) but live in effectControls/overflowChoice instead,
   // since interactive itself is specifically "not yet resolved" (used for die clickability too).
-  const hasControls = context.interactive || context.effectControls || context.overflowChoice || context.send;
+  const hasControls = context.interactive || context.effectControls || context.overflowChoice || context.send
+    || context.pp?.editable;
 
   const compiled = Handlebars.partials[TEMPLATE];
   if ( typeof compiled === "function" ) {

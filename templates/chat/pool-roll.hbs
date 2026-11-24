@@ -37,6 +37,61 @@
   </section>
   {{/if}}
 
+  {{!-- The roll's plot points (P4, P15): every line, the warnings, the SFX lines and Settle. --}}
+  {{#if pp}}
+  <section class="cp-roll-pp{{#if pp.settled}} cp-settled{{/if}}">
+    <h5 class="cp-roll-pp-title">
+      <i class="fa-solid fa-coins" inert></i> {{ localize "CORTEX.PlotPoints.Title" }}
+      {{#if pp.account}}<span class="cp-roll-pp-account">{{ pp.account }}</span>{{/if}}
+      {{#if pp.net}}<span class="cp-roll-pp-net">{{ pp.net }}</span>{{/if}}
+    </h5>
+    {{#if pp.hasLines}}
+    <ul class="cp-roll-pp-lines">
+      {{#each pp.lines}}
+      <li{{#if this.later}} class="cp-later" data-tooltip="CORTEX.PlotPoints.Later"{{/if}}>{{ this.text }}</li>
+      {{/each}}
+      {{#each pp.sfx}}
+      <li class="cp-sfx{{#if this.later}} cp-later{{/if}}">
+        <span>{{ this.text }}</span>
+        {{#if ../pp.editable}}
+        {{#if this.gain}}
+        <button type="button" class="ui-control icon" data-action="sfx-usable" data-index="{{ this.index }}"
+          aria-pressed="{{#if this.usable}}true{{else}}false{{/if}}" data-tooltip
+          aria-label="{{ localize "CORTEX.PlotPoints.UsableThisRoll" }}"><i class="fa-solid fa-bolt" inert></i></button>
+        {{/if}}
+        <button type="button" class="ui-control icon" data-action="sfx-remove" data-index="{{ this.index }}"
+          data-tooltip aria-label="{{ localize "CORTEX.PlotPoints.RemoveLine" }}"><i class="fa-solid fa-xmark" inert></i></button>
+        {{/if}}
+      </li>
+      {{/each}}
+    </ul>
+    {{/if}}
+    {{#if pp.warnings.length}}
+    <ul class="cp-roll-pp-warnings" role="note">
+      {{#each pp.warnings}}<li>{{ this }}</li>{{/each}}
+    </ul>
+    {{/if}}
+    {{#if pp.settled}}<p class="cp-roll-pp-settled">{{ localize "CORTEX.PlotPoints.Settled" }}</p>{{/if}}
+    {{#if pp.editable}}
+    <div class="cp-roll-pp-sfx">
+      <input type="text" name="sfxLabel" placeholder="{{ localize "CORTEX.PlotPoints.SfxLabel" }}"
+        aria-label="{{ localize "CORTEX.PlotPoints.SfxLabel" }}">
+      <button type="button" class="ui-control icon" data-action="sfx-add" data-kind="spend"
+        data-tooltip aria-label="{{ localize "CORTEX.PlotPoints.RecordSpend" }}"><i class="fa-solid fa-minus" inert></i></button>
+      <button type="button" class="ui-control icon" data-action="sfx-add" data-kind="gain"
+        data-tooltip aria-label="{{ localize "CORTEX.PlotPoints.RecordGain" }}"><i class="fa-solid fa-plus" inert></i></button>
+    </div>
+    {{/if}}
+    {{#if pp.canSettle}}
+    <div class="cp-buttons">
+      <button type="button" class="cp-settle" data-action="settle-pp">
+        <i class="fa-solid fa-coins" inert></i><span>{{ localize "CORTEX.PlotPoints.Settle" }}</span>
+      </button>
+    </div>
+    {{/if}}
+  </section>
+  {{/if}}
+
   {{#if interactive}}
   {{#unless reroll.active}}
   <div class="cp-controls cp-selection">

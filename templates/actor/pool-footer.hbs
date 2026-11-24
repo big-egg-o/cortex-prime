@@ -13,6 +13,8 @@
     {{#if pool.summary}}<span class="cp-pending">{{ localize "CORTEX.Sheet.Design.Pending" }}
       {{ pool.summary.cost }} {{ pool.summary.hinderGain }} {{ pool.summary.nonstandard.unpriced }}
       {{#each pool.summary.nonstandard.reasons}}<span>{{ this }}</span>{{/each}}
+      {{#if pool.summary.pp.text}}<span class="cp-pool-pp">{{ pool.summary.pp.text }}</span>{{/if}}
+      {{#each pool.summary.pp.warnings}}<span>{{ this }}</span>{{/each}}
     </span>{{/if}}
   </div>
   <div class="cp-roll-actions">

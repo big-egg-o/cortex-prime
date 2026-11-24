@@ -87,8 +87,8 @@ export function registerMigrationBatch(quench) {
           const twelveId = old.pool[0].id;
           const migrated = PoolRollData.migrateData(foundry.utils.deepClone(old));
 
-          assert.equal(migrated.schemaVersion, 3);
-          assert.equal(POOL_ROLL_SCHEMA_VERSION, 3);
+          assert.equal(migrated.schemaVersion, 4);
+          assert.equal(POOL_ROLL_SCHEMA_VERSION, 4);
           assert.deepEqual(migrated.resolution.effectDice, [
             { id: "e1", kind: "rolled", size: 12, dieId: twelveId, isDefault: false },
             { id: "e2", kind: "default", size: 4, dieId: null, isDefault: true }
@@ -126,16 +126,21 @@ export function registerMigrationBatch(quench) {
             }
           };
           const migrated = PoolRollData.migrateData(foundry.utils.deepClone(v2));
-          assert.deepEqual(migrated, { ...v2, schemaVersion: 3 });
+          assert.deepEqual(migrated, { ...v2, schemaVersion: 4 });
         });
 
-        it("ADR-029: takes a version-2 source to version 3 and fills nothing in itself", () => {
+        it("ADR-029: takes a version-2 source to the current version and fills nothing in itself", () => {
           // The empty warnings and unpricedTraits lists come from the schema when the message is
           // cleaned, not from the step, so a step can never overwrite stored lists.
           const v2 = { schemaVersion: 2, state: "rolled", resolution: null };
           const migrated = PoolRollData.migrateData(foundry.utils.deepClone(v2));
-          assert.deepEqual(migrated, { ...v2, schemaVersion: 3 });
+          assert.deepEqual(migrated, { ...v2, schemaVersion: 4 });
           assert.deepEqual(PoolRollData.migrateData(foundry.utils.deepClone(migrated)), migrated, "a second run changes nothing");
+        });
+
+        it("ADR-056: takes a version-3 source to version 4 and fills no plot points in itself", () => {
+          const v3 = { schemaVersion: 3, state: "resolved", warnings: [] };
+          assert.deepEqual(PoolRollData.migrateData(foundry.utils.deepClone(v3)), { ...v3, schemaVersion: 4 });
         });
 
         it("ADR-026 and ADR-029: leave a partial update without schemaVersion alone, lists included", () => {
@@ -165,7 +170,10 @@ export function registerMigrationBatch(quench) {
           );
 
           const system = message.system.toObject();
-          assert.equal(system.schemaVersion, 3);
+          assert.equal(system.schemaVersion, 4);
+          assert.deepEqual(system.pp, {
+            payer: null, poolLines: [], poolWarnings: [], sfxLines: [], otherLines: [], settled: false, ledgerId: null
+          }, "ADR-056: an old roll has no account and no lines, so it offers no Settle");
           assert.deepEqual(system.warnings, [], "ADR-029: an old message has no stored warnings");
           assert.deepEqual(system.unpricedTraits, [], "RQ-030: nor unpriced traits");
           assert.deepEqual(system.resolution.effectDice.map(e => [e.id, e.kind]), [["e1", "rolled"], ["e2", "default"]]);
@@ -210,7 +218,7 @@ export function registerMigrationBatch(quench) {
             { type: "poolRoll", system: { ...oldPendingOverflowSystem(), schemaVersion: 2, resolution: null, state: "rolled" } },
             { strict: true, clean: { expand: false } }
           );
-          assert.equal(v2.system.schemaVersion, 3);
+          assert.equal(v2.system.schemaVersion, 4);
           assert.deepEqual(v2.system.toObject().warnings, []);
           assert.deepEqual(v2.system.toObject().unpricedTraits, []);
 
@@ -229,7 +237,7 @@ export function registerMigrationBatch(quench) {
           assert.deepEqual(JSON.parse(JSON.stringify(game.messages.get(message.id).system.toObject().warnings)), warnings);
         });
 
-        it("ADR-029: creating a message at version 2 stores version 3 with empty lists", async () => {
+        it("ADR-029: creating a message at version 2 stores the current version with empty lists", async () => {
           // Creation cleans without a stored source, so it takes its own path through migrateData.
           const message = await ChatMessage.create({
             type: "poolRoll",
@@ -237,7 +245,7 @@ export function registerMigrationBatch(quench) {
           });
           messages.push(message);
           const stored = game.messages.get(message.id).system.toObject();
-          assert.equal(stored.schemaVersion, 3);
+          assert.equal(stored.schemaVersion, 4);
           assert.deepEqual(stored.warnings, []);
           assert.deepEqual(stored.unpricedTraits, []);
         });

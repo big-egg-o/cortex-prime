@@ -25,6 +25,7 @@ import { contestRecordOf, sideSpeaker } from "../contest/records.mjs";
 import { openStartDialog } from "../contest/start-dialog.mjs";
 import { postPoolRoll } from "../dice/post-pool-roll.mjs";
 import { prepareNonstandard } from "../dice/pool-roll-card.mjs";
+import { poolPpPreview, rollPpData } from "../plot-points/roll-pp.mjs";
 
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
 
@@ -226,22 +227,38 @@ function groupBySource(pool, { sheetActorRef } = {}) {
 
 /**
  * The builder's summary of what the pool's traits cost and warn of, with the same nonstandard
- * section the roll card will show (ADR-029, RQ-030): the cost in plot points, Hinder's plot points
- * (shown, never paid: ADR-014), and the reasons. A pool of dice from no trait has none, and a
- * pool whose only further traits have no defined price shows no bare "0 PP" (RQ-030).
+ * section the roll card will show (ADR-029, RQ-030): the cost in plot points, Hinder's plot points,
+ * the reasons, and the payer's balance with what the pool's lines would change (P4; paid only by
+ * the card's Settle). A pool of dice from no trait has none, and a pool whose only further traits
+ * have no defined price shows no bare "0 PP" (RQ-030).
  * @param {import("../rules/types.mjs").PoolDie[]} pool
+ * @param {object} [speaker] - the roll's speaker, whose actor pays
  * @returns {{cost: string|null, hinderGain: string|null,
- *   nonstandard: ReturnType<typeof prepareNonstandard>}|null}
+ *   nonstandard: ReturnType<typeof prepareNonstandard>, pp: ReturnType<typeof poolPpPreview>}|null}
  */
-function poolSummary(pool) {
+function poolSummary(pool, speaker) {
   const report = currentPoolReport(pool);
   if ( !report || (report.traitCount === 0) ) return null;
   const unpricedOnly = (report.unpricedTraits.length > 0) && (report.ppCost === 0);
   return {
     cost: unpricedOnly ? null : game.i18n.format("CORTEX.Builder.Cost", { cost: report.ppCost }),
     hinderGain: report.ppGained ? game.i18n.format("CORTEX.Builder.HinderGain", { pp: report.ppGained }) : null,
-    nonstandard: prepareNonstandard({ pool, warnings: report.warnings, unpricedTraits: report.unpricedTraits })
+    nonstandard: prepareNonstandard({ pool, warnings: report.warnings, unpricedTraits: report.unpricedTraits }),
+    pp: poolPpPreview(poolPp(pool, report, speaker))
   };
+}
+
+/**
+ * The plot points a pool would store when rolled by the speaker's actor (P1, P4).
+ * @param {import("../rules/types.mjs").PoolDie[]} pool - the builder's pool, with its trait marks
+ * @param {ReturnType<typeof currentPoolReport>} report
+ * @param {object|undefined} speaker - the roll's speaker
+ * @returns {ReturnType<typeof rollPpData>}
+ */
+function poolPp(pool, report, speaker) {
+  const actor = speaker ? ChatMessage.implementation.getSpeakerActor(speaker) : null;
+  const traitCost = report?.extraTraits.length ? { extraTraits: report.extraTraits } : null;
+  return rollPpData({ pool, traitCost, actor });
 }
 
 /** Identifies the request shown when a roll control was rendered. */
@@ -281,7 +298,8 @@ export function sheetPoolContext(sheetActorRef) {
       }))
     };
   });
-  return { groups, summary: poolSummary(pool), destination: rollDestination(pool, instance?.target), targetKey: targetKey(instance?.target) };
+  const destination = rollDestination(pool, instance?.target);
+  return { groups, summary: poolSummary(pool, destination.speaker), destination, targetKey: targetKey(instance?.target) };
 }
 
 /**
@@ -353,7 +371,7 @@ export default class PoolBuilder extends HandlebarsApplicationMixin(ApplicationV
     const currentLevel = difficultyLevelOfPool(pool).value;
     return {
       groups: groupBySource(pool),
-      summary: poolSummary(pool),
+      summary: poolSummary(pool, destination.speaker),
       sizes: DIE_SIZES,
       initialLevel: currentLevel ?? DIFFICULTY_LEVELS[0],
       levels: DIFFICULTY_LEVELS.map(level => ({
@@ -451,6 +469,7 @@ export default class PoolBuilder extends HandlebarsApplicationMixin(ApplicationV
     const message = await postPoolRoll({
       pool: rollable.ok ? rollable.value : pool, results,
       warnings: report?.warnings ?? [], unpricedTraits: report?.unpricedTraits ?? [],
+      pp: poolPp(pool, report, destination.speaker),
       speaker: destination.speaker,
       contest: target ?? undefined
     });

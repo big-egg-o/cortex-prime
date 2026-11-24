@@ -12,6 +12,7 @@ import ContestData from "../data/chat/contest.mjs";
 import { initialSystem, systemChangesAfter } from "../data/chat/contest-mapping.mjs";
 import { CONTEST_SIDES, TEST_SIDES } from "../rules/contest.mjs";
 import { dispatchContestRequest, dispatchStartRequest } from "../rules/contest-request.mjs";
+import { LOCKED_BY_STAY_IN, contestPpRecord, handleStayIn, payGiveIn } from "../plot-points/contest-pp.mjs";
 import { contestRecordOf, poolRollRecordOf, sideActor, sideSpeaker } from "./records.mjs";
 
 /** The query name, registered in `CONFIG.queries`. */
@@ -55,14 +56,15 @@ export async function sendContestRequest(request) {
 
 /**
  * Shows a refused or failed contest action to the user who sent it, in their language
- * (CORTEX.Contest.Errors.<CODE>); a code without a string is shown as it is.
+ * (CORTEX.Contest.Errors.<CODE>, or CORTEX.PlotPoints.Errors.<CODE> for a plot point refusal); a
+ * code without a string is shown as it is.
  * @param {{ok: boolean, code?: string}} result
  * @returns {boolean} whether the action went through
  */
 export function notifyContestResult(result) {
   if ( result?.ok ) return true;
-  const key = `CORTEX.Contest.Errors.${result?.code}`;
-  ui.notifications.warn(game.i18n.has(key) ? game.i18n.localize(key) : String(result?.code));
+  const key = [`CORTEX.Contest.Errors.${result?.code}`, `CORTEX.PlotPoints.Errors.${result?.code}`].find(k => game.i18n.has(k));
+  ui.notifications.warn(key ? game.i18n.localize(key) : String(result?.code));
   return false;
 }
 
@@ -151,7 +153,9 @@ async function startContest(request, user) {
 
 /**
  * Checks, applies and writes one request on the active GM's client. A "start" has no message yet,
- * so it is routed before the message lookup.
+ * so it is routed before the message lookup. Plot points (P8): "stay-in" is handled by
+ * handleStayIn; once a stay-in is recorded, the end choices it depends on are refused; and a
+ * give-in that went through pays its plot point in the same call.
  * @param {unknown} request
  * @param {User} user - the querying user
  * @returns {Promise<{ok: boolean, code?: string, value?: object}>}
@@ -161,6 +165,8 @@ async function processRequest(request, user) {
   if ( request?.action === "start" ) return startContest(request, user);
   const message = (typeof request?.messageId === "string") ? game.messages.get(request.messageId) : undefined;
   const loaded = contestRecordOf(message);
+  if ( request?.action === "stay-in" ) return loaded ? handleStayIn(message, loaded, request, user) : fail("CONTEST_NOT_FOUND");
+  if ( loaded && LOCKED_BY_STAY_IN.includes(request?.action) && contestPpRecord(message).stayIn ) return fail("PP_STAYED_IN");
   const sender = { userId: user.id, isGM: user.isGM === true };
   const poolRoll = poolRollRecordOf(request?.payload?.poolRollId, { exceptId: request?.messageId });
   const result = dispatchContestRequest({ sender, request, contest: loaded?.record ?? null, poolRoll });
@@ -185,6 +191,10 @@ async function processRequest(request, user) {
   if ( (stored.revision !== changes.value.revision) || !foundry.utils.equals(stored.flow, changes.value.flow) ) {
     console.error(`${CONTEST_QUERY} | the write did not land as sent`);
     return fail("WRITE_FAILED");
+  }
+  if ( ["give-in", "decline"].includes(request.action) ) {
+    const after = contestRecordOf(message);
+    if ( after ) await payGiveIn(message, after).catch(err => console.error(err));
   }
   return { ok: true, value: { revision: stored.revision } };
 }

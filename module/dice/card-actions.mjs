@@ -11,19 +11,22 @@ import {
   validateSelection
 } from "../rules/index.mjs";
 import { holdOf } from "../contest/roll-card.mjs";
+import { nextSfxLines } from "../plot-points/roll-pp.mjs";
 import { rerollDice } from "./roll-pool.mjs";
 
 /**
  * @typedef {Object} CardChange
  * @property {'cycle-die'|'two-highest'|'increment-extra-results'|
  *   'decrement-extra-results'|'increment-extra-effect-dice'|'decrement-extra-effect-dice'|
- *   'confirm'|'step-effect-die'|'overflow-choice'|'reroll'} action
+ *   'confirm'|'step-effect-die'|'overflow-choice'|'reroll'|'sfx-add'|'sfx-remove'|'sfx-usable'} action
  * @property {string} [dieId] - required for 'cycle-die', and for 'overflow-choice' with kind
  *   "leftover"
  * @property {string} [effectId] - required for 'step-effect-die'; the effect die's id (ADR-026)
  * @property {string|number} [steps] - required for 'step-effect-die'; must be 1 or -1
  * @property {string} [kind] - required for 'overflow-choice'; one of 'leftover'|'new-d6'|
- *   'take-out'
+ *   'take-out'; and for 'sfx-add', "gain" or "spend"
+ * @property {string} [label] - 'sfx-add': what the SFX is called, optional
+ * @property {string|number} [index] - required for 'sfx-remove' and 'sfx-usable': the SFX line
  * @property {string[]} [dieIds] - required for 'reroll'
  * @property {Record<string, number>} [results] - 'reroll', dev/test only: skip Foundry's dice
  *   and use these results directly, the same way postPoolRoll's `results` param does
@@ -270,6 +273,13 @@ export async function applyCardChange(message, change) {
     return overflowChoiceChange(message, change);
   }
   if ( change.action === "reroll" ) return rerollChange(message, change);
+  if ( change.action.startsWith("sfx-") ) {
+    // SFX lines are recorded until the roll is settled, before or after Confirm (P15, P4).
+    if ( message.system.pp.settled ) return;
+    const sfxLines = nextSfxLines(message.system.pp.sfxLines, change);
+    if ( !sfxLines ) return;
+    return message.update({ "system.pp.sfxLines": sfxLines });
+  }
 
   const selection = nextSelection(message.system, change);
   if ( !selection ) return;
