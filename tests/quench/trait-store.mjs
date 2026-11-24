@@ -14,6 +14,11 @@ import { openPoolBuilder } from "../../module/apps/pool-builder.mjs";
 import { postPoolRoll } from "../../module/dice/post-pool-roll.mjs";
 import { applyCardChange } from "../../module/dice/card-actions.mjs";
 import { rollPpData, settleRollPp } from "../../module/plot-points/roll-pp.mjs";
+import { ASSET_EFFECTS_FLAG, CONSEQUENCE_FLAG, cardTraitContext, cardTraitFacts } from "../../module/assets/card-traits.mjs";
+import ActorTraitsApp from "../../module/apps/actor-traits-app.mjs";
+import { handleContestQuery } from "../../module/contest/relay.mjs";
+import { initialSystem } from "../../module/data/chat/contest-mapping.mjs";
+import { createContest } from "../../module/rules/index.mjs";
 
 const SYSTEM_ID = "cortex-prime";
 const TEST_FLAG = "quenchTraitStore";
@@ -90,7 +95,10 @@ export function registerTraitStoreBatch(quench) {
         if ( userPool ) await game.user.setFlag(SYSTEM_ID, "pool", userPool);
         else await game.user.unsetFlag(SYSTEM_ID, "pool");
       });
-      after(() => foundry.applications.instances.get("cortex-prime-trait-tracker")?.close());
+      after(() => {
+        foundry.applications.instances.get("cortex-prime-trait-tracker")?.close();
+        for ( const app of foundry.applications.instances.values() ) if ( app instanceof ActorTraitsApp ) app.close();
+      });
 
       describe("two unlinked copies of one opponent", () => {
         it("a complication on one guard leaves the other alone; its note survives a step", async () => {
@@ -318,6 +326,116 @@ export function registerTraitStoreBatch(quench) {
           assert.equal(message.system.pool[0].size, 6);
           assert.equal(message.system.rolled[0].source.traitId, id);
           await builder.close();
+        });
+      });
+
+      describe("the test and contest card (step 4.8c)", () => {
+        const act = async (message, action, payload = {}) => {
+          const result = await handleContestQuery(
+            { action, messageId: message.id, revision: message.system.revision, payload }, { user: game.user }
+          );
+          assert.isTrue(result.ok, `${action}: ${result.code}`);
+        };
+        const side = (key, actor) => ({ key, userId: null, actorUuid: actor?.uuid ?? null, label: actor?.name ?? key });
+        const newItems = offered => offered.map(o => ({
+          key: o.key, target: { kind: "new", id: foundry.utils.randomID(16), name: `Hurt ${o.key}` }
+        }));
+
+        async function startTest(pc, difficulty) {
+          const started = await handleContestQuery({
+            action: "start", type: "test", difficulty, sides: [side("roller", pc), side("setter")]
+          }, { user: game.user });
+          assert.isTrue(started.ok, started.code);
+          return game.messages.get(started.value.messageId);
+        }
+
+        it("a PC beats a GMC: the loser's complications are given once; the winner's spare die makes an asset once", async () => {
+          const pc = await createActor("pc", "Ana", { plotPoints: 1 });
+          const gmc = await createActor("gmc", "Thug");
+          const system = initialSystem({
+            type: "contest", state: createContest().value, startedBy: game.user.id,
+            sides: [side("initiator", pc), side("opposition", gmc)]
+          }).value;
+          const message = await ChatMessage.implementation.create({ type: "contest", system });
+          await act(message, "add-roll", { side: "initiator", total: 15, effectSizes: [10, 8] });
+          await act(message, "add-roll", { side: "opposition", total: 12, effectSizes: [6] });
+          assert.lengthOf(cardTraitFacts(message, game.user).offered, 0, "nothing before the winner's pick");
+          await act(message, "use-against-loser", { effectIds: ["e1"] });
+          const facts = cardTraitFacts(message, game.user);
+          assert.equal(facts.holderKey, gmc.uuid);
+          assert.isAbove(facts.offered.length, 0);
+          assert.deepEqual(facts.assetEffects.map(e => e.size), [8]);
+          assert.deepInclude(cardTraitContext(message), { applied: false });
+
+          let result = await sendTraitStoreRequest("applyConsequence", { messageId: message.id, items: newItems(facts.offered) });
+          assert.isTrue(result.ok, result.code);
+          const given = getTraitStore().traits.filter(t => t.holder.actorId === gmc.uuid);
+          assert.deepEqual(given.map(t => t.origin), facts.offered.map(o => o.cause));
+          assert.deepEqual(given.map(t => t.dice[0]), facts.offered.map(o => o.size));
+          assert.deepEqual(message.getFlag(SYSTEM_ID, CONSEQUENCE_FLAG), facts.offered.map(o => o.key));
+          assert.isNull(cardTraitContext(message).apply);
+          result = await sendTraitStoreRequest("applyConsequence", { messageId: message.id, items: newItems(facts.offered) });
+          assert.deepEqual(result, { ok: false, code: "CONSEQUENCE_APPLIED" });
+
+          const effectId = facts.assetEffects[0].id;
+          const asset = { messageId: message.id, effectId, id: foundry.utils.randomID(16), name: "Higher Ground", origin: "effect" };
+          result = await sendTraitStoreRequest("createEffectAsset", asset);
+          assert.isTrue(result.ok, result.code);
+          assert.deepInclude(getTraitStore().traits.find(t => t.id === asset.id), { kind: "asset", dice: [8], origin: "effect" });
+          assert.equal(getTraitStore().traits.find(t => t.id === asset.id).holder.actorId, pc.uuid);
+          assert.deepEqual(message.getFlag(SYSTEM_ID, ASSET_EFFECTS_FLAG), [effectId]);
+          result = await sendTraitStoreRequest("createEffectAsset", { ...asset, id: foundry.utils.randomID(16) });
+          assert.deepEqual(result, { ok: false, code: "EFFECT_DIE_USED" });
+          assert.equal(pc.system.plotPoints, 1);
+        });
+
+        it("AC-31 after a failed test the GM steps up the character's d6 complication instead of a new d6", async () => {
+          const pc = await createActor("pc", "Ana", { plotPoints: 1 });
+          const exhausted = foundry.utils.randomID(16);
+          await sendTraitStoreRequest("addComplication", { id: exhausted, name: "Exhausted", size: 6, holder: { kind: "actor", actorId: pc.uuid } });
+          const message = await startTest(pc, 12);
+          await act(message, "add-roll", { side: "roller", total: 10, effectSizes: [6] });
+          const facts = cardTraitFacts(message, game.user);
+          assert.deepEqual(facts.offered, [{ key: "failedTest", size: 6, cause: "failedTest", required: false }]);
+          assert.deepEqual(facts.assetEffects, []);
+          const result = await sendTraitStoreRequest("applyConsequence", {
+            messageId: message.id, items: [{ key: "failedTest", target: { kind: "existing", traitId: exhausted } }]
+          });
+          assert.isTrue(result.ok, result.code);
+          assert.deepEqual(getTraitStore().traits.find(t => t.id === exhausted).dice, [8]);
+        });
+
+        it("AC-06 a successful asset test makes a clue at the GM's cap, for the roller, at no cost", async () => {
+          const pc = await createActor("pc", "Ana", { plotPoints: 1 });
+          const message = await startTest(pc, 9);
+          await act(message, "add-roll", { side: "roller", total: 12, effectSizes: [12] });
+          const facts = cardTraitFacts(message, game.user);
+          assert.deepEqual(facts.offered, []);
+          assert.equal(facts.assetEffects[0].size, 12);
+          const id = foundry.utils.randomID(16);
+          const result = await sendTraitStoreRequest("createEffectAsset", {
+            messageId: message.id, effectId: facts.assetEffects[0].id, id, name: "Guard Rotation", origin: "clue", cap: 10
+          });
+          assert.isTrue(result.ok, result.code);
+          assert.deepInclude(getTraitStore().traits.find(t => t.id === id), { dice: [10], origin: "clue" });
+          assert.equal(pc.system.plotPoints, 1);
+        });
+
+        it("a player's view lists their asset and complication; Keep costs 1 PP", async () => {
+          const pc = await createActor("pc", "Ana", { plotPoints: 2 });
+          const asset = foundry.utils.randomID(16);
+          const holder = { kind: "actor", actorId: pc.uuid };
+          await sendTraitStoreRequest("buyAsset", { id: asset, name: "Rope", holder });
+          await sendTraitStoreRequest("addComplication", { id: foundry.utils.randomID(16), name: "Bruised", size: 8, holder });
+          const app = await ActorTraitsApp.open(pc);
+          assert.include(app.element.textContent, "Rope");
+          assert.include(app.element.textContent, "Bruised");
+          assert.isOk(app.element.querySelector(`[data-action="keepAsset"][data-trait-id="${asset}"]`));
+          const result = await sendTraitStoreRequest("keepAsset", { traitId: asset });
+          assert.isTrue(result.ok, result.code);
+          assert.equal(getTraitStore().traits.find(t => t.id === asset).duration, "session");
+          assert.equal(pc.system.plotPoints, 0);
+          await app.close();
         });
       });
 

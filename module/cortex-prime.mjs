@@ -13,6 +13,7 @@ import PlotPointsApp from "./apps/plot-points-app.mjs";
 import { registerPlotPointSettings } from "./plot-points/accounts.mjs";
 import { registerTraitStore } from "./assets/trait-store.mjs";
 import TraitTrackerApp from "./apps/trait-tracker-app.mjs";
+import ActorTraitsApp from "./apps/actor-traits-app.mjs";
 import { onRenderPoolRollMessage, preloadPoolRollCardTemplate } from "./dice/pool-roll-card.mjs";
 import { openPoolBuilder, refreshPoolDestination, togglePoolBuilder } from "./apps/pool-builder.mjs";
 import { registerSettings } from "./config/settings.mjs";
@@ -60,7 +61,10 @@ Hooks.once("init", () => {
   Hooks.on("cortexPrimePlotPointsChanged", () => PlotPointsApp.refresh());
   Hooks.on("updateActor", actor => { if ( actor.type === "pc" ) PlotPointsApp.refresh(); });
   registerTraitStore();
-  Hooks.on("cortexPrimeTraitsChanged", () => TraitTrackerApp.refresh());
+  Hooks.on("cortexPrimeTraitsChanged", () => {
+    TraitTrackerApp.refresh();
+    ActorTraitsApp.refresh();
+  });
   game.settings.registerMenu(SYSTEM_ID, "gameConfigMenu", {
     name: "CORTEX.Config.MenuName",
     label: "CORTEX.Config.MenuLabel",

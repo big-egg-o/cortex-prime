@@ -66,6 +66,7 @@ import {
   sfxFromInputs, sfxRows, storesNoTraits
 } from "./character-sheet-data.mjs";
 import { addTraitToPool, openPoolBuilder, removePoolDie, rollSheetPool, sheetPoolContext } from "./pool-builder.mjs";
+import ActorTraitsApp from "./actor-traits-app.mjs";
 
 const { HandlebarsApplicationMixin } = foundry.applications.api;
 const { ActorSheetV2 } = foundry.applications.sheets;
@@ -112,6 +113,7 @@ export default class CharacterSheet extends HandlebarsApplicationMixin(ActorShee
       removeSetSfx: CharacterSheet.#onRemoveSetSfx,
       addSubTrait: CharacterSheet.#onAddSubTrait,
       removeSubTrait: CharacterSheet.#onRemoveSubTrait,
+      viewTraits() { return ActorTraitsApp.open(this.actor); },
       ppGain() { return this.#changePlotPoints(1); },
       ppSpend() { return this.#changePlotPoints(-1); }
     }
@@ -181,6 +183,9 @@ export default class CharacterSheet extends HandlebarsApplicationMixin(ActorShee
 
   _getHeaderControls() {
     const controls = super._getHeaderControls();
+    if ( this.actor.isOwner ) {
+      controls.push({ action: "viewTraits", icon: "fa-solid fa-list-check", label: "CORTEX.Assets.Mine.View" });
+    }
     if ( this.actor.type === "character" && game.user.isGM ) {
       controls.push(
         { action: "copyPc", icon: "fa-solid fa-copy", label: "CORTEX.Sheet.Design.CopyPc" },

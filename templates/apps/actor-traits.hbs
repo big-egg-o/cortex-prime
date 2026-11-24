@@ -1,0 +1,36 @@
+<section class="cp-actor-traits">
+  <h4 class="cp-tracker-heading">{{ localize "CORTEX.Assets.Mine.Assets" }}</h4>
+  <ul class="cp-tracker-list">
+    {{#each assets}}
+    <li class="cp-tracker-trait" data-trait-id="{{ this.id }}">
+      <div class="cp-tracker-line">
+        <strong class="cp-tracker-die">{{ this.die }}</strong>
+        <span class="cp-tracker-name">{{ this.name }}</span>
+        <span class="cp-tracker-meta">{{ this.origin }}{{#if this.session}} · {{ localize "CORTEX.Assets.Badges.Session" }}{{/if}}{{#if this.open}} · {{ localize "CORTEX.Assets.Badges.Open" }}{{/if}}</span>
+        {{#if this.canKeep}}<button type="button" data-action="keepAsset" data-trait-id="{{ this.id }}">{{ localize "CORTEX.Assets.Mine.Keep" }}</button>{{/if}}
+        {{#if this.canOpen}}<button type="button" data-action="openAsset" data-trait-id="{{ this.id }}">{{ localize "CORTEX.Assets.Mine.Open" }}</button>{{/if}}
+      </div>
+      {{#if this.note}}<p class="cp-tracker-note">{{ this.note }}</p>{{/if}}
+    </li>
+    {{else}}
+    <li class="hint">{{ localize "CORTEX.Assets.None" }}</li>
+    {{/each}}
+  </ul>
+  <h4 class="cp-tracker-heading">{{ localize "CORTEX.Assets.Mine.Complications" }}</h4>
+  <ul class="cp-tracker-list">
+    {{#each complications}}
+    <li class="cp-tracker-trait cp-complication" data-trait-id="{{ this.id }}">
+      <div class="cp-tracker-line">
+        <strong class="cp-tracker-die">{{ this.die }}</strong>
+        <span class="cp-tracker-name">{{ this.name }}</span>
+        <span class="cp-tracker-meta">{{ this.origin }}</span>
+        {{#if this.takenOut}}<span class="cp-taken-out">{{ localize "CORTEX.Assets.Mine.TakenOut" }}</span>{{/if}}
+      </div>
+      {{#if this.note}}<p class="cp-tracker-note">{{ this.note }}</p>{{/if}}
+    </li>
+    {{else}}
+    <li class="hint">{{ localize "CORTEX.Assets.None" }}</li>
+    {{/each}}
+  </ul>
+  <p class="hint">{{ localize "CORTEX.Assets.Mine.Cost" }}</p>
+</section>

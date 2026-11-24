@@ -714,7 +714,17 @@
         "HITCH_ALREADY_ACTIVATED": "That hitch is already used.",
         "HITCH_REUSED": "Each hitch can be used once.",
         "NOT_A_COMPLICATION": "That isn't a complication.",
-        "DUPLICATE_TARGET": "Each trait can be chosen once."
+        "DUPLICATE_TARGET": "Each trait can be chosen once.",
+        "CARD_NOT_FOUND": "That test or contest card is gone.",
+        "CONSEQUENCE_APPLIED": "That complication was already given.",
+        "NOTHING_TO_APPLY": "There is no complication left to give from this card.",
+        "CONSEQUENCE_INCOMPLETE": "Give every complication of this consequence together.",
+        "NOT_HOLDERS_COMPLICATION": "Only a complication the losing character has can be stepped up.",
+        "COMPLICATION_TOO_SMALL": "That complication is smaller than the new one, so it can't be stepped up instead.",
+        "EFFECT_DIE_USED": "That effect die already made an asset.",
+        "EFFECT_DIE_NOT_FOUND": "No effect die on this card can make an asset.",
+        "ASSET_NAME_REQUIRED": "Give the new asset a name.",
+        "STEP_UP_NOT_OFFERED": "That complication can only be new."
       },
       "TakenOut": "{name} is past d12: its holder is taken out.",
       "Hitches": {
@@ -735,6 +745,34 @@
         "Payer": "Paid by",
         "Cost": "1 PP for the trait, however many opportunities it takes.",
         "Use": "Use opportunities"
+      },
+      "Consequence": {
+        "Title": "Apply complications",
+        "Apply": "Apply complications",
+        "Give": "Give it",
+        "Hint": "Each one is a new complication unless you step up one the character has that is at least as large.",
+        "Applied": "Complications from this card were given."
+      },
+      "EffectAsset": {
+        "Title": "Create an asset from an effect die",
+        "Create": "Create asset",
+        "Die": "Effect die",
+        "Kind": "Kind",
+        "Asset": "Asset",
+        "Clue": "Clue",
+        "Cap": "Cap",
+        "NoCap": "No cap",
+        "CapHint": "The size of the difficulty dice you chose as the cap, if any; the asset is never larger."
+      },
+      "Mine": {
+        "View": "Assets & complications",
+        "Title": "{name}: assets & complications",
+        "Assets": "Assets",
+        "Complications": "Complications",
+        "Keep": "Keep (1 PP)",
+        "Open": "Open (1 PP)",
+        "TakenOut": "Taken out",
+        "Cost": "Keeping an asset for the session or opening it to everyone costs 1 PP each."
       }
     }
   },

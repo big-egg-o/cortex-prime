@@ -22,6 +22,7 @@ import {
   OVERFLOW_PENDING, contestConsequence, expectedRoll, liveOverflowIds, offeredActions, offeredEndChoices, testResult
 } from "../rules/index.mjs";
 import { prepareContestPp } from "../plot-points/contest-pp.mjs";
+import { cardTraitContext, openConsequenceDialog, openEffectAssetDialog } from "../assets/card-traits.mjs";
 import { contestRecordOf } from "./records.mjs";
 import { notifyContestResult, sendContestRequest } from "./relay.mjs";
 import { contestFlagOf } from "./roll-card.mjs";
@@ -89,6 +90,8 @@ const HANDLEBARS_OPTIONS = { allowProtoMethodsByDefault: true, allowProtoPropert
  * @property {boolean} closedEarly - the card was closed while an end choice waited
  * @property {object|null} pp - the plot points paid for giving in and staying in, and the Stay in
  *   offer for this user (prepareContestPp; P8)
+ * @property {object|null} traits - Apply complications and Create asset for this user
+ *   (cardTraitContext; step 4.8c)
  */
 
 /**
@@ -290,7 +293,8 @@ export function prepareContestCardContext(message, user = game.user) {
     consequence: closedEarly ? null : consequenceOf(record, sides, rolls, stored),
     result: tested?.ok ? { effects: tested.value.effects, takeOut: tested.value.takeOut } : null,
     closedEarly,
-    pp: closedEarly ? null : prepareContestPp(message, loaded, key => sideLabel(sides, key), user)
+    pp: closedEarly ? null : prepareContestPp(message, loaded, key => sideLabel(sides, key), user),
+    traits: closedEarly ? null : cardTraitContext(message, user)
   };
 }
 
@@ -379,6 +383,8 @@ async function onCardClick(message, target) {
       if ( !(await confirmed("StayIn")) ) return null;
       return sendCardAction(message, action, stayInAnswers(target.closest(".cp-pp-stay-in")));
     }
+    case "consequence-apply": return openConsequenceDialog(message);
+    case "effect-asset": return openEffectAssetDialog(message);
     case "use-against-loser": {
       const boxes = target.closest(".cp-end-pick")?.querySelectorAll("input[type=checkbox]:checked") ?? [];
       return sendCardAction(message, action, { effectIds: Array.from(boxes, box => box.dataset.effectId) });

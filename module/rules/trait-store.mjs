@@ -14,7 +14,7 @@
  * - for each actor the request names, by actor key (its UUID): whether the sender owns it, whether
  *   it holds its own plot points (a PC, P1) and its balance;
  * - for an action on a roll card, what the card holds (RollFacts), read from the card, never from
- *   the request.
+ *   the request; for an action on a test or contest card, likewise (CardFacts).
  *
  * The checks, in order, stopping at the first that fails (ADR-025):
  * 1. STORE_INVALID: the stored data doesn't pass the engine's checks.
@@ -26,7 +26,9 @@
  *    NOT_A_CHARACTER_ASSET, ACTOR_NOT_FOUND, then NOT_YOUR_CHARACTER. For an action on a roll card,
  *    ROLL_NOT_FOUND first; activating hitches is the GM's, except that the card's owner may finish
  *    a roll with no hitch left to activate, or the bank's roll, whose hitches are opportunities (it
- *    removes the roller's used d4 complications, rule 18).
+ *    removes the roller's used d4 complications, rule 18). For an action on a test or contest card,
+ *    CARD_NOT_FOUND first; a consequence is applied by a GM, or by the winner's owner when the loser
+ *    is a GMC (PA5); an asset from an effect die is made by a GM.
  * 6. STALE_REVISION: the request was made against another revision.
  * 7. The action's own checks and the engine's codes.
  * 8. The payment: a character who holds plot points pays (PP_INSUFFICIENT). No spend on a trait has
@@ -37,7 +39,8 @@
  */
 
 import {
-  applyComplications, applyHitches, applyOpportunities, checkTemporaryTrait, createAsset, endScene, endSession,
+  applyComplications, applyHitches, applyOpportunities, checkTemporaryTrait, contestComplications, createAsset, endScene,
+  endSession,
   removeUsedD4Complications, stepTemporaryTrait, temporaryTraitPoolEntry, upgradeAsset
 } from "./assets.mjs";
 import { changeBalance } from "./plot-points.mjs";
@@ -60,8 +63,13 @@ export const TRAIT_STORE_ACTIONS = Object.freeze({
   keepAsset: "owner",
   openAsset: "owner",
   activateHitches: "roll",
-  useOpportunities: "owner"
+  useOpportunities: "owner",
+  applyConsequence: "card",
+  createEffectAsset: "gm"
 });
+
+/** The actions that act on a test or contest card and read it (CardFacts). */
+const CARD_ACTIONS = ["applyConsequence", "createEffectAsset"];
 
 /**
  * The warnings of a temporary trait in a pool that a roll card stores and shows as a nonstandard
@@ -98,6 +106,23 @@ const ID_PATTERN = /^[a-zA-Z0-9]{16}$/;
  * @property {string[]} usedD4Ids - the d4 complications the roller put in the pool from their own
  * @property {string|null} payerKey - the actor key of the character the roll pays, or null
  * @property {boolean} senderOwnsCard - the sender may change the card
+ */
+
+/**
+ * What the handler reads from the test or contest card an action names (step 4.8c), never from the
+ * request.
+ * @typedef {Object} CardFacts
+ * @property {"test"|"contest"} type
+ * @property {{key: string, size: number, cause: string, required: boolean}[]} offered - the
+ *   consequence's complications (consequenceComplications)
+ * @property {string|null} holderKey - the actor key of the side that takes them: the loser, or the
+ *   test's roller; null for a side with no actor
+ * @property {string[]} appliedKeys - the offered keys already given
+ * @property {boolean} winnerOwnedBySender - the sender owns the winning side's actor
+ * @property {boolean} loserIsBank - the losing side's plot points are the bank's (a GMC, P1)
+ * @property {{id: string, size: number}[]} assetEffects - the effect dice that can make an asset (effectAssetDice)
+ * @property {string|null} assetHolderKey - the actor key of the side those dice belong to
+ * @property {string[]} assetsMade - the effect ids that already made an asset
  */
 
 /**
@@ -209,7 +234,7 @@ function changed(traits, ppLines = [], removedIds = []) {
  * @returns {import("./types.mjs").EngineResult<{traits: object[], ppLines: object[], removedIds: string[],
  *   sceneBoosts?: object[], note?: {traitId: string, text: string}}>}
  */
-function applyAction(action, payload, store, actors, roll) {
+function applyAction(action, payload, store, actors, roll, card) {
   const { traits } = store;
   const find = () => traits.find(t => t.id === payload.traitId);
   const replace = trait => traits.map(t => (t.id === trait.id ? trait : t));
@@ -277,6 +302,10 @@ function applyAction(action, payload, store, actors, roll) {
       return activateHitches(payload, traits, roll);
     case "useOpportunities":
       return useOpportunities(payload, store, roll);
+    case "applyConsequence":
+      return applyConsequence(payload, traits, actors, card);
+    case "createEffectAsset":
+      return createEffectAsset(payload, traits, actors, card);
     default:
       return fail("UNSUPPORTED_ACTION");
   }
@@ -331,6 +360,74 @@ function useOpportunities(payload, store, roll) {
 }
 
 /**
+ * Gives the consequence's complications to the side that takes them (rules 21 to 24; PA5): each
+ * offered complication once, as a new one or a step-up of one that side has, new by default on the
+ * card. The required ones still open (a lost contest's, a stay-in's) go together; the failed test's
+ * d6 is the GM's choice. The card keeps the keys given, so a stay-in recorded later adds only its own.
+ */
+function applyConsequence(payload, traits, actors, card) {
+  if ( !Array.isArray(payload.items) ) return fail("INVALID_INPUT");
+  if ( payload.items.some(item => isPlainObject(item) && card.appliedKeys.includes(item.key)) ) return fail("CONSEQUENCE_APPLIED");
+  const open = card.offered.filter(o => !card.appliedKeys.includes(o.key));
+  if ( !open.length ) return fail("NOTHING_TO_APPLY");
+  const keys = new Set();
+  for ( const item of payload.items ) {
+    if ( !isPlainObject(item) || keys.has(item.key) || !open.some(o => o.key === item.key) ) return fail("INVALID_INPUT");
+    keys.add(item.key);
+  }
+  if ( !keys.size ) return fail("NOTHING_TO_APPLY");
+  if ( open.some(o => o.required && !keys.has(o.key)) ) return fail("CONSEQUENCE_INCOMPLETE");
+  const holder = card.holderKey ? { kind: "actor", actorId: card.holderKey } : { kind: "unassigned" };
+  const known = holderKnown(holder, actors);
+  if ( !known.ok ) return known;
+  const items = [];
+  for ( const item of payload.items ) {
+    const offer = card.offered.find(o => o.key === item.key);
+    const target = item.target;
+    if ( !isPlainObject(target) ) return fail("INVALID_INPUT");
+    if ( target.kind === "existing" ) {
+      const existing = traits.find(t => t.id === target.traitId);
+      if ( existing && ((card.holderKey === null) || (holderKey(existing.holder) !== card.holderKey)) ) {
+        return fail("NOT_HOLDERS_COMPLICATION");
+      }
+      items.push({ size: offer.size, cause: offer.cause, target: { kind: "existing", traitId: target.traitId } });
+    }
+    else items.push({ size: offer.size, cause: offer.cause, target: { kind: target.kind, id: target.id, name: target.name, holder } });
+  }
+  const applied = applyComplications(traits, items);
+  if ( !applied.ok ) return applied;
+  return ok({
+    traits: applied.value.complications, ppLines: [], removedIds: [], changes: applied.value.changes,
+    takenOut: applied.value.takenOut, card: { consequenceKeys: [...card.appliedKeys, ...keys] }
+  });
+}
+
+/**
+ * Makes an asset from an effect die of the card for the side it belongs to (rules 5 and 7; AC-06,
+ * AC-07, AC-09): a successful test's die, origin "effect" or "clue" and the GM's cap, or a contest
+ * winner's die not used against the loser, origin "effect". Each die makes one asset. No lines.
+ */
+function createEffectAsset(payload, traits, actors, card) {
+  const origins = card.type === "test" ? ["effect", "clue"] : ["effect"];
+  if ( !origins.includes(payload.origin) || (typeof payload.effectId !== "string") ) return fail("INVALID_INPUT");
+  if ( !card.assetHolderKey ) return fail("ACTOR_NOT_FOUND");
+  if ( card.assetsMade.includes(payload.effectId) ) return fail("EFFECT_DIE_USED");
+  const effect = card.assetEffects.find(e => e.id === payload.effectId);
+  if ( !effect ) return fail("EFFECT_DIE_NOT_FOUND");
+  const holder = { kind: "actor", actorId: card.assetHolderKey };
+  const known = holderKnown(holder, actors);
+  if ( !known.ok ) return known;
+  if ( traits.some(t => t.id === payload.id) ) return fail("DUPLICATE_TRAIT_ID");
+  const input = { id: payload.id, name: payload.name, holder, origin: payload.origin, size: effect.size };
+  if ( payload.cap !== undefined ) input.cap = payload.cap;
+  const made = createAsset(input);
+  if ( !made.ok ) return made;
+  return ok({
+    traits: [...traits, made.value.trait], ppLines: made.value.ppLines, removedIds: [], card: { assetEffect: effect.id }
+  });
+}
+
+/**
  * Who pays an action's lines (P1, P9; RQ-043): the character's own balance when it holds plot
  * points. No trait spend has a bank price, so for any other character a GM pays nothing and gets
  * the warning BANK_SPEND_NOT_LISTED; anyone else is refused.
@@ -360,12 +457,14 @@ function payment(lines, actorKey, actors, sender) {
  * plot point lines to add to it while they wait for its settlement (`pendingLines`), and whether
  * the hitch choice is finished. `changes` and `takenOut` are the engine's.
  * @param {{sender: {userId: string, isGM: boolean}, request: unknown, store: unknown,
- *   actors?: Object<string, StoreActorFacts>, roll?: RollFacts|null}} input
+ *   actors?: Object<string, StoreActorFacts>, roll?: RollFacts|null, card?: CardFacts|null}} input
  * @returns {import("./types.mjs").EngineResult<{store: TraitStore, payment: StorePayment|null, removedIds: string[],
  *   replayed: boolean, warnings: string[], changes: object[], takenOut: string[],
- *   roll: {rolled: object[], pendingLines: object[], hitchesDone?: boolean}|null}>}
+ *   roll: {rolled: object[], pendingLines: object[], hitchesDone?: boolean}|null,
+ *   card: {consequenceKeys?: string[], assetEffect?: string}|null}>} `card` is the mark to write on
+ *   the test or contest card an action named
  */
-export function dispatchTraitStoreRequest({ sender, request, store, actors = {}, roll = null } = {}) {
+export function dispatchTraitStoreRequest({ sender, request, store, actors = {}, roll = null, card = null } = {}) {
   const checkedStore = checkTraitStore(store);
   if ( !checkedStore.ok ) return checkedStore;
   const current = checkedStore.value;
@@ -375,7 +474,9 @@ export function dispatchTraitStoreRequest({ sender, request, store, actors = {},
   const done = current.completedActions.find(a => a.actionId === request.actionId);
   if ( done ) {
     if ( done.userId !== sender.userId ) return fail("ACTION_ID_REUSED");
-    return ok({ store: current, payment: null, removedIds: [], replayed: true, warnings: [], changes: [], takenOut: [], roll: null });
+    return ok({
+      store: current, payment: null, removedIds: [], replayed: true, warnings: [], changes: [], takenOut: [], roll: null, card: null
+    });
   }
 
   const who = TRAIT_STORE_ACTIONS[request.action];
@@ -384,11 +485,16 @@ export function dispatchTraitStoreRequest({ sender, request, store, actors = {},
   let actorKey = null;
   const onRoll = ["activateHitches", "useOpportunities"].includes(request.action);
   if ( onRoll && !isPlainObject(roll) ) return fail("ROLL_NOT_FOUND");
+  if ( CARD_ACTIONS.includes(request.action) && !isPlainObject(card) ) return fail("CARD_NOT_FOUND");
   if ( who === "gm" ) {
     if ( !isGM ) return fail("GM_ONLY");
   }
   else if ( who === "roll" ) {
     if ( !isGM && !ownerMayFinish(request.payload, roll) ) return fail("GM_ONLY");
+  }
+  else if ( who === "card" ) {
+    const winnerApplies = (card.type === "contest") && (card.winnerOwnedBySender === true) && (card.loserIsBank === true);
+    if ( !isGM && !winnerApplies ) return fail("GM_ONLY");
   }
   else {
     const actor = ownerActionActor(request.action, request.payload, current);
@@ -400,7 +506,7 @@ export function dispatchTraitStoreRequest({ sender, request, store, actors = {},
   }
   if ( request.revision !== current.revision ) return fail("STALE_REVISION");
 
-  const applied = applyAction(request.action, request.payload, current, actors, roll);
+  const applied = applyAction(request.action, request.payload, current, actors, roll, card);
   if ( !applied.ok ) return applied;
   const pending = applied.value.roll?.pending === true;
   const payer = (request.action === "activateHitches") ? roll.payerKey : actorKey;
@@ -434,7 +540,8 @@ export function dispatchTraitStoreRequest({ sender, request, store, actors = {},
       rolled: applied.value.roll.rolled,
       pendingLines: pending ? applied.value.ppLines.map(l => ({ ...l })) : [],
       ...(applied.value.roll.hitchesDone === undefined ? {} : { hitchesDone: applied.value.roll.hitchesDone })
-    } : null
+    } : null,
+    card: applied.value.card ?? null
   });
 }
 
@@ -546,4 +653,54 @@ export function usedD4ComplicationIds(pool, rollerKey) {
   const ids = pool.filter(d => isPlainObject(d?.source) && (d.source.kind === "complication") && (d.size === 4)
     && (d.source.actorId === rollerKey) && (typeof d.source.traitId === "string")).map(d => d.source.traitId);
   return [...new Set(ids)];
+}
+
+/**
+ * The complications a test or contest card gives as its consequence (rules 21 to 23), each keyed by
+ * its cause and effect die so the card can record which were given: a lost contest's through contestComplications (required); a test's stay-in complications
+ * (required); a failed test with no stay-in, the GM's optional d6 (rule 21). A stay-in after a
+ * failed test replaces the d6: the card offers one consequence for one failure, and the GM adds
+ * anything more in the tracker.
+ * @param {{type: "contest", consequence: import("./types.mjs").Consequence, stayedIn: boolean}
+ *   | {type: "test", success: boolean, stayIn: {size: number}[]|null}} input
+ * @returns {import("./types.mjs").EngineResult<{key: string, size: number, cause: string, required: boolean}[]>}
+ */
+export function consequenceComplications(input) {
+  if ( !isPlainObject(input) ) return fail("INVALID_INPUT");
+  let list;
+  if ( input.type === "contest" ) {
+    const given = contestComplications(input.consequence, { stayedIn: input.stayedIn === true });
+    if ( !given.ok ) return given;
+    list = given.value.map(c => ({ key: `${c.cause}:${c.effectId}`, size: c.size, cause: c.cause, required: true }));
+  }
+  else if ( input.type === "test" ) {
+    if ( typeof input.success !== "boolean" ) return fail("INVALID_INPUT");
+    if ( input.success ) list = [];
+    else if ( Array.isArray(input.stayIn) ) {
+      list = input.stayIn.map((c, i) => ({ key: `stayIn:${c.effectId ?? i}`, size: c.size, cause: "stayIn", required: true }));
+    }
+    else list = [{ key: "failedTest", size: 6, cause: "failedTest", required: false }];
+  }
+  else return fail("INVALID_INPUT");
+  return ok(list);
+}
+
+/**
+ * The effect dice of a card that can make an asset (rule 5; RQ-011 c): a successful test's, and a
+ * won contest's winner dice that weren't used against the loser, once the winner has picked. A die
+ * whose overflow took the loser out counts as used. Giving in and declining offer none.
+ * @param {{type: "test", success: boolean, effects: {id: string, size: number}[]}
+ *   | {type: "contest", consequence: import("./types.mjs").Consequence|null, usedAgainstLoser: string[]|null}} input
+ * @returns {{id: string, size: number}[]}
+ */
+export function effectAssetDice(input) {
+  if ( !isPlainObject(input) ) return [];
+  if ( input.type === "test" ) {
+    return (input.success === true) && Array.isArray(input.effects) ? input.effects.map(({ id, size }) => ({ id, size })) : [];
+  }
+  const { consequence, usedAgainstLoser } = input;
+  if ( (input.type !== "contest") || !isPlainObject(consequence) || (consequence.ending !== "won")
+    || !Array.isArray(usedAgainstLoser) ) return [];
+  const used = new Set([...usedAgainstLoser, ...(consequence.avoidWithPP ?? []).map(a => a.effectId)]);
+  return consequence.winnerEffects.filter(e => !used.has(e.id)).map(({ id, size }) => ({ id, size }));
 }
