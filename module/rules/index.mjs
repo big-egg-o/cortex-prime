@@ -51,7 +51,7 @@ export {
   ppChangeAllowed, ppTotals, rollPpFacts, settleRoll, startSession, testStayInOption
 } from "./plot-points.mjs";
 export {
-  AC_PP_REASONS, ASSET_DURATIONS, ASSET_ORIGINS, COMPLICATION_ORIGINS, RULING_PENDING, TEMP_TRAIT_KINDS,
+  AC_PP_REASONS, ASSET_DURATIONS, ASSET_ORIGINS, COMPLICATION_ORIGINS, TEMP_TRAIT_KINDS,
   actThroughOption, applyComplications, applyHitches, applyOpportunities, checkTemporaryTrait, contestComplications,
   createAsset, createSessionRelationship, endScene, endSession, loseSignatureAsset, recoverSignatureAsset,
   removeUsedD4Complications, signatureAssetPoolDice, stepTemporaryTrait, temporaryTraitPoolEntry, upgradeAsset
