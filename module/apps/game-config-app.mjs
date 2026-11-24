@@ -16,7 +16,7 @@ import {
 import { getGameConfig, setGameConfig } from "../config/settings.mjs";
 import { pcLayoutId } from "../rules/actor-layout.mjs";
 import {
-  DIE_SIZES, EXTRA_TRAIT_RULES, TRAIT_SET_FEATURES, TRAIT_SET_LISTS, TRAIT_SET_ROLES, defaultGameConfig,
+  DIE_SIZES, EXTRA_TRAIT_RULES, buildConfigExport, parseConfigExport, TRAIT_SET_FEATURES, TRAIT_SET_LISTS, TRAIT_SET_ROLES, defaultGameConfig,
   validateGameConfig
 } from "../rules/index.mjs";
 
@@ -50,6 +50,8 @@ export default class GameConfigApp extends HandlebarsApplicationMixin(Applicatio
       addKind: GameConfigApp.#onAddKind,
       deleteKind: GameConfigApp.#onDeleteKind,
       resetDefaults: GameConfigApp.#onResetDefaults,
+      exportConfig: GameConfigApp.#onExport,
+      importConfig: GameConfigApp.#onImport,
       save: GameConfigApp.#onSave
     }
   };
@@ -78,6 +80,8 @@ export default class GameConfigApp extends HandlebarsApplicationMixin(Applicatio
     const sizes = DIE_SIZES.map(size => ({ value: size, label: `d${size}` }));
     context.buttons = [
       { type: "button", action: "resetDefaults", icon: "fa-solid fa-rotate-left", label: "CORTEX.Config.ResetDefaults" },
+      { type: "button", action: "exportConfig", icon: "fa-solid fa-file-export", label: "CORTEX.Config.Export" },
+      { type: "button", action: "importConfig", icon: "fa-solid fa-file-import", label: "CORTEX.Config.Import" },
       { type: "button", action: "save", icon: "fa-solid fa-floppy-disk", label: "CORTEX.Config.Save",
         disabled: !game.user.isGM }
     ];
@@ -192,6 +196,73 @@ export default class GameConfigApp extends HandlebarsApplicationMixin(Applicatio
     this.#draft = defaultGameConfig();
     this.#showErrors = false;
     this.render();
+  }
+
+  /**
+   * Saves the draft as a file (MS-D5). A draft with errors can't be exported, since the file
+   * couldn't be imported again.
+   * @this {GameConfigApp}
+   */
+  static #onExport() {
+    let text;
+    try {
+      text = buildConfigExport(this.#draft, game.system.version);
+    } catch {
+      ui.notifications.warn("CORTEX.Config.ExportBlocked", { localize: true });
+      return;
+    }
+    foundry.utils.saveDataToFile(text, "application/json", "cortex-prime-game-config.json");
+  }
+
+  /**
+   * Reads a configuration file into the draft (MS-D6). A file that isn't an export, comes from a
+   * newer schema or has errors leaves the draft unchanged; otherwise the draft is replaced and
+   * shown with its warnings, and nothing is stored until Save. Actors are never rewritten
+   * (ADR-037 point 5).
+   * @this {GameConfigApp}
+   * @param {File} [file] - given by tests; otherwise the GM picks one
+   * @returns {Promise<{ok: boolean, code?: string}>} what happened, for tests
+   */
+  static async #onImport(_event, _target, file) {
+    file ??= await GameConfigApp.#pickFile();
+    if ( !file ) return { ok: false };
+    const result = parseConfigExport(await foundry.utils.readTextFromFile(file));
+    if ( !result.ok ) {
+      ui.notifications.error(game.i18n.format("CORTEX.Config.ImportFailed",
+        { reason: game.i18n.localize(`CORTEX.Config.Errors.${result.code}`) }));
+      return { ok: false, code: result.code };
+    }
+    this.#draft = result.value;
+    this.#showErrors = false;
+    ui.notifications.info("CORTEX.Config.Imported", { localize: true });
+    this.render();
+    return { ok: true };
+  }
+
+  /** @returns {Promise<File|null>} the file the GM picks, or null when they cancel */
+  static #pickFile() {
+    return new Promise(resolve => {
+      const input = document.createElement("input");
+      input.type = "file";
+      input.accept = ".json,application/json";
+      input.addEventListener("change", () => resolve(input.files?.[0] ?? null), { once: true });
+      input.addEventListener("cancel", () => resolve(null), { once: true });
+      input.click();
+    });
+  }
+
+  /**
+   * Imports a file's text into the draft without the file picker; used by the Quench batch.
+   * @param {string} text
+   * @returns {Promise<{ok: boolean, code?: string}>}
+   */
+  async importText(text) {
+    return GameConfigApp.#onImport.call(this, null, null, new File([text], "config.json", { type: "application/json" }));
+  }
+
+  /** @returns {object} a copy of the draft being edited; used by the Quench batch */
+  get draft() {
+    return foundry.utils.deepClone(this.#draft);
   }
 
   /**
