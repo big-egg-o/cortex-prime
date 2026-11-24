@@ -22,7 +22,7 @@
 import TraitStoreData, { TRAIT_STORE_SCHEMA_VERSION } from "../data/settings/temporary-traits.mjs";
 import { dispatchTraitStoreRequest, emptyTraitStore, usedD4ComplicationIds } from "../rules/trait-store.mjs";
 import { holdsPlotPoints, ledgerEntryData } from "../plot-points/accounts.mjs";
-import { ASSET_EFFECTS_FLAG, CONSEQUENCE_FLAG, cardTraitFacts } from "./card-traits.mjs";
+import { ACT_THROUGH_FLAG, ASSET_EFFECTS_FLAG, CONSEQUENCE_FLAG, cardTraitFacts } from "./card-traits.mjs";
 
 const SYSTEM_ID = "cortex-prime";
 
@@ -158,6 +158,8 @@ function requestActorKeys(request, store, roll, card) {
   if ( roll?.payerKey ) keys.push(roll.payerKey);
   if ( card?.holderKey ) keys.push(card.holderKey);
   if ( card?.assetHolderKey ) keys.push(card.assetHolderKey);
+  const side = card?.sides?.find(s => s.key === payload?.side);
+  if ( side?.actorKey ) keys.push(side.actorKey);
   return [...new Set(keys)];
 }
 
@@ -208,7 +210,7 @@ function readRoll(request, user) {
  * @returns {{facts: import("../rules/trait-store.mjs").CardFacts, message: ChatMessage}|null}
  */
 function readCard(request, user) {
-  if ( !["applyConsequence", "createEffectAsset"].includes(request?.action) ) return null;
+  if ( !["applyConsequence", "createEffectAsset", "actThrough"].includes(request?.action) ) return null;
   const messageId = request?.payload?.messageId;
   const message = (typeof messageId === "string") ? game.messages.get(messageId) : null;
   const facts = message ? cardTraitFacts(message, user) : null;
@@ -219,13 +221,14 @@ function readCard(request, user) {
  * The update of a test or contest card after an action on it: the consequence keys given, or one
  * more effect die that made an asset.
  * @param {{facts: object, message: ChatMessage}} card
- * @param {{consequenceKeys?: string[], assetEffect?: string}} change
+ * @param {{consequenceKeys?: string[], assetEffect?: string, actThroughSide?: string}} change
  * @returns {object}
  */
 function contestCardUpdate(card, change) {
   const update = { _id: card.message.id };
   if ( change.consequenceKeys ) update[`flags.${SYSTEM_ID}.${CONSEQUENCE_FLAG}`] = change.consequenceKeys;
   if ( change.assetEffect ) update[`flags.${SYSTEM_ID}.${ASSET_EFFECTS_FLAG}`] = [...card.facts.assetsMade, change.assetEffect];
+  if ( change.actThroughSide ) update[`flags.${SYSTEM_ID}.${ACT_THROUGH_FLAG}`] = [...card.facts.actedThrough, change.actThroughSide];
   return update;
 }
 

@@ -724,7 +724,12 @@
         "EFFECT_DIE_USED": "That effect die already made an asset.",
         "EFFECT_DIE_NOT_FOUND": "No effect die on this card can make an asset.",
         "ASSET_NAME_REQUIRED": "Give the new asset a name.",
-        "STEP_UP_NOT_OFFERED": "That complication can only be new."
+        "STEP_UP_NOT_OFFERED": "That complication can only be new.",
+        "CARD_CLOSED": "This test or contest takes no more rolls.",
+        "ALREADY_ACTING_THROUGH": "That side already acts through its complication here.",
+        "NOT_TAKEN_OUT_BY_COMPLICATION": "That character isn't taken out by a complication.",
+        "NOT_A_CLUE_ASSET": "Only a clue asset can be handed over.",
+        "SAME_HOLDER": "That character already holds it."
       },
       "TakenOut": "{name} is past d12: its holder is taken out.",
       "Hitches": {
@@ -772,7 +777,15 @@
         "Keep": "Keep (1 PP)",
         "Open": "Open (1 PP)",
         "TakenOut": "Taken out",
-        "Cost": "Keeping an asset for the session or opening it to everyone costs 1 PP each."
+        "Cost": "Keeping an asset for the session, opening it to everyone or giving a clue to another character costs 1 PP each.",
+        "Give": "Give the clue",
+        "GiveCost": "Give (1 PP)"
+      },
+      "ActThrough": {
+        "Title": "Act anyway",
+        "Button": "{side}: act anyway (1 PP)",
+        "Confirm": "Pay 1 PP to take part in this test or contest despite the complication past d12. Rolls for it keep only one result.",
+        "Acting": "{side} acts through a complication: rolls keep one result."
       }
     }
   },

@@ -39,9 +39,8 @@
  */
 
 import {
-  applyComplications, applyHitches, applyOpportunities, checkTemporaryTrait, contestComplications, createAsset, endScene,
-  endSession,
-  removeUsedD4Complications, stepTemporaryTrait, temporaryTraitPoolEntry, upgradeAsset
+  actThroughOption, applyComplications, applyHitches, applyOpportunities, checkTemporaryTrait, contestComplications,
+  createAsset, endScene, endSession, removeUsedD4Complications, stepTemporaryTrait, temporaryTraitPoolEntry, upgradeAsset
 } from "./assets.mjs";
 import { changeBalance } from "./plot-points.mjs";
 import { fail, ok } from "./result.mjs";
@@ -65,11 +64,13 @@ export const TRAIT_STORE_ACTIONS = Object.freeze({
   activateHitches: "roll",
   useOpportunities: "owner",
   applyConsequence: "card",
-  createEffectAsset: "gm"
+  createEffectAsset: "gm",
+  giveClue: "owner",
+  actThrough: "owner"
 });
 
 /** The actions that act on a test or contest card and read it (CardFacts). */
-const CARD_ACTIONS = ["applyConsequence", "createEffectAsset"];
+const CARD_ACTIONS = ["applyConsequence", "createEffectAsset", "actThrough"];
 
 /**
  * The warnings of a temporary trait in a pool that a roll card stores and shows as a nonstandard
@@ -123,6 +124,9 @@ const ID_PATTERN = /^[a-zA-Z0-9]{16}$/;
  * @property {{id: string, size: number}[]} assetEffects - the effect dice that can make an asset (effectAssetDice)
  * @property {string|null} assetHolderKey - the actor key of the side those dice belong to
  * @property {string[]} assetsMade - the effect ids that already made an asset
+ * @property {{key: string, actorKey: string|null}[]} [sides] - each side and its character
+ * @property {string[]} [actedThrough] - the sides that paid to act through a complication on this card
+ * @property {boolean} [open] - the card still waits for a roll
  */
 
 /**
@@ -204,7 +208,12 @@ function holderKey(holder) {
  * The character a player's action is for: the holder of the new asset, or of the asset acted on.
  * @returns {import("./types.mjs").EngineResult<string>} the actor key
  */
-function ownerActionActor(action, payload, store) {
+function ownerActionActor(action, payload, store, card) {
+  if ( action === "actThrough" ) {
+    const side = Array.isArray(card.sides) ? card.sides.find(s => s.key === payload.side) : null;
+    if ( !side ) return fail("INVALID_INPUT");
+    return side.actorKey ? ok(side.actorKey) : fail("ACTOR_NOT_FOUND");
+  }
   if ( action === "useOpportunities" ) {
     return (typeof payload.actorKey === "string") ? ok(payload.actorKey) : fail("ACTOR_NOT_FOUND");
   }
@@ -260,6 +269,14 @@ function applyAction(action, payload, store, actors, roll, card) {
       const made = createAsset(input);
       return made.ok ? changed([...traits, made.value.trait], made.value.ppLines) : made;
     }
+    case "giveClue": {
+      const known = holderKnown(payload.holder, actors);
+      if ( !known.ok ) return known;
+      const given = upgradeAsset(find(), { kind: "give", holder: payload.holder });
+      return given.ok ? changed(replace(given.value.trait), given.value.ppLines) : given;
+    }
+    case "actThrough":
+      return actThrough(payload, traits, card);
     case "keepAsset":
     case "openAsset": {
       const upgraded = upgradeAsset(find(), { kind: action === "keepAsset" ? "keep" : "open" });
@@ -428,6 +445,20 @@ function createEffectAsset(payload, traits, actors, card) {
 }
 
 /**
+ * A side whose character is taken out by a complication past d12 acts in this test or contest
+ * anyway, keeping one result, for 1 PP (rule 26; PA6). The card records the side; the traits don't
+ * change.
+ */
+function actThrough(payload, traits, card) {
+  if ( card.open !== true ) return fail("CARD_CLOSED");
+  if ( (card.actedThrough ?? []).includes(payload.side) ) return fail("ALREADY_ACTING_THROUGH");
+  const side = card.sides.find(s => s.key === payload.side);
+  const option = actThroughOption(traits, side.actorKey);
+  if ( !option.ok ) return option;
+  return ok({ traits, ppLines: [option.value.ppLine], removedIds: [], card: { actThroughSide: side.key } });
+}
+
+/**
  * Who pays an action's lines (P1, P9; RQ-043): the character's own balance when it holds plot
  * points. No trait spend has a bank price, so for any other character a GM pays nothing and gets
  * the warning BANK_SPEND_NOT_LISTED; anyone else is refused.
@@ -461,7 +492,7 @@ function payment(lines, actorKey, actors, sender) {
  * @returns {import("./types.mjs").EngineResult<{store: TraitStore, payment: StorePayment|null, removedIds: string[],
  *   replayed: boolean, warnings: string[], changes: object[], takenOut: string[],
  *   roll: {rolled: object[], pendingLines: object[], hitchesDone?: boolean}|null,
- *   card: {consequenceKeys?: string[], assetEffect?: string}|null}>} `card` is the mark to write on
+ *   card: {consequenceKeys?: string[], assetEffect?: string, actThroughSide?: string}|null}>} `card` is the mark to write on
  *   the test or contest card an action named
  */
 export function dispatchTraitStoreRequest({ sender, request, store, actors = {}, roll = null, card = null } = {}) {
@@ -497,7 +528,7 @@ export function dispatchTraitStoreRequest({ sender, request, store, actors = {},
     if ( !isGM && !winnerApplies ) return fail("GM_ONLY");
   }
   else {
-    const actor = ownerActionActor(request.action, request.payload, current);
+    const actor = ownerActionActor(request.action, request.payload, current, card);
     if ( !actor.ok ) return actor;
     actorKey = actor.value;
     const facts = actors[actorKey];
