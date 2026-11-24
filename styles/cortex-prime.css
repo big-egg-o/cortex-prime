@@ -962,3 +962,9 @@
 .cortex-prime.poolroll-card .cp-roll-pp-sfx { display: flex; gap: 0.25rem; align-items: center; margin-top: 0.25rem; }
 .cortex-prime.poolroll-card .cp-roll-pp-sfx input { flex: 1; height: 1.5rem; }
 .cp-pp-lines { margin: 0; padding-left: 1.1em; font-size: var(--font-size-12); }
+
+/* Plot points on the test and contest card (P8). */
+.cortex-prime .cp-contest-pp { margin: 0.25rem 0; font-size: var(--font-size-12); }
+.cortex-prime .cp-contest-pp p { margin: 0.1rem 0; }
+.cortex-prime .cp-pp-stay-in { display: flex; flex-wrap: wrap; gap: 0.25rem 0.5rem; align-items: center; }
+.cortex-prime .cp-pp-stay-in > p, .cortex-prime .cp-pp-stay-in > button { flex: 1 1 100%; }

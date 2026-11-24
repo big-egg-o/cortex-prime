@@ -8,6 +8,8 @@
  * @module tests/quench/contest-ending
  */
 
+import { BANK_SETTING } from "../../module/plot-points/accounts.mjs";
+import { deleteLedgerFor } from "./plot-points.mjs";
 import { prepareContestCardContext, sendCardAction } from "../../module/contest/contest-card.mjs";
 import { handleContestQuery } from "../../module/contest/relay.mjs";
 import { CONTEST_FLAG, sendRollCard } from "../../module/contest/roll-card.mjs";
@@ -41,6 +43,8 @@ export function registerContestEndingBatch(quench) {
     ({ describe, it, assert, before, after, afterEach }) => {
       /** @type {ChatMessage[]} */
       const tracked = [];
+      const SCOPE_PP = "cortex-prime";
+      const bankBefore = game.settings.get(SCOPE_PP, BANK_SETTING);
       let p1;
       let p2;
       let ayla;
@@ -63,6 +67,9 @@ export function registerContestEndingBatch(quench) {
 
       afterEach(async () => {
         const ids = tracked.splice(0).map(m => m.id).filter(id => game.messages.has(id));
+        // Giving in pays a plot point (P8); its ledger entries go with the contest, and the bank is put back.
+        await deleteLedgerFor(ids);
+        if ( game.settings.get(SCOPE_PP, BANK_SETTING) !== bankBefore ) await game.settings.set(SCOPE_PP, BANK_SETTING, bankBefore);
         if ( ids.length ) await ChatMessage.implementation.deleteDocuments(ids);
       });
 

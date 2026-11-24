@@ -222,6 +222,43 @@
   </div>
   {{/if}}
 
+  {{!-- Plot points (P8): what giving in and staying in paid, and the Stay in offer. --}}
+  {{#if pp}}
+  <div class="cp-contest-pp">
+    {{#if pp.giveIn}}<p><i class="fa-solid fa-coins" inert></i> {{ pp.giveIn }}</p>{{/if}}
+    {{#if pp.stayed}}<p><i class="fa-solid fa-coins" inert></i> {{ pp.stayed }}</p>{{/if}}
+    {{#if pp.offer.waiting}}<p class="hint">{{ pp.offer.waiting }}</p>{{/if}}
+    {{#if pp.offer.side}}
+    <div class="cp-pp-stay-in"{{#if pp.offer.test}} data-test="true"{{/if}}>
+      {{#if pp.offer.text}}<p>{{ localize "CORTEX.PlotPoints.StayIn.Offer" side=pp.offer.side complications=pp.offer.text }}</p>{{/if}}
+      {{#if pp.offer.test}}
+      <p>{{ localize "CORTEX.PlotPoints.StayIn.TestOffer" side=pp.offer.side }}</p>
+      {{#if pp.offer.test.overflow}}
+      <label><input type="checkbox" name="overflowApplies"> {{ localize "CORTEX.PlotPoints.StayIn.OverflowApplies" }}</label>
+      {{/if}}
+      {{#if pp.offer.test.effects.length}}
+      <span>{{ localize "CORTEX.PlotPoints.StayIn.UsedAgainst" }}</span>
+      {{#each pp.offer.test.effects}}
+      <label><input type="checkbox" name="usedAgainst" value="{{ this.id }}" checked> d{{ this.size }}</label>
+      {{/each}}
+      {{else}}
+      <label>{{ localize "CORTEX.PlotPoints.StayIn.GmSize" }}
+        <select name="gmSize">
+          {{#each pp.offer.test.sizes}}<option value="{{ this.size }}"{{#if this.selected}} selected{{/if}}>d{{ this.size }}</option>{{/each}}
+          <option value="none">{{ localize "CORTEX.PlotPoints.StayIn.None" }}</option>
+        </select>
+      </label>
+      {{/if}}
+      {{/if}}
+      {{#if pp.offer.short}}<p class="hint">{{ pp.offer.short }}</p>{{/if}}
+      <button type="button" data-action="stay-in">
+        <i class="fa-solid fa-shield-heart" inert></i><span>{{ localize "CORTEX.PlotPoints.StayIn.Button" }}</span>
+      </button>
+    </div>
+    {{/if}}
+  </div>
+  {{/if}}
+
   <div class="cp-controls">
     {{#if button}}
     <button type="button" data-action="roll-for-contest" data-side="{{ button.side }}" data-roll-index="{{ button.rollIndex }}">

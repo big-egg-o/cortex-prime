@@ -259,6 +259,10 @@
           "Close": {
             "Title": "Close",
             "Text": "Close this card? Nothing on it can be changed afterwards."
+          },
+          "StayIn": {
+            "Title": "Stay in",
+            "Text": "Pay 1 PP to stay in and take the complication instead? This can't be undone."
           }
         }
       },
@@ -555,7 +559,12 @@
         "NO_OVERFLOW_TAKE_OUT": "No take-out was chosen for that effect die.",
         "WRITE_FAILED": "The change couldn't be saved; see the console.",
         "PP_NOT_CONFIRMED": "Confirm the roll before settling its plot points.",
-        "PP_NO_LINES": "This roll has no plot points to settle."
+        "PP_NO_LINES": "This roll has no plot points to settle.",
+        "PP_PICK_FIRST": "The winner picks the effect dice used against the loser first.",
+        "PP_GM_SIZE_NEEDED": "Choose the complication's size, or none.",
+        "PP_STAYED_IN": "Someone already paid to stay in, so this choice is fixed.",
+        "NO_EFFECT_DIE_USED": "Mark at least one effect die acting on the character.",
+        "INVALID_DIE_SIZE": "That isn't a die size."
       },
       "Warnings": {
         "PP_SHORT": "Costs more plot points than the payer holds.",
@@ -569,7 +578,21 @@
       "Later": "Usable once the roll is settled",
       "UsableThisRoll": "Usable on this roll",
       "RemoveLine": "Remove this line",
-      "SfxLabel": "SFX name"
+      "SfxLabel": "SFX name",
+      "GaveIn": "{side} gained 1 PP for giving in.",
+      "StayedIn": "{side} paid 1 PP to stay in and takes {complications}.",
+      "StayIn": {
+        "Button": "Stay in (1 PP)",
+        "Offer": "{side} can pay 1 PP to stay in and take {complications} instead.",
+        "TestOffer": "If {side} is taken out, they can pay 1 PP to stay in and take a complication instead.",
+        "OverflowApplies": "The setter's take-out applies (d12 complication)",
+        "UsedAgainst": "Effect dice acting on the character:",
+        "GmSize": "Complication size:",
+        "None": "none",
+        "One": "a {sizes} complication",
+        "Many": "{sizes} complications",
+        "NoComplication": "no complication"
+      }
     }
   },
   "TYPES": {
