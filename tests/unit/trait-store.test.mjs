@@ -575,3 +575,57 @@ describe("consequences and assets from effect dice on the test and contest card 
       .toEqual(refused("ACTOR_NOT_FOUND"));
   });
 });
+
+describe("giving a clue and acting through a complication past d12 (step 4.8d)", () => {
+  const BEN = "Actor.Ben0000000000000";
+  const WITH_BEN = { ...ACTORS, [BEN]: { ownedBySender: false, holdsPlotPoints: true, balance: 0 } };
+  const contestCard = (overrides = {}) => cardFacts({
+    sides: [{ key: "initiator", actorKey: ANA }, { key: "opposition", actorKey: GUARD_1 }], actedThrough: [], open: true, ...overrides
+  });
+
+  it("AC-07 a clue asset is handed to another character for 1 PP from its holder; a bought asset can't be", () => {
+    const card = cardFacts({ type: "test", assetEffects: [{ id: "e1", size: 8 }] });
+    let store = run(GM, request("createEffectAsset", {
+      messageId: "msg", effectId: "e1", id: id("Guard Rotation"), name: "Guard Rotation", origin: "clue"
+    }), emptyTraitStore(), WITH_BEN, null, card).value.store;
+    const given = run(PLAYER, request("giveClue", { traitId: id("Guard Rotation"), holder: holder(BEN) }, 1), store, WITH_BEN).value;
+    expect(given.store.traits[0].holder).toEqual(holder(BEN));
+    expect(given.payment).toMatchObject({ account: { kind: "actor", actorKey: ANA }, delta: -1, balance: 1 });
+    expect(given.payment.line.reason).toBe("ASSET_GIVE");
+    store = run(PLAYER, request("buyAsset", { id: id("Rope"), name: "Rope", holder: holder(ANA) }, 1), store, WITH_BEN).value.store;
+    expect(run(PLAYER, request("giveClue", { traitId: id("Rope"), holder: holder(BEN) }, 2), store, WITH_BEN))
+      .toEqual(refused("NOT_A_CLUE_ASSET"));
+    expect(run(PLAYER, request("giveClue", { traitId: id("Guard Rotation"), holder: holder("Actor.Gone000000000000") }, 2), store, WITH_BEN))
+      .toEqual(refused("ACTOR_NOT_FOUND"));
+  });
+
+  it("AC-39 a character taken out by a complication acts through it for 1 PP; the card records the side once", () => {
+    let store = run(GM, addComplication("Buried in Debris", ANA, 12)).value.store;
+    store = run(GM, request("step", { traitId: id("Buried in Debris"), steps: 1 }, 1), store).value.store;
+    const acted = run(PLAYER, request("actThrough", { messageId: "msg", side: "initiator" }, 2), store, ACTORS, null, contestCard()).value;
+    expect(acted.payment).toMatchObject({ delta: -1, balance: 1 });
+    expect(acted.payment.line).toMatchObject({ reason: "ACT_THROUGH_COMPLICATION", label: "Buried in Debris" });
+    expect(acted.card).toEqual({ actThroughSide: "initiator" });
+    expect(acted.store.traits).toEqual(store.traits);
+    expect(run(PLAYER, request("actThrough", { messageId: "msg", side: "initiator" }, 2), store, ACTORS, null,
+      contestCard({ actedThrough: ["initiator"] }))).toEqual(refused("ALREADY_ACTING_THROUGH"));
+  });
+
+  it("act-through refusals: not taken out, another's character, an unknown side, a closed card", () => {
+    const store = run(GM, addComplication("Bruised", ANA, 8)).value.store;
+    const send = (sender, side, card) => run(sender, request("actThrough", { messageId: "msg", side }, 1), store, ACTORS, null, card);
+    expect(send(PLAYER, "initiator", contestCard())).toEqual(refused("NOT_TAKEN_OUT_BY_COMPLICATION"));
+    expect(send(PLAYER, "opposition", contestCard())).toEqual(refused("NOT_YOUR_CHARACTER"));
+    expect(send(PLAYER, "nobody", contestCard())).toEqual(refused("INVALID_INPUT"));
+    expect(send(PLAYER, "initiator", contestCard({ open: false }))).toEqual(refused("CARD_CLOSED"));
+    expect(send(PLAYER, "initiator", null)).toEqual(refused("CARD_NOT_FOUND"));
+  });
+
+  it("a GMC acts through for free, with the warning that no bank price is listed (RQ-043)", () => {
+    let store = run(GM, addComplication("Pinned", GUARD_1, 12)).value.store;
+    store = run(GM, request("step", { traitId: id("Pinned"), steps: 1 }, 1), store).value.store;
+    const acted = run(GM, request("actThrough", { messageId: "msg", side: "opposition" }, 2), store, ACTORS, null, contestCard()).value;
+    expect(acted.payment).toBeNull();
+    expect(acted.warnings).toEqual(["BANK_SPEND_NOT_LISTED"]);
+  });
+});

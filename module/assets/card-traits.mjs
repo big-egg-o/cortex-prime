@@ -9,7 +9,7 @@
  * @module assets/card-traits
  */
 
-import { contestConsequence, testResult } from "../rules/index.mjs";
+import { contestConsequence, expectedRoll, testResult } from "../rules/index.mjs";
 import { consequenceComplications, effectAssetDice } from "../rules/trait-store.mjs";
 import { DIE_SIZES } from "../rules/types.mjs";
 import { contestRecordOf, sideActor } from "../contest/records.mjs";
@@ -24,6 +24,21 @@ export const CONSEQUENCE_FLAG = "consequenceKeys";
 
 /** The flag that lists the effect dice of a card that made an asset. */
 export const ASSET_EFFECTS_FLAG = "assetEffects";
+
+/** The flag that lists the sides that pay to act through a complication past d12 on a card (PA6). */
+export const ACT_THROUGH_FLAG = "actThrough";
+
+/**
+ * Whether a side of a test or contest card acts through a complication past d12, so its rolls for
+ * the card keep one result (rule 26; Dice & Pools rule 15).
+ * @param {string} messageId - the contest message
+ * @param {string} side
+ * @returns {boolean}
+ */
+export function actsThrough(messageId, side) {
+  const message = game.messages.get(messageId);
+  return (message?.type === "contest") && listFlag(message, ACT_THROUGH_FLAG).includes(side);
+}
 
 /** @returns {string[]} a flag's string list, or an empty one */
 function listFlag(message, key) {
@@ -49,7 +64,10 @@ export function cardTraitFacts(message, user) {
   const facts = {
     type: record.type, offered: [], holderKey: null, appliedKeys: listFlag(message, CONSEQUENCE_FLAG),
     winnerOwnedBySender: false, loserIsBank: false, assetEffects: [], assetHolderKey: null,
-    assetsMade: listFlag(message, ASSET_EFFECTS_FLAG)
+    assetsMade: listFlag(message, ASSET_EFFECTS_FLAG),
+    sides: sides.map(s => ({ key: s.key, actorKey: actorKey(s.key) })),
+    actedThrough: listFlag(message, ACT_THROUGH_FLAG),
+    open: (state.closed !== true) && (expectedRoll(record) != null)
   };
   const stayIn = contestPpRecord(message).stayIn;
   if ( record.type === "test" ) {
@@ -88,19 +106,48 @@ export function cardTraitFacts(message, user) {
  * Null when there is nothing to show.
  * @param {ChatMessage} message
  * @param {User} [user=game.user]
- * @returns {{apply: {count: number}|null, asset: {count: number}|null, applied: boolean}|null}
+ * @returns {{apply: {count: number}|null, asset: {count: number}|null, applied: boolean,
+ *   actThrough: {side: string, label: string}[], actingThrough: string[]}|null}
  */
 export function cardTraitContext(message, user = game.user) {
   const facts = cardTraitFacts(message, user);
   if ( !facts ) return null;
+  const sides = message.system.sides;
+  const label = key => sides.find(s => s.key === key)?.label || key;
+  const takenOut = new Set(getTraitStore().traits.filter(t => t.beyondD12 && (t.holder.kind === "actor")).map(t => t.holder.actorId));
+  const actThrough = facts.open ? facts.sides.filter(s => s.actorKey && takenOut.has(s.actorKey)
+    && !facts.actedThrough.includes(s.key)
+    && (user.isGM || (sideActorOwned(sides, s.key, user)))).map(s => ({ side: s.key, label: label(s.key) })) : [];
+  const actingThrough = facts.actedThrough.map(label);
   const open = facts.offered.filter(o => !facts.appliedKeys.includes(o.key));
   const mayApply = user.isGM || ((facts.type === "contest") && facts.winnerOwnedBySender && facts.loserIsBank);
   const apply = (open.length && mayApply) ? { count: open.length } : null;
   const spare = facts.assetEffects.filter(e => !facts.assetsMade.includes(e.id));
   const asset = (user.isGM && spare.length && facts.assetHolderKey) ? { count: spare.length } : null;
   const applied = facts.appliedKeys.length > 0;
-  if ( !apply && !asset && !applied ) return null;
-  return { apply, asset, applied };
+  if ( !apply && !asset && !applied && !actThrough.length && !actingThrough.length ) return null;
+  return { apply, asset, applied, actThrough, actingThrough };
+}
+
+/** @returns {boolean} whether the user owns the actor of a card's side */
+function sideActorOwned(sides, key, user) {
+  return sideActor(sides.find(s => s.key === key))?.testUserPermission(user, "OWNER") === true;
+}
+
+/**
+ * A side's character acts through a complication past d12 in this test or contest, for 1 PP (rule
+ * 26); its rolls for the card then keep one result.
+ * @param {ChatMessage} message
+ * @param {string} side
+ * @returns {Promise<boolean>}
+ */
+export async function actThrough(message, side) {
+  const yes = await DialogV2.confirm({
+    window: { title: "CORTEX.Assets.ActThrough.Title" },
+    content: `<p>${game.i18n.localize("CORTEX.Assets.ActThrough.Confirm")}</p>`
+  });
+  if ( !yes ) return false;
+  return notifyTraitStoreResult(await sendTraitStoreRequest("actThrough", { messageId: message.id, side }));
 }
 
 /** @returns {string} the escaped options of a select */

@@ -22,7 +22,7 @@ import {
   OVERFLOW_PENDING, contestConsequence, expectedRoll, liveOverflowIds, offeredActions, offeredEndChoices, testResult
 } from "../rules/index.mjs";
 import { prepareContestPp } from "../plot-points/contest-pp.mjs";
-import { cardTraitContext, openConsequenceDialog, openEffectAssetDialog } from "../assets/card-traits.mjs";
+import { actThrough, cardTraitContext, openConsequenceDialog, openEffectAssetDialog } from "../assets/card-traits.mjs";
 import { contestRecordOf } from "./records.mjs";
 import { notifyContestResult, sendContestRequest } from "./relay.mjs";
 import { contestFlagOf } from "./roll-card.mjs";
@@ -90,8 +90,8 @@ const HANDLEBARS_OPTIONS = { allowProtoMethodsByDefault: true, allowProtoPropert
  * @property {boolean} closedEarly - the card was closed while an end choice waited
  * @property {object|null} pp - the plot points paid for giving in and staying in, and the Stay in
  *   offer for this user (prepareContestPp; P8)
- * @property {object|null} traits - Apply complications and Create asset for this user
- *   (cardTraitContext; step 4.8c)
+ * @property {object|null} traits - Apply complications, Create asset and Act anyway for this user
+ *   (cardTraitContext; steps 4.8c and 4.8d)
  */
 
 /**
@@ -385,6 +385,7 @@ async function onCardClick(message, target) {
     }
     case "consequence-apply": return openConsequenceDialog(message);
     case "effect-asset": return openEffectAssetDialog(message);
+    case "act-through": return actThrough(message, side);
     case "use-against-loser": {
       const boxes = target.closest(".cp-end-pick")?.querySelectorAll("input[type=checkbox]:checked") ?? [];
       return sendCardAction(message, action, { effectIds: Array.from(boxes, box => box.dataset.effectId) });

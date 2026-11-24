@@ -272,6 +272,12 @@
       <i class="fa-solid fa-plus" inert></i><span>{{ localize "CORTEX.Assets.EffectAsset.Create" }}</span>
     </button>
     {{/if}}
+    {{#each traits.actThrough}}
+    <button type="button" data-action="act-through" data-side="{{ this.side }}">
+      <i class="fa-solid fa-person-falling-burst" inert></i><span>{{ localize "CORTEX.Assets.ActThrough.Button" side=this.label }}</span>
+    </button>
+    {{/each}}
+    {{#each traits.actingThrough}}<p class="hint cp-consequence-applied">{{ localize "CORTEX.Assets.ActThrough.Acting" side=this }}</p>{{/each}}
     {{#if traits.applied}}<p class="hint cp-consequence-applied">{{ localize "CORTEX.Assets.Consequence.Applied" }}</p>{{/if}}
   </div>
   {{/if}}

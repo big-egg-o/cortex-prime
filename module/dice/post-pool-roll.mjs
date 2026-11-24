@@ -7,6 +7,7 @@ import { getGameConfig } from "../config/settings.mjs";
 import { POOL_ROLL_SCHEMA_VERSION } from "../data/chat/pool-roll.mjs";
 import { applyResults, suggestSelection, traitSetById } from "../rules/index.mjs";
 import { rollPool } from "./roll-pool.mjs";
+import { actsThrough } from "../assets/card-traits.mjs";
 
 /**
  * The warnings as they are stored: copies, and each one that names a set and brings no
@@ -75,7 +76,9 @@ export async function postPoolRoll({ pool, speaker, results, warnings = [], unpr
     rolled = rolledPool.rolled;
   }
 
-  const counters = { extraResultsPaid: 0, extraEffectDicePaid: 0, keepLimit: 2 };
+  // A side acting through a complication past d12 keeps one result (rule 26; Dice & Pools rule 15).
+  const keepLimit = (contest && actsThrough(contest.messageId, contest.side)) ? 1 : 2;
+  const counters = { extraResultsPaid: 0, extraEffectDicePaid: 0, keepLimit };
   const messageData = {
     type: "poolRoll",
     speaker: speaker ?? ChatMessage.getSpeaker(),

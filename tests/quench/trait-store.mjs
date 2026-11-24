@@ -439,6 +439,63 @@ export function registerTraitStoreBatch(quench) {
         });
       });
 
+      describe("giving a clue and acting through (step 4.8d)", () => {
+        const side = (key, actor) => ({ key, userId: null, actorUuid: actor?.uuid ?? null, label: actor?.name ?? key });
+
+        it("AC-07 a clue asset from a test goes to another character for 1 PP from its holder", async () => {
+          const ana = await createActor("pc", "Ana", { plotPoints: 1 });
+          const ben = await createActor("pc", "Ben", { plotPoints: 0 });
+          const started = await handleContestQuery({
+            action: "start", type: "test", difficulty: 6, sides: [side("roller", ana), side("setter")]
+          }, { user: game.user });
+          const message = game.messages.get(started.value.messageId);
+          const rolled = await handleContestQuery({
+            action: "add-roll", messageId: message.id, revision: message.system.revision,
+            payload: { side: "roller", total: 9, effectSizes: [8] }
+          }, { user: game.user });
+          assert.isTrue(rolled.ok, rolled.code);
+          const id = foundry.utils.randomID(16);
+          let result = await sendTraitStoreRequest("createEffectAsset", {
+            messageId: message.id, effectId: cardTraitFacts(message, game.user).assetEffects[0].id, id, name: "Guard Rotation", origin: "clue"
+          });
+          assert.isTrue(result.ok, result.code);
+          result = await sendTraitStoreRequest("giveClue", { traitId: id, holder: { kind: "actor", actorId: ben.uuid } });
+          assert.isTrue(result.ok, result.code);
+          assert.equal(getTraitStore().traits.find(t => t.id === id).holder.actorId, ben.uuid);
+          assert.equal(ana.system.plotPoints, 0);
+          assert.equal(ben.system.plotPoints, 0);
+        });
+
+        it("AC-39 a PC taken out by a complication acts through for 1 PP; its roll for the contest keeps one result", async () => {
+          const pc = await createActor("pc", "Ana", { plotPoints: 1 });
+          const gmc = await createActor("gmc", "Thug");
+          const buried = foundry.utils.randomID(16);
+          await sendTraitStoreRequest("addComplication", { id: buried, name: "Buried", size: 12, holder: { kind: "actor", actorId: pc.uuid } });
+          await sendTraitStoreRequest("step", { traitId: buried, steps: 1 });
+          assert.isTrue(getTraitStore().traits.find(t => t.id === buried).beyondD12);
+          const system = initialSystem({
+            type: "contest", state: createContest().value, startedBy: game.user.id,
+            sides: [side("initiator", pc), side("opposition", gmc)]
+          }).value;
+          const message = await ChatMessage.implementation.create({ type: "contest", system });
+          assert.deepEqual(cardTraitContext(message).actThrough.map(a => a.side), ["initiator"]);
+          let result = await sendTraitStoreRequest("actThrough", { messageId: message.id, side: "initiator" });
+          assert.isTrue(result.ok, result.code);
+          assert.equal(pc.system.plotPoints, 0);
+          assert.deepEqual(message.getFlag(SYSTEM_ID, "actThrough"), ["initiator"]);
+          result = await sendTraitStoreRequest("actThrough", { messageId: message.id, side: "initiator" });
+          assert.deepEqual(result, { ok: false, code: "ALREADY_ACTING_THROUGH" });
+          result = await sendTraitStoreRequest("actThrough", { messageId: message.id, side: "opposition" });
+          assert.deepEqual(result, { ok: false, code: "NOT_TAKEN_OUT_BY_COMPLICATION" });
+          const card = await postPoolRoll({
+            pool: [customDie("a", 10), customDie("b", 8), customDie("c", 6)], results: [7, 6, 3],
+            speaker: ChatMessage.getSpeaker({ actor: pc }), contest: { messageId: message.id, side: "initiator", rollIndex: 0 }
+          });
+          assert.equal(card.system.selection.keepLimit, 1);
+          assert.lengthOf(card.system.selection.totalIds, 1);
+        });
+      });
+
       describe("the tracker", () => {
         it("opens with every sheet closed and lists an unassigned complication with its note", async () => {
           const id = foundry.utils.randomID(16);
