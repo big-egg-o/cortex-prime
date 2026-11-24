@@ -50,3 +50,9 @@ export {
   PP_REASONS, ROLL_REASONS, STAY_IN_ROUTES, SUGGESTED_GM_COMPLICATION_SIZE, changeBalance, contestPpOptions, poolPpFacts,
   ppChangeAllowed, ppTotals, rollPpFacts, settleRoll, startSession, testStayInOption
 } from "./plot-points.mjs";
+export {
+  AC_PP_REASONS, ASSET_DURATIONS, ASSET_ORIGINS, COMPLICATION_ORIGINS, RULING_PENDING, TEMP_TRAIT_KINDS,
+  actThroughOption, applyComplications, applyHitches, applyOpportunities, checkTemporaryTrait, contestComplications,
+  createAsset, createSessionRelationship, endScene, endSession, loseSignatureAsset, recoverSignatureAsset,
+  removeUsedD4Complications, signatureAssetPoolDice, stepTemporaryTrait, temporaryTraitPoolEntry, upgradeAsset
+} from "./assets.mjs";
