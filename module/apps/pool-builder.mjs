@@ -845,7 +845,9 @@ export async function addTraitToPool(actor, setId, traitId, option = null, { bes
     return refusePoolTrait("INVALID_GAME_CONFIG");
   }
   const added = await poolWrites.add(async () => {
-    const dice = traitPoolDice(actor.system.toObject(), config, setId, traitId, { actorId: actor.id, option });
+    // A signature asset's scene boost from opportunities (A&C rules 14 and 20; step 4.9).
+    const sceneBoost = getTraitStore().sceneBoosts.find(b => (b.actorId === actor.uuid) && (b.traitId === traitId)) ?? null;
+    const dice = traitPoolDice(actor.system.toObject(), config, setId, traitId, { actorId: actor.id, option, sceneBoost });
     if ( !dice.ok ) return dice;
     const result = addTraitDice(userPool(), dice.value, { actorRef: actor.uuid });
     if ( result.ok && result.value.changed ) await game.user.setFlag(FLAG_SCOPE, FLAG_KEY, result.value.pool);

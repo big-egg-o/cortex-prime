@@ -23,6 +23,9 @@ import TraitStoreData, { TRAIT_STORE_SCHEMA_VERSION } from "../data/settings/tem
 import { dispatchTraitStoreRequest, emptyTraitStore, usedD4ComplicationIds } from "../rules/trait-store.mjs";
 import { holdsPlotPoints, ledgerEntryData } from "../plot-points/accounts.mjs";
 import { ACT_THROUGH_FLAG, ASSET_EFFECTS_FLAG, CONSEQUENCE_FLAG, cardTraitFacts } from "./card-traits.mjs";
+import { TRAIT_SET_MARKS, markedTraitSets } from "../rules/game-config.mjs";
+import { actorLayout } from "../rules/actor-layout.mjs";
+import { getGameConfig } from "../config/settings.mjs";
 
 const SYSTEM_ID = "cortex-prime";
 
@@ -160,7 +163,62 @@ function requestActorKeys(request, store, roll, card) {
   if ( card?.assetHolderKey ) keys.push(card.assetHolderKey);
   const side = card?.sides?.find(s => s.key === payload?.side);
   if ( side?.actorKey ) keys.push(side.actorKey);
+  if ( typeof payload?.from?.actorKey === "string" ) keys.push(payload.from.actorKey);
+  for ( const use of Array.isArray(payload?.uses) ? payload.uses : [] ) {
+    if ( (use?.target?.kind === "signature") && (typeof use.target.actorId === "string") ) keys.push(use.target.actorId);
+  }
   return [...new Set(keys)];
+}
+
+/**
+ * The entries of an actor's marked sets (ADR-058), by set id: the sets its layout has that carry
+ * a mark, with the entries as stored.
+ * @param {Actor} actor
+ * @param {import("../rules/types.mjs").GameConfig} [config]
+ * @returns {Object<string, {mark: string, entries: object[]}>}
+ */
+export function markedFactsOf(actor, config = getGameConfig()) {
+  const layout = actorLayout(actor.type, actor.system, config);
+  const marked = {};
+  for ( const mark of TRAIT_SET_MARKS ) {
+    for ( const set of markedTraitSets(config, layout, mark) ) {
+      marked[set.id] = { mark, entries: foundry.utils.deepClone(actor.system._source?.traits?.[set.id]?.entries ?? []) };
+    }
+  }
+  return marked;
+}
+
+/**
+ * What the handler knows of one actor (StoreActorFacts).
+ * @param {Actor} actor
+ * @param {User} user - the sender
+ * @returns {import("../rules/trait-store.mjs").StoreActorFacts}
+ */
+function actorFacts(actor, user) {
+  return {
+    ownedBySender: actor.testUserPermission(user, "OWNER"),
+    holdsPlotPoints: holdsPlotPoints(actor),
+    balance: holdsPlotPoints(actor) ? actor.system.plotPoints : null,
+    marked: markedFactsOf(actor)
+  };
+}
+
+/**
+ * The world's actors with a relationships set, whose relationships bought for the session End
+ * session removes (rule 15). Tokens' unlinked actors aren't searched: a character who buys
+ * relationships is a linked actor.
+ * @returns {Actor[]}
+ */
+function actorsWithRelationships() {
+  return game.actors.filter(actor => Object.values(markedFactsOf(actor)).some(set => set.mark === "sessionRelationships"));
+}
+
+/**
+ * The marked sets of every actor End session looks at, for the tracker's preview (previewEnd).
+ * @returns {Object<string, {marked: object}>}
+ */
+export function relationshipActorFacts() {
+  return Object.fromEntries(actorsWithRelationships().map(actor => [actor.uuid, { marked: markedFactsOf(actor) }]));
 }
 
 /**
@@ -263,25 +321,27 @@ async function processRequest(request, user) {
     const actor = actorFromKey(key);
     if ( !actor ) continue;
     actorDocs[key] = actor;
-    actors[key] = {
-      ownedBySender: actor.testUserPermission(user, "OWNER"),
-      holdsPlotPoints: holdsPlotPoints(actor),
-      balance: holdsPlotPoints(actor) ? actor.system.plotPoints : null
-    };
+    actors[key] = actorFacts(actor, user);
+  }
+  if ( request?.action === "endSession" ) {
+    for ( const actor of actorsWithRelationships() ) {
+      actorDocs[actor.uuid] = actor;
+      actors[actor.uuid] = actorFacts(actor, user);
+    }
   }
   const result = dispatchTraitStoreRequest({
     sender: { userId: user.id, isGM: user.isGM }, request, store, actors, roll: roll?.facts ?? null, card: card?.facts ?? null
   });
   if ( !result.ok ) return result;
-  const { store: next, payment, removedIds, replayed, warnings, changes, takenOut } = result.value;
+  const { store: next, payment, removedIds, replayed, warnings, changes, takenOut, actorEntries } = result.value;
   if ( replayed ) return { ok: true, value: { revision: next.revision, removedIds, replayed, warnings } };
   try {
     let cardUpdate = null;
     if ( result.value.roll ) cardUpdate = rollCardUpdate(roll, result.value.roll);
     else if ( result.value.card ) cardUpdate = contestCardUpdate(card, result.value.card);
     const messageRef = roll?.message.id ?? card?.message.id ?? null;
-    const written = (payment || cardUpdate)
-      ? await writeBatch(next, payment, actorDocs, cardUpdate, messageRef)
+    const written = (payment || cardUpdate || actorEntries.length)
+      ? await writeBatch(next, payment, actorDocs, cardUpdate, messageRef, actorEntries)
       : await writeStore(next);
     if ( !written ) return fail("WRITE_FAILED");
   }
@@ -347,15 +407,44 @@ function settingOperation(key, value) {
  * @param {Object<string, Actor>} actorDocs
  * @param {object|null} cardUpdate - a ChatMessage update
  * @param {string|null} messageRef - the roll, test or contest card the change belongs to
+ * @param {import("../rules/trait-store.mjs").ActorEntryChange[]} [actorEntries] - entries of marked sets
  * @returns {Promise<boolean>} whether every operation came back written
  */
-async function writeBatch(store, payment, actorDocs, cardUpdate, messageRef) {
+async function writeBatch(store, payment, actorDocs, cardUpdate, messageRef, actorEntries = []) {
   const operations = [settingOperation(TRAIT_STORE_SETTING, storeSource(store))];
+  // One update per actor: its marked sets' entries and its balance together.
+  const actorUpdates = new Map();
+  const updateOf = key => {
+    if ( !actorUpdates.has(key) ) actorUpdates.set(key, { _id: actorDocs[key].id });
+    return actorUpdates.get(key);
+  };
+  const entryLists = new Map();
+  for ( const change of actorEntries ) {
+    const listKey = `${change.actorKey}|${change.setId}`;
+    if ( !entryLists.has(listKey) ) {
+      const stored = actorDocs[change.actorKey].system._source?.traits?.[change.setId]?.entries ?? [];
+      entryLists.set(listKey, { change, entries: foundry.utils.deepClone(stored) });
+    }
+    const list = entryLists.get(listKey);
+    const at = list.entries.findIndex(e => e.id === change.entryId);
+    if ( change.entry === null ) {
+      if ( at >= 0 ) list.entries.splice(at, 1);
+    }
+    else if ( at >= 0 ) list.entries[at] = { ...list.entries[at], ...change.entry };
+    else list.entries.push(change.entry);
+  }
+  for ( const { change, entries } of entryLists.values() ) {
+    updateOf(change.actorKey)[`system.traits.${change.setId}.entries`] = entries;
+  }
+  if ( payment ) updateOf(payment.account.actorKey)["system.plotPoints"] = payment.balance;
+  for ( const [key, update] of actorUpdates ) {
+    const actor = actorDocs[key];
+    const operation = { action: "update", documentName: "Actor", updates: [update] };
+    if ( actor.isToken ) operation.parent = actor.token;
+    operations.push(operation);
+  }
   if ( payment ) {
     const actor = actorDocs[payment.account.actorKey];
-    const update = { action: "update", documentName: "Actor", updates: [{ _id: actor.id, "system.plotPoints": payment.balance }] };
-    if ( actor.isToken ) update.parent = actor.token;
-    operations.push(update);
     const several = payment.lines.length > 1;
     operations.push({
       action: "create", documentName: "ChatMessage",

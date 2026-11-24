@@ -27,6 +27,7 @@
 import { fail, ok } from "./result.mjs";
 import { actorKindById, traitDefById, traitSetById } from "./game-config.mjs";
 import { challengeStatement } from "./statements.mjs";
+import { signatureAssetPoolDice } from "./assets.mjs";
 import { effectiveRating, missingPrimeWarnings, poolTraitCost, traitPoolEntries } from "./trait-pool.mjs";
 
 /** How a trait can be added besides plainly (Character Sheets CS-D10 and CS-D14). */
@@ -143,7 +144,11 @@ export function poolDieGroupKey(die) {
  * @param {string|null} setId - null for a free trait (TS-22), which belongs to no set: it has no
  *   fallback die, and neither option exists for it
  * @param {string} traitId - a fixed set's definition id, or an open set's or a free trait's entry id
- * @param {{actorId?: string, option?: "hinder"|"challenge"|"hinderChallenge"|null}} [options]
+ * A signature asset (a set marked signatureAssets, ADR-058) is stepped up by its scene boost, never
+ * past d12 (A&C rules 14 and 20; signatureAssetPoolDice); the stored entry is unchanged. A boost
+ * on any other set changes nothing.
+ * @param {{actorId?: string, option?: "hinder"|"challenge"|"hinderChallenge"|null,
+ *   sceneBoost?: import("./assets.mjs").SceneBoost|null}} [options]
  * @returns {import("./types.mjs").EngineResult<{setId: string|null, traitId: string,
  *   option: "hinder"|"challenge"|"hinderChallenge"|null, ratingConflict: boolean,
  *   entries: ReturnType<typeof traitPoolEntries>["value"]}>} refuses, in this order:
@@ -160,9 +165,10 @@ export function traitPoolDice(system, config, setId, traitId, options = {}) {
     || !isPlainObject(options) ) {
     return fail("INVALID_TRAIT_DATA");
   }
-  const { actorId, option = null } = options;
+  const { actorId, option = null, sceneBoost = null } = options;
   if ( (actorId !== undefined) && (typeof actorId !== "string") ) return fail("INVALID_TRAIT_DATA");
   if ( (option !== null) && !POOL_TRAIT_OPTIONS.includes(option) ) return fail("INVALID_TRAIT_OPTIONS");
+  if ( (sceneBoost !== null) && !signatureAssetPoolDice({ dice: [] }, sceneBoost).ok ) return fail("INVALID_TRAIT_OPTIONS");
 
   if ( setId === null ) {
     const free = (Array.isArray(system.freeTraits) ? system.freeTraits : [])
@@ -198,7 +204,11 @@ export function traitPoolDice(system, config, setId, traitId, options = {}) {
     if ( !stepDown.ok ) return stepDown;
   }
 
-  const trait = { dice: rating.value.dice, label, traitId };
+  let dice = rating.value.dice;
+  if ( (set.features?.signatureAssets === true) && (sceneBoost !== null) ) {
+    dice = signatureAssetPoolDice({ dice }, sceneBoost).value.dice;
+  }
+  const trait = { dice, label, traitId };
   if ( actorId !== undefined ) trait.actorId = actorId;
   if ( rating.value.isFallback ) trait.isFallback = true;
   const entries = traitPoolEntries(trait, { hinder: usesHinder(option), challenge: usesChallenge(option) });
@@ -317,7 +327,7 @@ export function poolTraits(pool) {
  *   count: number}[], warnings: {code: string, setId?: string, actorId?: string,
  *   traitId?: string}[], ppGained: number}>} warnings in this order: poolTraitCost's warnings
  *   about traits and sets (pool order), RATING_CONFLICTS_WITH_SET (pool order),
- *   PRIME_SET_MISSING (kinds in pool order, each kind's sets in its order). Refuses
+ *   SIGNATURE_ASSET_LOST (pool order), PRIME_SET_MISSING (kinds in pool order, each kind's sets in its order). Refuses
  *   INVALID_TRAIT_DATA or INVALID_GAME_CONFIG
  */
 export function poolTraitReport(pool, actors, config) {
@@ -355,10 +365,23 @@ export function poolTraitReport(pool, actors, config) {
     warning.traitId = trait.traitId;
     return warning;
   });
+  // A signature asset out of action stays in the pool, with a warning (A&C rule 12, AC-42).
+  const lost = traits.filter(trait => {
+    if ( trait.setId === null ) return false;
+    const set = traitSetById(config, trait.setId);
+    if ( set?.features?.signatureAssets !== true ) return false;
+    const entry = entryFor(holderOf(trait)?.traits?.[trait.setId], trait.traitId, set.list === "fixed");
+    return entry?.lost?.outOfAction === true;
+  }).map(trait => {
+    const warning = { code: "SIGNATURE_ASSET_LOST", setId: trait.setId };
+    if ( trait.actorRef !== null ) warning.actorId = trait.actorRef;
+    warning.traitId = trait.traitId;
+    return warning;
+  });
 
   // The cost check names an actor by the reference it was given; the card needs the die's actorId.
   const actorIdByRef = new Map(traits.map(trait => [trait.actorRef, trait.actorId]));
-  const warnings = [...base.value.warnings, ...conflicts, ...primeWarnings].map(warning => {
+  const warnings = [...base.value.warnings, ...conflicts, ...lost, ...primeWarnings].map(warning => {
     if ( warning.actorId === undefined ) return { ...warning };
     const { actorId, ...rest } = warning;
     const dieActorId = actorIdByRef.get(actorId) ?? null;

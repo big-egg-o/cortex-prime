@@ -664,3 +664,58 @@ describe("pool strings", () => {
     }
   });
 });
+
+describe("signature assets in a pool (step 4.9; A&C rules 12, 14; AC-42, AC-45)", () => {
+  const SIG = "cpSetSignature00";
+  const SABRE = "entrySabre000000";
+
+  /** @returns {object} the defaults with a signature-asset set on the PC kind */
+  function configWithSignatureSet() {
+    const config = defaultGameConfig();
+    const base = traitSetById(config, DISTINCTIONS);
+    config.traitSets.push({
+      ...structuredClone(base), id: SIG, name: "Signature assets", role: "other", startingRating: 6,
+      features: { ...base.features, hinder: false, signatureAssets: true }
+    });
+    config.actorKinds.find(kind => kind.id === PC).traitSetIds.push(SIG);
+    return config;
+  }
+
+  /** @returns {object} the PC holding the sabre, lost or not */
+  function withSabre(lost = null) {
+    const system = pcSystem();
+    system.traits[SIG] = { shutDown: false, sfx: [], entries: [
+      { id: SABRE, defId: null, name: "Old Sabre", dice: [10], sfx: [], ...(lost ? { lost } : {}) }
+    ] };
+    return system;
+  }
+
+  it("AC-22 (b), AC-45 a scene boost steps the pool's die, never past d12; the stored entry is unchanged", () => {
+    const config = configWithSignatureSet();
+    const boosted = traitPoolDice(withSabre(), config, SIG, SABRE, { actorId: ACTOR, sceneBoost: { actorId: REF, traitId: SABRE, steps: 1 } });
+    expect(boosted.value.entries.map(e => e.size)).toEqual([12]);
+    const past = traitPoolDice(withSabre(), config, SIG, SABRE, { actorId: ACTOR, sceneBoost: { actorId: REF, traitId: SABRE, steps: 3 } });
+    expect(past.value.entries.map(e => e.size)).toEqual([12]);
+    expect(traitPoolDice(withSabre(), config, SIG, SABRE, { actorId: ACTOR }).value.entries.map(e => e.size)).toEqual([10]);
+  });
+
+  it("a scene boost on a set that isn't a signature-asset set changes nothing, and a malformed boost is refused", () => {
+    const config = configWithSignatureSet();
+    const plain = traitPoolDice(pcSystem(), config, SKILLS, FIGHT, { actorId: ACTOR, sceneBoost: { actorId: REF, traitId: FIGHT, steps: 1 } });
+    expect(plain.value.entries.map(e => e.size)).toEqual([8]);
+    expect(traitPoolDice(withSabre(), config, SIG, SABRE, { actorId: ACTOR, sceneBoost: { steps: "1" } }))
+      .toEqual(refused("INVALID_TRAIT_OPTIONS"));
+  });
+
+  it("AC-42 an out-of-action signature asset stays in the pool with SIGNATURE_ASSET_LOST", () => {
+    const config = configWithSignatureSet();
+    const system = withSabre({ outOfAction: true, preLossDice: [10] });
+    const pool = poolOf(config, [[system, SIG, SABRE], [system, ATTRIBUTES, PHYSICAL], [system, SKILLS, FIGHT]]);
+    expect(poolTraitReport(pool, { [REF]: system }, config).value.warnings).toEqual([
+      { code: "SIGNATURE_ASSET_LOST", setId: SIG, actorId: ACTOR, traitId: SABRE }
+    ]);
+    const damaged = withSabre({ outOfAction: false, preLossDice: [12] });
+    expect(poolTraitReport(pool, { [REF]: damaged }, config).value.warnings).toEqual([]);
+    expect(lang.CORTEX.Chat.Nonstandard.Reasons.SIGNATURE_ASSET_LOST).toBeTypeOf("string");
+  });
+});

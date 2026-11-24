@@ -11,7 +11,7 @@
 import { holdsPlotPoints } from "../plot-points/accounts.mjs";
 import { usedD4ComplicationIds } from "../rules/trait-store.mjs";
 import {
-  HITCHES_DONE_FLAG, actorFromKey, getTraitStore, notifyTraitStoreResult, rollerKeyOf, sendTraitStoreRequest
+  HITCHES_DONE_FLAG, actorFromKey, getTraitStore, markedFactsOf, notifyTraitStoreResult, rollerKeyOf, sendTraitStoreRequest
 } from "./trait-store.mjs";
 
 const { DialogV2 } = foundry.applications.api;
@@ -136,7 +136,8 @@ export async function finishHitches(message) {
 
 /**
  * A player uses some of the GM's hitches as opportunities on one temporary trait: down on a
- * complication, up on an asset for the scene, paid by one of their PCs.
+ * complication, up on an asset for the scene, paid by one of their PCs; or up on a signature asset
+ * of one of their PCs for the scene (rules 14 and 20; step 4.9).
  * @param {ChatMessage} message
  * @returns {Promise<boolean>}
  */
@@ -145,8 +146,19 @@ export async function openOpportunityDialog(message) {
   const open = openHitches(message);
   const traits = getTraitStore().traits;
   const targets = traits.map(t => [t.id, `${i18n.localize(t.kind === "complication" ? "CORTEX.Assets.StepDown" : "CORTEX.Assets.StepUp")}: ${t.name} d${t.dice[0]}`]);
-  if ( !targets.length ) return notifyTraitStoreResult({ ok: false, code: "NO_TARGETS" });
   const pcs = ownedPcs();
+  const signatures = new Map();
+  for ( const pc of pcs ) {
+    for ( const set of Object.values(markedFactsOf(pc)) ) {
+      if ( set.mark !== "signatureAssets" ) continue;
+      for ( const entry of set.entries ) {
+        const key = `sig|${pc.uuid}|${entry.id}`;
+        signatures.set(key, { actorId: pc.uuid, traitId: entry.id });
+        targets.push([key, `${i18n.localize("CORTEX.Assets.StepUp")}: ${entry.name} ${entry.dice.map(d => `d${d}`).join(" ")} (${pc.name})`]);
+      }
+    }
+  }
+  if ( !targets.length ) return notifyTraitStoreResult({ ok: false, code: "NO_TARGETS" });
   const content = `
     <fieldset><legend>${i18n.localize("CORTEX.Assets.Opportunities.Dice")}</legend>${dieChecks(open)}</fieldset>
     <div class="form-group"><label>${i18n.localize("CORTEX.Assets.Opportunities.Target")}</label>
@@ -160,10 +172,11 @@ export async function openOpportunityDialog(message) {
   });
   if ( !data || (typeof data !== "object") ) return false;
   const opportunityIds = open.filter(d => data[`die.${d.id}`]).map(d => d.id);
+  const signature = signatures.get(data.target);
   const trait = traits.find(t => t.id === data.target);
-  if ( !opportunityIds.length || !trait ) return false;
-  return announce(await sendTraitStoreRequest("useOpportunities", {
-    messageId: message.id, actorKey: String(data.payer),
-    uses: [{ opportunityIds, direction: trait.kind === "complication" ? "down" : "up", target: { kind: "temporary", traitId: trait.id } }]
-  }));
+  if ( !opportunityIds.length || (!trait && !signature) ) return false;
+  const use = signature
+    ? { opportunityIds, direction: "up", target: { kind: "signature", ...signature } }
+    : { opportunityIds, direction: trait.kind === "complication" ? "down" : "up", target: { kind: "temporary", traitId: trait.id } };
+  return announce(await sendTraitStoreRequest("useOpportunities", { messageId: message.id, actorKey: String(data.payer), uses: [use] }));
 }

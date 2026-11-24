@@ -40,7 +40,8 @@
 
 import {
   actThroughOption, applyComplications, applyHitches, applyOpportunities, checkTemporaryTrait, contestComplications,
-  createAsset, endScene, endSession, removeUsedD4Complications, stepTemporaryTrait, temporaryTraitPoolEntry, upgradeAsset
+  createAsset, createSessionRelationship, endScene, endSession, loseSignatureAsset, recoverSignatureAsset,
+  removeUsedD4Complications, stepTemporaryTrait, temporaryTraitPoolEntry, upgradeAsset
 } from "./assets.mjs";
 import { changeBalance } from "./plot-points.mjs";
 import { fail, ok } from "./result.mjs";
@@ -66,8 +67,15 @@ export const TRAIT_STORE_ACTIONS = Object.freeze({
   applyConsequence: "card",
   createEffectAsset: "gm",
   giveClue: "owner",
-  actThrough: "owner"
+  actThrough: "owner",
+  loseSignatureAsset: "owner",
+  recoverSignatureAsset: "owner",
+  createRelationship: "owner",
+  borrowSignatureAsset: "owner"
 });
+
+/** The actions whose character is named by `payload.actorKey`. */
+const ACTOR_KEY_ACTIONS = ["useOpportunities", "loseSignatureAsset", "recoverSignatureAsset", "createRelationship", "borrowSignatureAsset"];
 
 /** The actions that act on a test or contest card and read it (CardFacts). */
 const CARD_ACTIONS = ["applyConsequence", "createEffectAsset", "actThrough"];
@@ -130,8 +138,20 @@ const ID_PATTERN = /^[a-zA-Z0-9]{16}$/;
  */
 
 /**
- * What the handler knows of one actor a request names.
- * @typedef {{ownedBySender: boolean, holdsPlotPoints: boolean, balance: number|null}} StoreActorFacts
+ * What the handler knows of one actor a request names. `marked` holds the entries of the actor's
+ * sets that carry a mark (ADR-058), by set id; End session needs it for every actor.
+ * @typedef {{ownedBySender: boolean, holdsPlotPoints: boolean, balance: number|null,
+ *   marked?: Object<string, {mark: "signatureAssets"|"sessionRelationships", entries: MarkedEntry[]}>}} StoreActorFacts
+ */
+
+/**
+ * An entry of a marked set as the actor stores it.
+ * @typedef {{id: string, name: string, dice: number[], lost?: object|null, sessionOnly?: boolean}} MarkedEntry
+ */
+
+/**
+ * A change to an entry of an actor's marked set: the whole new entry, or null to remove it.
+ * @typedef {{actorKey: string, setId: string, entryId: string, entry: MarkedEntry|null}} ActorEntryChange
  */
 
 /**
@@ -214,7 +234,7 @@ function ownerActionActor(action, payload, store, card) {
     if ( !side ) return fail("INVALID_INPUT");
     return side.actorKey ? ok(side.actorKey) : fail("ACTOR_NOT_FOUND");
   }
-  if ( action === "useOpportunities" ) {
+  if ( ACTOR_KEY_ACTIONS.includes(action) ) {
     return (typeof payload.actorKey === "string") ? ok(payload.actorKey) : fail("ACTOR_NOT_FOUND");
   }
   if ( action === "buyAsset" ) {
@@ -313,12 +333,43 @@ function applyAction(action, payload, store, actors, roll, card) {
       const state = { traits, sceneBoosts: store.sceneBoosts };
       const ended = action === "endScene" ? endScene(state) : endSession(state);
       if ( !ended.ok ) return ended;
-      return ok({ traits: ended.value.traits, ppLines: [], removedIds: ended.value.removedIds, sceneBoosts: [] });
+      const actorEntries = action === "endSession"
+        ? expiringRelationships(actors).map(({ actorKey, setId, entryId }) => ({ actorKey, setId, entryId, entry: null }))
+        : [];
+      return ok({ traits: ended.value.traits, ppLines: [], removedIds: ended.value.removedIds, sceneBoosts: [], actorEntries });
     }
+    case "loseSignatureAsset":
+    case "recoverSignatureAsset": {
+      const found = markedEntry(actors[payload.actorKey], payload.setId, "signatureAssets", payload.entryId);
+      if ( !found.ok ) return found;
+      const result = action === "loseSignatureAsset"
+        ? loseSignatureAsset(found.value, { outOfAction: payload.outOfAction, steps: payload.steps })
+        : recoverSignatureAsset(found.value, payload.route);
+      if ( !result.ok ) return result;
+      const entry = action === "loseSignatureAsset" ? result.value : result.value.entry;
+      const ppLines = action === "loseSignatureAsset" ? [] : result.value.ppLines;
+      return ok({
+        traits, ppLines, removedIds: [],
+        actorEntries: [{ actorKey: payload.actorKey, setId: payload.setId, entryId: payload.entryId, entry }]
+      });
+    }
+    case "createRelationship": {
+      const set = markedSet(actors[payload.actorKey], payload.setId, "sessionRelationships");
+      if ( !set.ok ) return set;
+      const made = createSessionRelationship({ id: payload.id, name: payload.name });
+      if ( !made.ok ) return made;
+      if ( set.value.entries.some(e => e.id === payload.id) ) return fail("DUPLICATE_TRAIT_ID");
+      return ok({
+        traits, ppLines: made.value.ppLines, removedIds: [],
+        actorEntries: [{ actorKey: payload.actorKey, setId: payload.setId, entryId: payload.id, entry: made.value.entry }]
+      });
+    }
+    case "borrowSignatureAsset":
+      return borrowSignatureAsset(payload, traits, actors);
     case "activateHitches":
       return activateHitches(payload, traits, roll);
     case "useOpportunities":
-      return useOpportunities(payload, store, roll);
+      return useOpportunities(payload, store, actors, roll);
     case "applyConsequence":
       return applyConsequence(payload, traits, actors, card);
     case "createEffectAsset":
@@ -357,16 +408,85 @@ function activateHitches(payload, traits, roll) {
 }
 
 /**
- * A player uses opportunities from the GM's roll on temporary traits (rules 19 and 20; RQ-046,
- * RQ-047). Signature assets wait for step 4.9: OPPORTUNITY_TARGET_NOT_SUPPORTED.
+ * The set of an actor that carries the mark (ADR-058): SET_NOT_MARKED for a set the actor doesn't
+ * have, or with another mark. ACTOR_NOT_FOUND when nothing is known of the actor.
+ * @returns {import("./types.mjs").EngineResult<{mark: string, entries: MarkedEntry[]}>}
  */
-function useOpportunities(payload, store, roll) {
+function markedSet(facts, setId, mark) {
+  if ( !isPlainObject(facts) ) return fail("ACTOR_NOT_FOUND");
+  const set = isPlainObject(facts.marked) && (typeof setId === "string") && Object.hasOwn(facts.marked, setId)
+    ? facts.marked[setId] : null;
+  if ( !isPlainObject(set) || (set.mark !== mark) ) return fail("SET_NOT_MARKED");
+  if ( !Array.isArray(set.entries) || !set.entries.every(isPlainObject) ) return fail("INVALID_INPUT");
+  return ok(set);
+}
+
+/** @returns {import("./types.mjs").EngineResult<MarkedEntry>} an entry of a marked set, TRAIT_NOT_FOUND when absent */
+function markedEntry(facts, setId, mark, entryId) {
+  const set = markedSet(facts, setId, mark);
+  if ( !set.ok ) return set;
+  const entry = set.value.entries.find(e => e.id === entryId);
+  return entry ? ok(entry) : fail("TRAIT_NOT_FOUND");
+}
+
+/**
+ * The relationships bought for the session that End session removes (rule 15), from every actor
+ * the handler passed, in the order given.
+ * @param {Object<string, StoreActorFacts>} actors
+ * @returns {{actorKey: string, setId: string, entryId: string, name: string}[]}
+ */
+function expiringRelationships(actors) {
+  const out = [];
+  for ( const [actorKey, facts] of Object.entries(actors) ) {
+    if ( !isPlainObject(facts?.marked) ) continue;
+    for ( const [setId, set] of Object.entries(facts.marked) ) {
+      if ( !isPlainObject(set) || (set.mark !== "sessionRelationships") || !Array.isArray(set.entries) ) continue;
+      for ( const entry of set.entries ) {
+        if ( isPlainObject(entry) && (entry.sessionOnly === true) ) out.push({ actorKey, setId, entryId: entry.id, name: entry.name });
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * Another character's signature asset used as an ordinary d6 asset for 1 PP (rule 13): origin
+ * "borrowed", held by the borrower, its name the payload's or the signature asset's. The owner's
+ * entry doesn't change.
+ */
+function borrowSignatureAsset(payload, traits, actors) {
+  const from = payload.from;
+  if ( !isPlainObject(from) || (typeof from.actorKey !== "string") ) return fail("INVALID_INPUT");
+  if ( from.actorKey === payload.actorKey ) return fail("SAME_HOLDER");
+  const found = markedEntry(actors[from.actorKey], from.setId, "signatureAssets", from.entryId);
+  if ( !found.ok ) return found;
+  if ( traits.some(t => t.id === payload.id) ) return fail("DUPLICATE_TRAIT_ID");
+  const made = createAsset({
+    id: payload.id, name: payload.name ?? found.value.name, holder: { kind: "actor", actorId: payload.actorKey },
+    origin: "borrowed", borrowedFrom: { actorId: from.actorKey, traitId: found.value.id }
+  });
+  return made.ok ? changed([...traits, made.value.trait], made.value.ppLines) : made;
+}
+
+/**
+ * A player uses opportunities from the GM's roll on temporary traits or signature assets (rules 14,
+ * 19 and 20; RQ-046, RQ-047). A signature target's name and dice are read from its character's
+ * marked set, never from the request: TRAIT_NOT_FOUND when it isn't a signature asset there.
+ */
+function useOpportunities(payload, store, actors, roll) {
   if ( !Array.isArray(payload.uses) ) return fail("INVALID_INPUT");
-  if ( payload.uses.some(use => isPlainObject(use) && (use.target?.kind === "signature")) ) {
-    return fail("OPPORTUNITY_TARGET_NOT_SUPPORTED");
+  const uses = [];
+  for ( const use of payload.uses ) {
+    if ( !isPlainObject(use) || !isPlainObject(use.target) || (use.target.kind !== "signature") ) {
+      uses.push(use);
+      continue;
+    }
+    const entry = signatureEntry(actors[use.target.actorId], use.target.traitId);
+    if ( !entry ) return fail("TRAIT_NOT_FOUND");
+    uses.push({ ...use, target: { kind: "signature", actorId: use.target.actorId, traitId: entry.id, label: entry.name, dice: entry.dice } });
   }
   const used = applyOpportunities({
-    rolled: roll.rolled, side: roll.side, uses: payload.uses, traits: store.traits, sceneBoosts: store.sceneBoosts
+    rolled: roll.rolled, side: roll.side, uses, traits: store.traits, sceneBoosts: store.sceneBoosts
   });
   if ( !used.ok ) return used;
   return ok({
@@ -374,6 +494,17 @@ function useOpportunities(payload, store, roll) {
     sceneBoosts: used.value.sceneBoosts, changes: used.value.changes, takenOut: [],
     roll: { rolled: used.value.rolled }
   });
+}
+
+/** @returns {MarkedEntry|null} the actor's signature asset with that id, from any set marked for them */
+function signatureEntry(facts, entryId) {
+  if ( !isPlainObject(facts?.marked) ) return null;
+  for ( const set of Object.values(facts.marked) ) {
+    if ( !isPlainObject(set) || (set.mark !== "signatureAssets") || !Array.isArray(set.entries) ) continue;
+    const entry = set.entries.find(e => isPlainObject(e) && (e.id === entryId));
+    if ( entry ) return entry;
+  }
+  return null;
 }
 
 /**
@@ -492,8 +623,9 @@ function payment(lines, actorKey, actors, sender) {
  * @returns {import("./types.mjs").EngineResult<{store: TraitStore, payment: StorePayment|null, removedIds: string[],
  *   replayed: boolean, warnings: string[], changes: object[], takenOut: string[],
  *   roll: {rolled: object[], pendingLines: object[], hitchesDone?: boolean}|null,
- *   card: {consequenceKeys?: string[], assetEffect?: string, actThroughSide?: string}|null}>} `card` is the mark to write on
- *   the test or contest card an action named
+ *   card: {consequenceKeys?: string[], assetEffect?: string, actThroughSide?: string}|null,
+ *   actorEntries: ActorEntryChange[]}>} `card` is the mark to write on the test or contest card an action named;
+ *   `actorEntries` the entries of actors' marked sets to write (ADR-058)
  */
 export function dispatchTraitStoreRequest({ sender, request, store, actors = {}, roll = null, card = null } = {}) {
   const checkedStore = checkTraitStore(store);
@@ -506,7 +638,8 @@ export function dispatchTraitStoreRequest({ sender, request, store, actors = {},
   if ( done ) {
     if ( done.userId !== sender.userId ) return fail("ACTION_ID_REUSED");
     return ok({
-      store: current, payment: null, removedIds: [], replayed: true, warnings: [], changes: [], takenOut: [], roll: null, card: null
+      store: current, payment: null, removedIds: [], replayed: true, warnings: [], changes: [], takenOut: [], roll: null, card: null,
+      actorEntries: []
     });
   }
 
@@ -572,7 +705,8 @@ export function dispatchTraitStoreRequest({ sender, request, store, actors = {},
       pendingLines: pending ? applied.value.ppLines.map(l => ({ ...l })) : [],
       ...(applied.value.roll.hitchesDone === undefined ? {} : { hitchesDone: applied.value.roll.hitchesDone })
     } : null,
-    card: applied.value.card ?? null
+    card: applied.value.card ?? null,
+    actorEntries: applied.value.actorEntries ?? []
   });
 }
 
@@ -586,19 +720,25 @@ function ownerMayFinish(payload, roll) {
 /**
  * What End scene or End session would do, for the GM's preview (PA2): the traits that end, the
  * complications that stay for review, and whether scene boosts reset.
+ * At the end of a session it also lists the relationships bought for the session (rule 15) of the
+ * actors given.
  * @param {unknown} store
  * @param {"scene"|"session"} period
- * @returns {import("./types.mjs").EngineResult<{removedIds: string[], reviewIds: string[], boostsReset: number}>}
+ * @param {Object<string, StoreActorFacts>} [actors]
+ * @returns {import("./types.mjs").EngineResult<{removedIds: string[], reviewIds: string[], boostsReset: number,
+ *   expiringRelationships: {actorKey: string, setId: string, entryId: string, name: string}[]}>}
  */
-export function previewEnd(store, period) {
+export function previewEnd(store, period, actors = {}) {
   const checked = checkTraitStore(store);
   if ( !checked.ok ) return checked;
   if ( !["scene", "session"].includes(period) ) return fail("INVALID_INPUT");
   const state = { traits: checked.value.traits, sceneBoosts: checked.value.sceneBoosts };
   const ended = period === "scene" ? endScene(state) : endSession(state);
   if ( !ended.ok ) return ended;
+  if ( !isPlainObject(actors) ) return fail("INVALID_INPUT");
   return ok({
-    removedIds: ended.value.removedIds, reviewIds: ended.value.reviewIds, boostsReset: checked.value.sceneBoosts.length
+    removedIds: ended.value.removedIds, reviewIds: ended.value.reviewIds, boostsReset: checked.value.sceneBoosts.length,
+    expiringRelationships: period === "session" ? expiringRelationships(actors) : []
   });
 }
 

@@ -28,17 +28,26 @@ export const EXTRA_TRAIT_RULES = Object.freeze(["pp", "none"]);
  * says that statement challenges also apply to this set's ratings of several equal-sized dice
  * (rule 16a, RQ-033, ADR-053); it is off unless the GM turns it on, because the dice alone don't
  * tell a multi-level specialty from a resource or a mob trait.
+ *
+ * `signatureAssets` and `sessionRelationships` mark the sets the in-play actions write to
+ * (Assets & Complications rules 12 to 15; ADR-058): a signature-asset set's entries can be lost,
+ * recovered, borrowed and boosted, and a relationships set takes the d6 relationships bought for
+ * a session. They are features rather than roles, so a relationships set can still be a prime set.
  */
 export const TRAIT_SET_FEATURES = Object.freeze([
-  "description", "sfx", "statements", "tags", "subTraits", "hinder", "setSfx", "shutDown", "multiDiceChallenges"
+  "description", "sfx", "statements", "tags", "subTraits", "hinder", "setSfx", "shutDown", "multiDiceChallenges",
+  "signatureAssets", "sessionRelationships"
 ]);
+
+/** The features that mark a set for the in-play actions; a set carries at most one of them. */
+export const TRAIT_SET_MARKS = Object.freeze(["signatureAssets", "sessionRelationships"]);
 
 /**
  * Features added after the first configuration schema. A configuration written before them may
  * leave them out, which reads as off; the stored setting's schema fills them in as off when it
  * is cleaned, so no migration step is needed (as for the character model, ADR-045).
  */
-const LATER_TRAIT_SET_FEATURES = Object.freeze(["multiDiceChallenges"]);
+const LATER_TRAIT_SET_FEATURES = Object.freeze(["multiDiceChallenges", "signatureAssets", "sessionRelationships"]);
 
 /** The fewest sets in the prime role the Handbook advises (rule 7; Handbook p. 26, p. 47; ADR-041). */
 const MIN_PRIME_SETS = 2;
@@ -141,6 +150,14 @@ function checkTraitSet(set, path, report, claimId) {
       const value = set.features[feature];
       if ( (value === undefined) && LATER_TRAIT_SET_FEATURES.includes(feature) ) continue;
       if ( typeof value !== "boolean" ) report("INVALID_TRAIT_SET", `${path}.features.${feature}`);
+    }
+    // A marked set takes entries the player names, with dice (ADR-058): an open list with dice,
+    // and one mark, so an action never has to choose what an entry is.
+    let marked = false;
+    for ( const mark of TRAIT_SET_MARKS ) {
+      if ( set.features[mark] !== true ) continue;
+      if ( marked || (set.list !== "open") || (set.hasDice !== true) ) report("INVALID_TRAIT_SET", `${path}.features.${mark}`);
+      marked = true;
     }
   }
 }
@@ -310,6 +327,19 @@ export function actorKindById(config, kindId) {
 export function kindUsesPrimeSets(kind, config) {
   if ( !kind ) return false;
   return kind.traitSetIds.some(setId => traitSetById(config, setId)?.role === "prime");
+}
+
+/**
+ * The sets of an actor's layout (a kind, or a GMC's blocks; actorLayout) that carry a mark
+ * (ADR-058), in the layout's order. Empty for no layout, and for a feature that isn't a mark.
+ * @param {import("./types.mjs").GameConfig} config
+ * @param {{traitSetIds: string[]}|null} kind
+ * @param {"signatureAssets"|"sessionRelationships"} mark
+ * @returns {import("./types.mjs").TraitSetDef[]}
+ */
+export function markedTraitSets(config, kind, mark) {
+  if ( !TRAIT_SET_MARKS.includes(mark) || !Array.isArray(kind?.traitSetIds) ) return [];
+  return kind.traitSetIds.map(setId => traitSetById(config, setId)).filter(set => set?.features?.[mark] === true);
 }
 
 /**

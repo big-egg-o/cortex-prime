@@ -59,7 +59,10 @@ Hooks.once("init", () => {
   registerContestQuery();
   registerPlotPointSettings();
   Hooks.on("cortexPrimePlotPointsChanged", () => PlotPointsApp.refresh());
-  Hooks.on("updateActor", actor => { if ( actor.type === "pc" ) PlotPointsApp.refresh(); });
+  Hooks.on("updateActor", actor => {
+    if ( actor.type === "pc" ) PlotPointsApp.refresh();
+    ActorTraitsApp.refresh();
+  });
   registerTraitStore();
   Hooks.on("cortexPrimeTraitsChanged", () => {
     TraitTrackerApp.refresh();
