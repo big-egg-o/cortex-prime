@@ -55,7 +55,8 @@
           "RATING_CONFLICTS_WITH_SET": "Rating that no longer fits its trait set",
           "ASSET_NOT_AVAILABLE": "Another character's asset that isn't open",
           "OWN_COMPLICATION": "The roller's own complication",
-          "COMPLICATION_BEYOND_D12": "A complication past d12, rolled as a d12"
+          "COMPLICATION_BEYOND_D12": "A complication past d12, rolled as a d12",
+          "SIGNATURE_ASSET_LOST": "A signature asset that is out of action"
         },
         "UnpricedOne": "No standard cost · 1 trait unpriced",
         "UnpricedMany": "No standard cost · {count} traits unpriced"
@@ -519,7 +520,9 @@
         "hinder": "Hinder",
         "setSfx": "Set SFX",
         "shutDown": "Can be shut down",
-        "multiDiceChallenges": "Challenge ratings of several dice"
+        "multiDiceChallenges": "Challenge ratings of several dice",
+        "signatureAssets": "Signature assets",
+        "sessionRelationships": "Relationships bought for a session"
       },
       "Errors": {
         "INVALID_GAME_CONFIG": "The configuration can't be read.",
@@ -701,7 +704,6 @@
         "WRITE_FAILED": "The change couldn't be saved; see the console.",
         "HITCHES_DONE": "The hitch choice for this roll is already made.",
         "ROLL_NOT_FOUND": "That roll card is gone.",
-        "OPPORTUNITY_TARGET_NOT_SUPPORTED": "Opportunities on signature assets come later.",
         "NAME_REQUIRED": "Give the new complication a name.",
         "NO_TARGETS": "There is no asset or complication to use it on.",
         "OPPORTUNITIES_NOT_HITCHES": "The GM's hitches are the players' opportunities.",
@@ -729,7 +731,11 @@
         "ALREADY_ACTING_THROUGH": "That side already acts through its complication here.",
         "NOT_TAKEN_OUT_BY_COMPLICATION": "That character isn't taken out by a complication.",
         "NOT_A_CLUE_ASSET": "Only a clue asset can be handed over.",
-        "SAME_HOLDER": "That character already holds it."
+        "SAME_HOLDER": "That character already holds it.",
+        "SET_NOT_MARKED": "That trait set isn't marked for this in the game configuration.",
+        "SIGNATURE_ASSET_NOT_LOST": "That signature asset isn't lost.",
+        "SIGNATURE_ASSET_STEP_BELOW_D4": "A signature asset can't step below d4; mark it out of action instead.",
+        "RELATIONSHIP_NAME_REQUIRED": "Say who the relationship is with."
       },
       "TakenOut": "{name} is past d12: its holder is taken out.",
       "Hitches": {
@@ -777,9 +783,31 @@
         "Keep": "Keep (1 PP)",
         "Open": "Open (1 PP)",
         "TakenOut": "Taken out",
-        "Cost": "Keeping an asset for the session, opening it to everyone or giving a clue to another character costs 1 PP each.",
+        "Cost": "Keeping an asset for the session, opening it to everyone, giving a clue to another character, recovering a signature asset at the start of a scene, borrowing one or buying a relationship for the session costs 1 PP each.",
         "Give": "Give the clue",
         "GiveCost": "Give (1 PP)"
+      },
+      "Signature": {
+        "Heading": "Signature assets",
+        "Others": "Other characters' signature assets",
+        "Lose": "Lost…",
+        "OutOfAction": "Out of action",
+        "StepsDown": "Steps down (damage)",
+        "OutOfActionBadge": "Out of action",
+        "DamagedBadge": "Damaged",
+        "Before": "was {before}",
+        "Boost": "+{steps} this scene",
+        "RecoverPp": "Recover (1 PP)",
+        "RecoverFree": "Recover (between sessions)",
+        "BorrowCost": "Borrow as d6 (1 PP)",
+        "BorrowedName": "{name} (borrowed)"
+      },
+      "Relationship": {
+        "New": "New relationship",
+        "NewCost": "New relationship (1 PP)",
+        "With": "With",
+        "ThisSession": "This session",
+        "Expiring": "Relationships bought for the session end: {names}."
       },
       "ActThrough": {
         "Title": "Act anyway",

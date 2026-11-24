@@ -10,7 +10,10 @@ import {
 } from "../../module/assets/trait-store.mjs";
 import { BANK_SETTING, getBank } from "../../module/plot-points/accounts.mjs";
 import TraitTrackerApp, { knownHolders } from "../../module/apps/trait-tracker-app.mjs";
-import { openPoolBuilder } from "../../module/apps/pool-builder.mjs";
+import { addTraitToPool, openPoolBuilder } from "../../module/apps/pool-builder.mjs";
+import { GAME_CONFIG_SETTING, getGameConfig } from "../../module/config/settings.mjs";
+import { pcLayoutId } from "../../module/rules/actor-layout.mjs";
+import { poolTraitReport, traitSetById } from "../../module/rules/index.mjs";
 import { postPoolRoll } from "../../module/dice/post-pool-roll.mjs";
 import { applyCardChange } from "../../module/dice/card-actions.mjs";
 import { rollPpData, settleRollPp } from "../../module/plot-points/roll-pp.mjs";
@@ -493,6 +496,126 @@ export function registerTraitStoreBatch(quench) {
           });
           assert.equal(card.system.selection.keepLimit, 1);
           assert.lengthOf(card.system.selection.totalIds, 1);
+        });
+      });
+
+      describe("signature assets and relationships (step 4.9, ADR-058)", () => {
+        const SIG = "cpSetQuenchSig00";
+        const REL = "cpSetQuenchRel00";
+        let config;
+        before(async () => {
+          config = getGameConfig();
+          const marked = foundry.utils.deepClone(config);
+          const base = traitSetById(marked, "cpSetDistinction");
+          const off = Object.fromEntries(Object.keys(base.features).map(k => [k, false]));
+          marked.traitSets.push(
+            { ...foundry.utils.deepClone(base), id: SIG, name: "Signature assets", role: "other", features: { ...off, signatureAssets: true } },
+            { ...foundry.utils.deepClone(base), id: REL, name: "Relationships", role: "other", fallbackDie: 4, features: { ...off, sessionRelationships: true } }
+          );
+          marked.actorKinds.find(k => k.id === pcLayoutId(marked)).traitSetIds.push(SIG, REL);
+          await game.settings.set(SYSTEM_ID, GAME_CONFIG_SETTING, marked);
+        });
+        after(async () => {
+          await game.settings.set(SYSTEM_ID, GAME_CONFIG_SETTING, config);
+        });
+
+        /** @returns {Promise<Actor>} a PC holding one signature asset and the given relationships */
+        function pcWith(name, asset, relationships = [], plotPoints = 2) {
+          return createActor("pc", name, {
+            plotPoints,
+            traits: {
+              [SIG]: { shutDown: false, sfx: [], entries: [{ id: asset.id, defId: null, name: asset.name, dice: asset.dice, sfx: [] }] },
+              [REL]: { shutDown: false, sfx: [], entries: relationships }
+            }
+          });
+        }
+        const entryOf = (actor, setId, id) => actor.system._source.traits[setId].entries.find(e => e.id === id);
+
+        it("AC-42 out of action: the pool warns and keeps the die; recovered for 1 PP with one ledger entry", async () => {
+          const sabre = { id: foundry.utils.randomID(16), name: "Old Sabre", dice: [10] };
+          const ana = await pcWith("Ana", sabre);
+          const lost = await sendTraitStoreRequest("loseSignatureAsset", { actorKey: ana.uuid, setId: SIG, entryId: sabre.id, outOfAction: true });
+          assert.isTrue(lost.ok, lost.code);
+          assert.deepEqual(entryOf(ana, SIG, sabre.id).lost, { outOfAction: true, preLossDice: [10] });
+          assert.lengthOf(ledgerSince(messages), 0);
+
+          await game.user.unsetFlag(SYSTEM_ID, "pool");
+          assert.isTrue(await addTraitToPool(ana, SIG, sabre.id, null, { open: false }));
+          const pool = game.user.getFlag(SYSTEM_ID, "pool");
+          assert.deepEqual(pool.map(d => d.size), [10]);
+          const report = poolTraitReport(pool, { [ana.uuid]: ana.system.toObject() }, getGameConfig());
+          assert.deepInclude(report.value.warnings, { code: "SIGNATURE_ASSET_LOST", setId: SIG, actorId: ana.id, traitId: sabre.id });
+
+          const back = await sendTraitStoreRequest("recoverSignatureAsset", { actorKey: ana.uuid, setId: SIG, entryId: sabre.id, route: "pp" });
+          assert.isTrue(back.ok, back.code);
+          assert.isNull(entryOf(ana, SIG, sabre.id).lost);
+          assert.deepEqual(entryOf(ana, SIG, sabre.id).dice, [10]);
+          assert.equal(ana.system.plotPoints, 1);
+          const entries = ledgerSince(messages);
+          assert.lengthOf(entries, 1);
+          assert.equal(entries[0].system.reason, "SIGNATURE_ASSET_RECOVER");
+        });
+
+        it("AC-22 (b) opportunities boost a signature asset for the scene; the pool sees it and End scene clears it", async () => {
+          const sabre = { id: foundry.utils.randomID(16), name: "Old Sabre", dice: [10] };
+          const ana = await pcWith("Ana", sabre);
+          const card = await rollCard([customDie("d1", 8, "Guards"), customDie("d2", 6, "Guards")], [1, 5]);
+          const used = await sendTraitStoreRequest("useOpportunities", {
+            messageId: card.id, actorKey: ana.uuid,
+            uses: [{ opportunityIds: ["d1"], direction: "up", target: { kind: "signature", actorId: ana.uuid, traitId: sabre.id } }]
+          });
+          assert.isTrue(used.ok, used.code);
+          assert.deepEqual(getTraitStore().sceneBoosts, [{ actorId: ana.uuid, traitId: sabre.id, steps: 1 }]);
+          assert.deepEqual(entryOf(ana, SIG, sabre.id).dice, [10], "the stored entry doesn't change");
+          assert.equal(ana.system.plotPoints, 1);
+          await game.user.unsetFlag(SYSTEM_ID, "pool");
+          assert.isTrue(await addTraitToPool(ana, SIG, sabre.id, null, { open: false }));
+          assert.deepEqual(game.user.getFlag(SYSTEM_ID, "pool").map(d => d.size), [12]);
+          assert.isTrue((await sendTraitStoreRequest("endScene", {})).ok);
+          assert.deepEqual(getTraitStore().sceneBoosts, []);
+        });
+
+        it("AC-46 a relationship bought for the session is removed by End session; a lasting one stays", async () => {
+          const mentor = { id: foundry.utils.randomID(16), defId: null, name: "Mentor Vale", dice: [8], sfx: [] };
+          const ana = await pcWith("Ana", { id: foundry.utils.randomID(16), name: "Old Sabre", dice: [8] }, [mentor]);
+          const id = foundry.utils.randomID(16);
+          const made = await sendTraitStoreRequest("createRelationship", { actorKey: ana.uuid, setId: REL, id, name: "Dockmaster Ruiz" });
+          assert.isTrue(made.ok, made.code);
+          assert.deepInclude(entryOf(ana, REL, id), { name: "Dockmaster Ruiz", dice: [6], sessionOnly: true });
+          assert.equal(ana.system.plotPoints, 1);
+          assert.equal(ledgerSince(messages)[0]?.system.reason, "RELATIONSHIP_CREATE");
+          assert.isTrue((await sendTraitStoreRequest("endSession", {})).ok);
+          assert.deepEqual(ana.system._source.traits[REL].entries.map(e => e.id), [mentor.id]);
+        });
+
+        it("AC-44 borrowing another PC's signature asset makes a d6 asset for 1 PP; the owner's entry stays", async () => {
+          const coin = { id: foundry.utils.randomID(16), name: "Lucky Coin", dice: [8] };
+          const ben = await pcWith("Ben", coin);
+          const ana = await pcWith("Ana", { id: foundry.utils.randomID(16), name: "Old Sabre", dice: [10] });
+          const id = foundry.utils.randomID(16);
+          const result = await sendTraitStoreRequest("borrowSignatureAsset", {
+            actorKey: ana.uuid, id, name: "Lucky Coin (borrowed)", from: { actorKey: ben.uuid, setId: SIG, entryId: coin.id }
+          });
+          assert.isTrue(result.ok, result.code);
+          assert.deepInclude(getTraitStore().traits.find(t => t.id === id), {
+            dice: [6], origin: "borrowed", borrowedFrom: { actorId: ben.uuid, traitId: coin.id }
+          });
+          assert.equal(ana.system.plotPoints, 1);
+          assert.deepEqual(entryOf(ben, SIG, coin.id).dice, [8]);
+          assert.equal(ben.system.plotPoints, 2);
+        });
+
+        it("the character's window lists the signature asset, its loss, and New relationship", async () => {
+          const sabre = { id: foundry.utils.randomID(16), name: "Old Sabre", dice: [10] };
+          const ana = await pcWith("Ana", sabre);
+          await sendTraitStoreRequest("loseSignatureAsset", { actorKey: ana.uuid, setId: SIG, entryId: sabre.id, outOfAction: true });
+          const app = await ActorTraitsApp.open(ana);
+          const row = app.element.querySelector(`[data-entry-id="${sabre.id}"]`);
+          assert.include(row.textContent, "Old Sabre");
+          assert.include(row.textContent, game.i18n.localize("CORTEX.Assets.Signature.OutOfActionBadge"));
+          assert.isOk(row.querySelector('[data-action="recoverSignature"][data-route="pp"]'));
+          assert.isOk(app.element.querySelector(`[data-action="newRelationship"][data-set-id="${REL}"]`));
+          await app.close();
         });
       });
 

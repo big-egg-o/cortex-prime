@@ -343,3 +343,32 @@ describe("statements on entries shaped like the model's data (rule 16)", () => {
     });
   });
 });
+
+describe("the entry fields of marked sets (step 4.9, ADR-058)", () => {
+  const distinction = state => state.traits[DISTINCTIONS].entries[0];
+
+  it("accepts a lost signature asset and a relationship bought for the session, and null for a recovered one", () => {
+    const lost = edited(c => Object.assign(distinction(c), { dice: [6], lost: { outOfAction: true, preLossDice: [8] } }));
+    expect(validateEntryFields(pc(), lost)).toEqual({
+      ok: true, value: { checked: [{ setId: DISTINCTIONS, entryId: E1, subId: null, field: "preLossDice" }] }
+    });
+    expect(validateEntryFields(lost, lost).value.checked).toEqual([]);
+    expect(validateEntryFields(lost, edited(c => { distinction(c).lost = null; }, lost)).ok).toBe(true);
+    expect(validateEntryFields(pc(), edited(c => { distinction(c).sessionOnly = true; })).ok).toBe(true);
+  });
+
+  it("refuses a malformed lost mark or session flag, and a d7 among the dice from before the loss", () => {
+    const bad = [
+      { lost: { outOfAction: "yes", preLossDice: [8] } },
+      { lost: { outOfAction: true } },
+      { lost: { outOfAction: true, preLossDice: [] } },
+      { lost: "out" },
+      { sessionOnly: "yes" }
+    ];
+    for ( const fields of bad ) {
+      expect(validateEntryFields(pc(), edited(c => Object.assign(distinction(c), fields)))).toEqual(refused("INVALID_TRAIT_DATA"));
+    }
+    expect(validateEntryFields(pc(), edited(c => Object.assign(distinction(c), { lost: { outOfAction: false, preLossDice: [7] } }))))
+      .toEqual(refused("INVALID_DIE_SIZE"));
+  });
+});

@@ -33,5 +33,53 @@
     <li class="hint">{{ localize "CORTEX.Assets.None" }}</li>
     {{/each}}
   </ul>
+  {{#if signatureAssets.length}}
+  <h4 class="cp-tracker-heading">{{ localize "CORTEX.Assets.Signature.Heading" }}</h4>
+  <ul class="cp-tracker-list">
+    {{#each signatureAssets}}
+    <li class="cp-tracker-trait{{#if this.outOfAction}} cp-signature-lost{{/if}}" data-entry-id="{{ this.entryId }}">
+      <div class="cp-tracker-line">
+        <strong class="cp-tracker-die">{{ this.die }}</strong>
+        <span class="cp-tracker-name">{{ this.name }}</span>
+        <span class="cp-tracker-meta">{{#if this.boost}}{{ this.boost }}{{/if}}{{#if this.lost}}{{#if this.boost}} · {{/if}}{{ localize "CORTEX.Assets.Signature.Before" before=this.before }}{{/if}}</span>
+        {{#if this.outOfAction}}<span class="cp-taken-out">{{ localize "CORTEX.Assets.Signature.OutOfActionBadge" }}</span>{{/if}}
+        {{#if this.damaged}}<span class="cp-taken-out">{{ localize "CORTEX.Assets.Signature.DamagedBadge" }}</span>{{/if}}
+        {{#if @root.canAct}}
+        <button type="button" data-action="loseSignature" data-set-id="{{ this.setId }}" data-entry-id="{{ this.entryId }}">{{ localize "CORTEX.Assets.Signature.Lose" }}</button>
+        {{#if this.lost}}
+        <button type="button" data-action="recoverSignature" data-route="pp" data-set-id="{{ this.setId }}" data-entry-id="{{ this.entryId }}">{{ localize "CORTEX.Assets.Signature.RecoverPp" }}</button>
+        <button type="button" data-action="recoverSignature" data-route="betweenSessions" data-set-id="{{ this.setId }}" data-entry-id="{{ this.entryId }}">{{ localize "CORTEX.Assets.Signature.RecoverFree" }}</button>
+        {{/if}}
+        {{/if}}
+      </div>
+    </li>
+    {{/each}}
+  </ul>
+  {{/if}}
+  {{#each relationshipSets}}
+  <h4 class="cp-tracker-heading">{{ this.setName }}</h4>
+  <ul class="cp-tracker-list">
+    {{#each this.sessionOnly}}
+    <li class="cp-tracker-trait"><div class="cp-tracker-line">
+      <strong class="cp-tracker-die">{{ this.die }}</strong>
+      <span class="cp-tracker-name">{{ this.name }}</span>
+      <span class="cp-tracker-meta">{{ localize "CORTEX.Assets.Relationship.ThisSession" }}</span>
+    </div></li>
+    {{/each}}
+  </ul>
+  {{#if @root.canAct}}<button type="button" data-action="newRelationship" data-set-id="{{ this.setId }}">{{ localize "CORTEX.Assets.Relationship.NewCost" }}</button>{{/if}}
+  {{/each}}
+  {{#if borrowable.length}}
+  <h4 class="cp-tracker-heading">{{ localize "CORTEX.Assets.Signature.Others" }}</h4>
+  <ul class="cp-tracker-list">
+    {{#each borrowable}}
+    <li class="cp-tracker-trait"><div class="cp-tracker-line">
+      <span class="cp-tracker-name">{{ this.name }}</span>
+      <span class="cp-tracker-meta">{{ this.owner }}</span>
+      <button type="button" data-action="borrowSignature" data-actor-key="{{ this.actorKey }}" data-set-id="{{ this.setId }}" data-entry-id="{{ this.entryId }}">{{ localize "CORTEX.Assets.Signature.BorrowCost" }}</button>
+    </div></li>
+    {{/each}}
+  </ul>
+  {{/if}}
   <p class="hint">{{ localize "CORTEX.Assets.Mine.Cost" }}</p>
 </section>

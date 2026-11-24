@@ -39,7 +39,8 @@ describe("poolRoll card strings for a nonstandard selection (ADR-029, RQ-030)", 
   });
 
   it("ADR-029 has a reason for every warning code a pool can carry, and no others", () => {
-    const codes = [...poolWarningCodes(), ...TEMP_TRAIT_CARD_WARNINGS].sort();
+    // SIGNATURE_ASSET_LOST comes from pool-traits.mjs's report (step 4.9, A&C rule 12).
+    const codes = [...poolWarningCodes(), ...TEMP_TRAIT_CARD_WARNINGS, "SIGNATURE_ASSET_LOST"].sort();
     expect(Object.keys(nonstandard.Reasons ?? {}).sort()).toEqual(codes);
     for ( const code of codes ) expect(nonstandard.Reasons[code], code).toBeTypeOf("string");
   });

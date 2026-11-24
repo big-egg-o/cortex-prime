@@ -100,7 +100,8 @@ describe("the trait store (ADR-057, step 4.8a)", () => {
     const first = run(PLAYER, req).value;
     const again = run(PLAYER, req, first.store).value;
     expect(again).toEqual({
-      store: first.store, payment: null, removedIds: [], replayed: true, warnings: [], changes: [], takenOut: [], roll: null, card: null
+      store: first.store, payment: null, removedIds: [], replayed: true, warnings: [], changes: [], takenOut: [], roll: null, card: null,
+      actorEntries: []
     });
     expect(run(GM, req, first.store)).toEqual(refused("ACTION_ID_REUSED"));
   });
@@ -172,7 +173,7 @@ describe("the trait store (ADR-057, step 4.8a)", () => {
     store = run(PLAYER, request("buyAsset", { id: id("Rope"), name: "Rope", holder: holder(ANA) }, 2), store).value.store;
     store = { ...store, sceneBoosts: [{ actorId: ANA, traitId: id("Sabre"), steps: 1 }] };
     expect(previewEnd(store, "scene").value).toEqual({
-      removedIds: [id("Smoke"), id("Rope")], reviewIds: [id("Alarm")], boostsReset: 1
+      removedIds: [id("Smoke"), id("Rope")], reviewIds: [id("Alarm")], boostsReset: 1, expiringRelationships: []
     });
     const ended = run(GM, request("endScene", {}, 3), store).value;
     expect(ended.store.traits.map(t => t.id)).toEqual([id("Alarm")]);
@@ -359,7 +360,7 @@ describe("hitches and opportunities on the roll card (step 4.8b)", () => {
     expect(run(PLAYER, use(), store, ACTORS, playerRoll([die("d1", 8, 1)]))).toEqual(refused("HITCHES_NOT_OPPORTUNITIES"));
     expect(run(PLAYER, use({ uses: [{ opportunityIds: ["d1"], direction: "up", target: {
       kind: "signature", actorId: ANA, traitId: id("Sword"), label: "Sword", dice: [8]
-    } }] }), store, ACTORS, roll)).toEqual(refused("OPPORTUNITY_TARGET_NOT_SUPPORTED"));
+    } }] }), store, ACTORS, roll)).toEqual(refused("TRAIT_NOT_FOUND"));
     expect(run(PLAYER, use(), store, ACTORS, null)).toEqual(refused("ROLL_NOT_FOUND"));
   });
 });
@@ -627,5 +628,156 @@ describe("giving a clue and acting through a complication past d12 (step 4.8d)",
     const acted = run(GM, request("actThrough", { messageId: "msg", side: "opposition" }, 2), store, ACTORS, null, contestCard()).value;
     expect(acted.payment).toBeNull();
     expect(acted.warnings).toEqual(["BANK_SPEND_NOT_LISTED"]);
+  });
+});
+
+describe("signature assets and relationships (step 4.9, ADR-058)", () => {
+  const BEN = "Actor.Ben0000000000000";
+  const SIG = "cpSetSignature00";
+  const REL = "cpSetRelations00";
+  const sabre = { id: id("Old Sabre"), name: "Old Sabre", dice: [10] };
+  const coin = { id: id("Lucky Coin"), name: "Lucky Coin", dice: [8] };
+  const anaFacts = (sigEntries = [sabre], relEntries = []) => ({
+    ...ACTORS[ANA],
+    marked: {
+      [SIG]: { mark: "signatureAssets", entries: sigEntries },
+      [REL]: { mark: "sessionRelationships", entries: relEntries }
+    }
+  });
+  const actors = (ana = anaFacts()) => ({
+    ...ACTORS,
+    [ANA]: ana,
+    [BEN]: { ownedBySender: false, holdsPlotPoints: true, balance: 1, marked: { [SIG]: { mark: "signatureAssets", entries: [coin] } } }
+  });
+  const go = (sender, req, store = emptyTraitStore(), facts = actors(), roll = null) => run(sender, req, store, facts, roll);
+  const lose = (extra, revision = 0) => request("loseSignatureAsset", { actorKey: ANA, setId: SIG, entryId: sabre.id, ...extra }, revision);
+
+  it("AC-42 a signature asset put out of action stays in the entry; recovering it for a PP or between sessions", () => {
+    const lost = go(PLAYER, lose({ outOfAction: true })).value;
+    expect(lost.payment).toBeNull();
+    expect(lost.store.revision).toBe(1);
+    const lostEntry = { ...sabre, lost: { outOfAction: true, preLossDice: [10] } };
+    expect(lost.actorEntries).toEqual([{ actorKey: ANA, setId: SIG, entryId: sabre.id, entry: lostEntry }]);
+
+    const withLost = actors(anaFacts([lostEntry]));
+    const recover = route => request("recoverSignatureAsset", { actorKey: ANA, setId: SIG, entryId: sabre.id, route }, 1);
+    const paid = go(PLAYER, recover("pp"), lost.store, withLost).value;
+    expect(paid.actorEntries).toEqual([{ actorKey: ANA, setId: SIG, entryId: sabre.id, entry: { ...sabre, lost: null } }]);
+    expect(paid.payment).toMatchObject({ account: { kind: "actor", actorKey: ANA }, delta: -1, balance: 1 });
+    expect(paid.payment.line).toMatchObject({ reason: "SIGNATURE_ASSET_RECOVER", label: "Old Sabre" });
+    const free = go(PLAYER, recover("betweenSessions"), lost.store, withLost).value;
+    expect(free.actorEntries[0].entry).toEqual({ ...sabre, lost: null });
+    expect(free.payment).toBeNull();
+    expect(go(PLAYER, recover("pp"), lost.store, actors())).toEqual(refused("SIGNATURE_ASSET_NOT_LOST"));
+  });
+
+  it("AC-43 damage steps the dice down and recovery restores the dice from before the first loss (RQ-051)", () => {
+    const damaged = go(GM, lose({ steps: -1 })).value.actorEntries[0].entry;
+    expect(damaged).toEqual({ ...sabre, dice: [8], lost: { outOfAction: false, preLossDice: [10] } });
+    const out = go(GM, lose({ outOfAction: true }), emptyTraitStore(), actors(anaFacts([damaged]))).value.actorEntries[0].entry;
+    expect(out.lost).toEqual({ outOfAction: true, preLossDice: [10] });
+    const back = go(PLAYER, request("recoverSignatureAsset", {
+      actorKey: ANA, setId: SIG, entryId: sabre.id, route: "pp"
+    }), emptyTraitStore(), actors(anaFacts([out]))).value;
+    expect(back.actorEntries[0].entry).toEqual({ ...sabre, lost: null });
+  });
+
+  it("signature assets: refusals for the set, the entry, the character and the payer", () => {
+    expect(go(PLAYER, lose({ outOfAction: true, setId: REL }), emptyTraitStore(), actors())).toEqual(refused("SET_NOT_MARKED"));
+    expect(go(PLAYER, lose({ outOfAction: true, setId: "cpSetNowhere0000" }), emptyTraitStore(), actors()))
+      .toEqual(refused("SET_NOT_MARKED"));
+    expect(go(PLAYER, lose({ outOfAction: true, entryId: id("Nothing") }), emptyTraitStore(), actors()))
+      .toEqual(refused("TRAIT_NOT_FOUND"));
+    expect(go(PLAYER, lose({}), emptyTraitStore(), actors())).toEqual(refused("INVALID_INPUT"));
+    expect(go(PLAYER, lose({ steps: -4 }), emptyTraitStore(), actors())).toEqual(refused("SIGNATURE_ASSET_STEP_BELOW_D4"));
+    expect(go(PLAYER, lose({ outOfAction: true, actorKey: BEN }), emptyTraitStore(), actors())).toEqual(refused("NOT_YOUR_CHARACTER"));
+    expect(go(PLAYER, lose({ outOfAction: true, actorKey: undefined }), emptyTraitStore(), actors())).toEqual(refused("ACTOR_NOT_FOUND"));
+    const lostEntry = { ...sabre, lost: { outOfAction: true, preLossDice: [10] } };
+    const broke = actors({ ...anaFacts([lostEntry]), balance: 0 });
+    expect(go(PLAYER, request("recoverSignatureAsset", { actorKey: ANA, setId: SIG, entryId: sabre.id, route: "pp" }),
+      emptyTraitStore(), broke)).toEqual(refused("PP_INSUFFICIENT"));
+  });
+
+  it("a GMC's signature asset is recovered by the GM at no cost, with BANK_SPEND_NOT_LISTED (RQ-043)", () => {
+    const lostEntry = { ...sabre, lost: { outOfAction: true, preLossDice: [10] } };
+    const gmc = { ...actors(), [GUARD_1]: { ...ACTORS[GUARD_1], marked: { [SIG]: { mark: "signatureAssets", entries: [lostEntry] } } } };
+    const req = () => request("recoverSignatureAsset", { actorKey: GUARD_1, setId: SIG, entryId: sabre.id, route: "pp" });
+    const result = go(GM, req(), emptyTraitStore(), gmc).value;
+    expect(result.payment).toBeNull();
+    expect(result.warnings).toEqual(["BANK_SPEND_NOT_LISTED"]);
+    expect(go(PLAYER, req(), emptyTraitStore(), gmc)).toEqual(refused("NOT_YOUR_CHARACTER"));
+  });
+
+  it("AC-46 a d6 relationship for the session, bought for 1 PP into the marked set", () => {
+    const create = (extra = {}, revision = 0) => request("createRelationship", {
+      actorKey: ANA, setId: REL, id: id("Dockmaster Ruiz"), name: "Dockmaster Ruiz", ...extra
+    }, revision);
+    const made = go(PLAYER, create()).value;
+    expect(made.actorEntries).toEqual([{
+      actorKey: ANA, setId: REL, entryId: id("Dockmaster Ruiz"),
+      entry: { id: id("Dockmaster Ruiz"), defId: null, name: "Dockmaster Ruiz", dice: [6], sessionOnly: true }
+    }]);
+    expect(made.payment).toMatchObject({ delta: -1, balance: 1 });
+    expect(made.payment.line.reason).toBe("RELATIONSHIP_CREATE");
+    const taken = actors(anaFacts([sabre], [{ id: id("Dockmaster Ruiz"), name: "Ruiz", dice: [8] }]));
+    expect(go(PLAYER, create(), emptyTraitStore(), taken)).toEqual(refused("DUPLICATE_TRAIT_ID"));
+    expect(go(PLAYER, create({ setId: SIG }), emptyTraitStore(), actors())).toEqual(refused("SET_NOT_MARKED"));
+    expect(go(PLAYER, create({ name: " " }), emptyTraitStore(), actors())).toEqual(refused("INVALID_INPUT"));
+    expect(go(PLAYER, create(), emptyTraitStore(), actors({ ...anaFacts(), balance: 0 }))).toEqual(refused("PP_INSUFFICIENT"));
+  });
+
+  it("AC-44 borrowing another character's signature asset makes an ordinary d6 asset for 1 PP; the owner's entry stays", () => {
+    const borrow = (extra = {}) => request("borrowSignatureAsset", {
+      actorKey: ANA, id: id("Borrowed Coin"), name: "Lucky Coin (borrowed)", from: { actorKey: BEN, setId: SIG, entryId: coin.id },
+      ...extra
+    });
+    const result = go(PLAYER, borrow()).value;
+    expect(result.store.traits).toEqual([expect.objectContaining({
+      id: id("Borrowed Coin"), kind: "asset", name: "Lucky Coin (borrowed)", dice: [6], holder: holder(ANA), origin: "borrowed",
+      borrowedFrom: { actorId: BEN, traitId: coin.id }
+    })]);
+    expect(result.payment).toMatchObject({ account: { kind: "actor", actorKey: ANA }, delta: -1 });
+    expect(result.payment.line.reason).toBe("ASSET_CREATE");
+    expect(result.actorEntries).toEqual([]);
+    expect(go(PLAYER, borrow({ name: undefined })).value.store.traits[0].name).toBe("Lucky Coin");
+    expect(go(PLAYER, borrow({ from: { actorKey: ANA, setId: SIG, entryId: sabre.id } }))).toEqual(refused("SAME_HOLDER"));
+    expect(go(PLAYER, borrow({ from: { actorKey: "Actor.Gone000000000000", setId: SIG, entryId: coin.id } })))
+      .toEqual(refused("ACTOR_NOT_FOUND"));
+    expect(go(PLAYER, borrow({ from: { actorKey: BEN, setId: SIG, entryId: id("Nothing") } }))).toEqual(refused("TRAIT_NOT_FOUND"));
+    expect(go(PLAYER, borrow({ from: null }))).toEqual(refused("INVALID_INPUT"));
+  });
+
+  it("AC-22 (b) opportunities step a signature asset up for the scene, read from the character, not the request", () => {
+    const roll = gmRoll([die("d1", 8, 1), die("d2", 6, 1), die("d3", 10, 9)]);
+    const result = go(PLAYER, request("useOpportunities", {
+      actorKey: ANA, uses: [{
+        opportunityIds: ["d1", "d2"], direction: "up",
+        target: { kind: "signature", actorId: ANA, traitId: sabre.id, label: "Fake", dice: [4] }
+      }]
+    }), emptyTraitStore(), actors(), roll).value;
+    expect(result.store.sceneBoosts).toEqual([{ actorId: ANA, traitId: sabre.id, steps: 1 }]);
+    expect(result.changes).toEqual([expect.objectContaining({ from: 10, to: 12, lostSteps: 1 })]);
+    expect(result.payment.line).toMatchObject({ reason: "OPPORTUNITY", label: "Old Sabre" });
+    const ended = go(GM, request("endScene", {}, 1), result.store, actors()).value;
+    expect(ended.store.sceneBoosts).toEqual([]);
+  });
+
+  it("End session removes the relationships bought for the session from every character", () => {
+    const mentor = { id: id("Mentor Vale"), name: "Mentor Vale", dice: [8] };
+    const ruiz = { id: id("Dockmaster Ruiz"), defId: null, name: "Dockmaster Ruiz", dice: [6], sessionOnly: true };
+    const facts = actors(anaFacts([sabre], [mentor, ruiz]));
+    expect(previewEnd(emptyTraitStore(), "session", facts).value.expiringRelationships).toEqual([
+      { actorKey: ANA, setId: REL, entryId: ruiz.id, name: "Dockmaster Ruiz" }
+    ]);
+    expect(previewEnd(emptyTraitStore(), "scene", facts).value.expiringRelationships).toEqual([]);
+    const ended = go(GM, request("endSession", {}), emptyTraitStore(), facts).value;
+    expect(ended.actorEntries).toEqual([{ actorKey: ANA, setId: REL, entryId: ruiz.id, entry: null }]);
+    expect(go(GM, request("endScene", {}), emptyTraitStore(), facts).value.actorEntries).toEqual([]);
+  });
+
+  it("the new actions are a character owner's", () => {
+    for ( const action of ["loseSignatureAsset", "recoverSignatureAsset", "createRelationship", "borrowSignatureAsset"] ) {
+      expect(TRAIT_STORE_ACTIONS[action]).toBe("owner");
+    }
   });
 });

@@ -106,6 +106,13 @@ function traitEntrySchema() {
     // Plain-text tags, such as a resource's or an ability's (rules 18 and 20).
     tags: new ArrayField(new StringField({ required: true, blank: true }), { ...OPTIONAL }),
     sub: new ArrayField(new SchemaField(subTraitSchema()), { ...OPTIONAL }),
+    // A signature asset lost in play, and its dice from before the first loss (A&C rule 12,
+    // RQ-051); null once recovered. A relationship bought for the session (rule 15). ADR-058.
+    lost: new SchemaField({
+      outOfAction: new StrictBooleanField({ required: true, initial: undefined }),
+      preLossDice: ratingField()
+    }, { ...OPTIONAL, nullable: true }),
+    sessionOnly: new StrictBooleanField({ ...OPTIONAL }),
     // Shut down by hand, or by a challenge of a d4 trait (rule 15, RQ-021).
     shutDown: new SchemaField(
       { reason: new StringField({ required: true, choices: SHUT_DOWN_REASONS }) },

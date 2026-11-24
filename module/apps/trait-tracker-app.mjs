@@ -10,7 +10,9 @@
 import { previewEnd, trackerGroups } from "../rules/trait-store.mjs";
 import { DIE_SIZES } from "../rules/types.mjs";
 import { holdsPlotPoints } from "../plot-points/accounts.mjs";
-import { getTraitStore, notifyTraitStoreResult, sendTraitStoreRequest } from "../assets/trait-store.mjs";
+import {
+  getTraitStore, notifyTraitStoreResult, relationshipActorFacts, sendTraitStoreRequest
+} from "../assets/trait-store.mjs";
 
 const { ApplicationV2, HandlebarsApplicationMixin, DialogV2 } = foundry.applications.api;
 const APP_ID = "cortex-prime-trait-tracker";
@@ -189,7 +191,7 @@ export default class TraitTrackerApp extends HandlebarsApplicationMixin(Applicat
   /** End scene or End session, after a preview of what ends and what stays (PA2). */
   static async #end(period) {
     const store = getTraitStore();
-    const preview = previewEnd(store, period);
+    const preview = previewEnd(store, period, period === "session" ? relationshipActorFacts() : {});
     if ( !notifyTraitStoreResult(preview) ) return;
     const name = id => store.traits.find(t => t.id === id)?.name ?? id;
     const esc = foundry.utils.escapeHTML;
@@ -199,7 +201,11 @@ export default class TraitTrackerApp extends HandlebarsApplicationMixin(Applicat
     const content = `
       <h4>${i18n.localize("CORTEX.Assets.Preview.Ends")}</h4>${list(preview.value.removedIds)}
       <h4>${i18n.localize("CORTEX.Assets.Preview.Review")}</h4>${list(preview.value.reviewIds)}
-      <p>${i18n.format("CORTEX.Assets.Preview.Boosts", { count: preview.value.boostsReset })}</p>`;
+      <p>${i18n.format("CORTEX.Assets.Preview.Boosts", { count: preview.value.boostsReset })}</p>`
+      + (preview.value.expiringRelationships.length ? `<p>${i18n.format("CORTEX.Assets.Relationship.Expiring", {
+        names: esc(preview.value.expiringRelationships
+          .map(r => `${r.name} (${fromUuidSync(r.actorKey)?.name ?? r.actorKey})`).join(", "))
+      })}</p>` : "");
     const title = period === "scene" ? "CORTEX.Assets.EndScene" : "CORTEX.Assets.EndSession";
     const yes = await DialogV2.confirm({ window: { title }, content });
     if ( yes ) await TraitTrackerApp.#send(period === "scene" ? "endScene" : "endSession", {});

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
-  GAME_CONFIG_SCHEMA_VERSION, actorKindById, defaultGameConfig, kindUsesPrimeSets, ratingOptionsOf, removeTraitSet,
-  traitDefById, traitSetById, validateGameConfig
+  GAME_CONFIG_SCHEMA_VERSION, actorKindById, defaultGameConfig, kindUsesPrimeSets, markedTraitSets, ratingOptionsOf,
+  removeTraitSet, traitDefById, traitSetById, validateGameConfig
 } from "../../module/rules/game-config.mjs";
 import { validateRating } from "../../module/rules/traits.mjs";
 
@@ -587,5 +587,65 @@ describe("features added after the first schema (ADR-053)", () => {
     expect(validateGameConfig(config).errors).toEqual([
       { code: "INVALID_TRAIT_SET", path: "traitSets.0.features.multiDiceChallenges" }
     ]);
+  });
+});
+
+describe("signature-asset and relationship sets (step 4.9)", () => {
+  const MARKS = ["signatureAssets", "sessionRelationships"];
+
+  it("starts with both marks off and reads a set without them as off", () => {
+    const config = defaultGameConfig();
+    for ( const mark of MARKS ) expect(config.traitSets.every(set => set.features[mark] === false)).toBe(true);
+    for ( const set of config.traitSets ) for ( const mark of MARKS ) delete set.features[mark];
+    expect(validateGameConfig(config).ok).toBe(true);
+  });
+
+  it("accepts a mark on an open set with dice", () => {
+    for ( const mark of MARKS ) {
+      const config = defaultGameConfig();
+      config.traitSets.push(openSet("cpSetMarked00000", { features: { ...config.traitSets[0].features, [mark]: true } }));
+      expect(validateGameConfig(config)).toMatchObject({ ok: true, errors: [] });
+    }
+  });
+
+  it("refuses a mark on a fixed set or a set without dice, and both marks on one set", () => {
+    for ( const mark of MARKS ) {
+      const config = defaultGameConfig();
+      config.traitSets[1].features[mark] = true;
+      expect(validateGameConfig(config).errors).toEqual([
+        { code: "INVALID_TRAIT_SET", path: `traitSets.1.features.${mark}` }
+      ]);
+      const noDice = defaultGameConfig();
+      noDice.traitSets[0].hasDice = false;
+      noDice.traitSets[0].features[mark] = true;
+      expect(validateGameConfig(noDice).errors).toEqual([
+        { code: "INVALID_TRAIT_SET", path: `traitSets.0.features.${mark}` }
+      ]);
+    }
+    const both = defaultGameConfig();
+    for ( const mark of MARKS ) both.traitSets[0].features[mark] = true;
+    expect(validateGameConfig(both).errors).toEqual([
+      { code: "INVALID_TRAIT_SET", path: "traitSets.0.features.sessionRelationships" }
+    ]);
+  });
+
+  it("lists the marked sets of an actor's layout in its order", () => {
+    const config = defaultGameConfig();
+    const base = config.traitSets[0].features;
+    config.traitSets.push(
+      openSet("cpSetRelations00", { features: { ...base, sessionRelationships: true } }),
+      openSet("cpSetSignature00", { features: { ...base, signatureAssets: true } }),
+      openSet("cpSetBonds000000", { features: { ...base, sessionRelationships: true } })
+    );
+    const pc = actorKindById(config, "cpKindPlayerChar");
+    pc.traitSetIds.push("cpSetBonds000000", "cpSetSignature00", "cpSetRelations00");
+    expect(markedTraitSets(config, pc, "sessionRelationships").map(set => set.id))
+      .toEqual(["cpSetBonds000000", "cpSetRelations00"]);
+    expect(markedTraitSets(config, pc, "signatureAssets").map(set => set.id)).toEqual(["cpSetSignature00"]);
+    expect(markedTraitSets(config, actorKindById(config, "cpKindMinorGmc00"), "signatureAssets")).toEqual([]);
+    expect(markedTraitSets(config, { traitSetIds: ["cpSetSignature00", "cpSetGone0000000"] }, "signatureAssets")
+      .map(set => set.id)).toEqual(["cpSetSignature00"]);
+    expect(markedTraitSets(config, null, "signatureAssets")).toEqual([]);
+    expect(markedTraitSets(config, pc, "sfx")).toEqual([]);
   });
 });

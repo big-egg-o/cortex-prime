@@ -462,6 +462,20 @@ function entryPlainFieldWellFormed(field, value) {
   return optionalText(value);
 }
 
+/**
+ * Whether the fields of a marked set's entry can be stored (ADR-058): `lost` absent, null, or an
+ * out-of-action flag with the dice from before the loss (at least one; their sizes are checked
+ * with the other ratings), and `sessionOnly` absent or a boolean.
+ * @param {object} entry
+ * @returns {boolean}
+ */
+function markFieldsWellFormed(entry) {
+  if ( (entry.sessionOnly !== undefined) && (typeof entry.sessionOnly !== "boolean") ) return false;
+  if ( (entry.lost === undefined) || (entry.lost === null) ) return true;
+  return isPlainObject(entry.lost) && (typeof entry.lost.outOfAction === "boolean")
+    && Array.isArray(entry.lost.preLossDice) && (entry.lost.preLossDice.length > 0);
+}
+
 /** @returns {boolean} whether two plain values hold the same data, key order included */
 function samePlain(a, b) {
   return JSON.stringify(a) === JSON.stringify(b);
@@ -524,6 +538,8 @@ export function validateEntryFields(current, proposed) {
         if ( earlier.some(e => samePlain(e[field], entry[field])) ) continue;
         if ( !entryPlainFieldWellFormed(field, entry[field]) ) return fail("INVALID_TRAIT_DATA");
       }
+      if ( !earlier.some(e => samePlain(e.lost, entry.lost) && (e.sessionOnly === entry.sessionOnly))
+        && !markFieldsWellFormed(entry) ) return fail("INVALID_TRAIT_DATA");
       if ( earlier.some(e => sameStatementFields(e, entry)) ) continue;
       if ( statementFieldsProblem(entry) === "INVALID_TRAIT_DATA" ) return fail("INVALID_TRAIT_DATA");
     }
@@ -545,6 +561,11 @@ export function validateEntryFields(current, proposed) {
           if ( !sizes.ok ) return sizes;
           checked.push({ setId, entryId: entry.id, subId: null, field: "preChallengeDice" });
         }
+      }
+      if ( isPlainObject(entry.lost) && !earlier.some(e => samePlain(e.lost?.preLossDice, entry.lost.preLossDice)) ) {
+        const sizes = validateRating(entry.lost.preLossDice);
+        if ( !sizes.ok ) return sizes;
+        checked.push({ setId, entryId: entry.id, subId: null, field: "preLossDice" });
       }
       for ( const sub of entry.sub ?? [] ) {
         const kept = earlier.some(e => readableSubTraits(e).some(s => (s.id === sub.id) && Array.isArray(s.dice)
