@@ -46,4 +46,7 @@ export {
   checkCharacterEdit, checkCharacterUpdate, diffCharacterTraits, proposedTraitData, validateEntryFields, validateRating,
   validateTraitChanges
 } from "./traits.mjs";
-export { PP_REASONS, changeBalance, startSession } from "./plot-points.mjs";
+export {
+  PP_REASONS, ROLL_REASONS, STAY_IN_ROUTES, SUGGESTED_GM_COMPLICATION_SIZE, changeBalance, contestPpOptions, poolPpFacts,
+  ppTotals, rollPpFacts, settleRoll, startSession, testStayInOption
+} from "./plot-points.mjs";
