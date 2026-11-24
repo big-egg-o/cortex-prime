@@ -514,6 +514,52 @@
         "DISTINCTIONS_SET_MISSING": "No trait set has the distinctions role. You can still save. Without distinctions, most pools lose a die; Handbook p. 66 suggests making up for it, for example with a further prime set or with other traits that add dice.",
         "PRIME_SETS_TOO_FEW": "Fewer than two trait sets have the prime role. You can still save. The Handbook advises at least two prime sets, since they give most rolls their basic dice (pp. 26, 47)."
       }
+    },
+    "PlotPoints": {
+      "Title": "Plot points",
+      "Bank": "GM bank",
+      "Award": "Award 1 PP",
+      "Adjust": "Adjust by 1 PP (GM)",
+      "RecordGain": "Record 1 PP gained (SFX)",
+      "RecordSpend": "Record 1 PP spent (SFX)",
+      "StartSession": "Start session",
+      "StartSessionHint": "Raises each assigned PC below 1 PP to 1 and adds 1 PP per player ({playerCount}) to the bank.",
+      "NoPcs": "No player characters yet.",
+      "Entry": "{name}: {delta} PP ({reason}), now {balance}",
+      "Reasons": {
+        "HINDER": "Hinder",
+        "D4_COMPLICATION": "d4 complication",
+        "SFX_GAIN": "SFX",
+        "HITCH_COMPLICATION": "Complication from a hitch",
+        "GIVE_IN": "Gave in",
+        "AWARD": "Award",
+        "SESSION_START": "Session start",
+        "EXTRA_TRAIT": "Extra trait",
+        "EXTRA_RESULT": "Extra result",
+        "EXTRA_EFFECT_DIE": "Extra effect die",
+        "SFX_SPEND": "SFX",
+        "STAY_IN": "Stayed in",
+        "GM_ADJUST": "GM adjustment"
+      },
+      "Errors": {
+        "INVALID_PP_AMOUNT": "Plot points change by whole numbers only.",
+        "INVALID_PP_INPUT": "That plot point change can't be read.",
+        "PP_INSUFFICIENT": "Not enough plot points.",
+        "PP_NOT_YET_USABLE": "A plot point earned from this roll's dice can't pay for this roll.",
+        "PP_ALREADY_SETTLED": "This roll's plot points are already settled.",
+        "PP_GM_ONLY": "Only a GM can do that.",
+        "PP_NOT_OWNER": "You can only change the plot points of a character you own.",
+        "PP_NO_ACCOUNT": "That character doesn't hold plot points.",
+        "NO_TAKE_OUT": "Nobody is taken out here.",
+        "NO_OVERFLOW_TAKE_OUT": "No take-out was chosen for that effect die.",
+        "WRITE_FAILED": "The change couldn't be saved; see the console."
+      },
+      "Warnings": {
+        "PP_SHORT": "Costs more plot points than the payer holds.",
+        "PP_NOT_YET_USABLE": "Only a plot point from this roll's own dice would cover this.",
+        "BANK_SPEND_NOT_LISTED": "The bank has no price for this; the GM adjusts by hand if the table charges one.",
+        "D4_COMPLICATION_NOT_OWN": "Only the roller's own d4 complication earns a plot point."
+      }
     }
   },
   "TYPES": {
@@ -524,7 +570,8 @@
     },
     "ChatMessage": {
       "poolRoll": "Dice Pool Roll",
-      "contest": "Test or Contest"
+      "contest": "Test or Contest",
+      "plotPoints": "Plot points"
     }
   }
 }

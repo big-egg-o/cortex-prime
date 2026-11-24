@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { PP_REASONS, changeBalance, startSession } from "../../module/rules/plot-points.mjs";
+import { PP_REASONS, changeBalance, ppChangeAllowed, startSession } from "../../module/rules/plot-points.mjs";
 import * as rules from "../../module/rules/index.mjs";
 
 /** @param {*} value @returns {*} the same value, frozen all the way down */
@@ -177,5 +177,38 @@ describe("startSession (rules 2 and 3; RQ-036, RQ-037; P7)", () => {
         .toEqual(refused("INVALID_PP_AMOUNT"));
       expect(startSession({ players: pcs(0), bank: -1, playerCount: -1 })).toEqual(refused("INVALID_PP_AMOUNT"));
     });
+  });
+});
+
+describe("ppChangeAllowed (P9)", () => {
+  const ask = (accountKind, reason, isGM, isOwner) => ppChangeAllowed({ accountKind, reason, isGM, isOwner });
+
+  it("lets a GM change anything", () => {
+    for ( const kind of ["actor", "bank"] ) {
+      for ( const reason of ["AWARD", "GM_ADJUST", "SFX_GAIN", "STAY_IN"] ) expect(ask(kind, reason, true, false).ok).toBe(true);
+    }
+  });
+
+  it("lets an owner record their PC's own gains and spends", () => {
+    expect(ask("actor", "SFX_GAIN", false, true)).toEqual({ ok: true, value: true });
+    expect(ask("actor", "SFX_SPEND", false, true).ok).toBe(true);
+    expect(ask("actor", "STAY_IN", false, true).ok).toBe(true);
+  });
+
+  it("refuses the bank, awards, adjustments and session starts to a player", () => {
+    expect(ask("bank", "SFX_GAIN", false, true)).toEqual(refused("PP_GM_ONLY"));
+    expect(ask("actor", "AWARD", false, true)).toEqual(refused("PP_GM_ONLY"));
+    expect(ask("actor", "GM_ADJUST", false, true)).toEqual(refused("PP_GM_ONLY"));
+    expect(ask("actor", "SESSION_START", false, true)).toEqual(refused("PP_GM_ONLY"));
+  });
+
+  it("refuses another player's PC", () => {
+    expect(ask("actor", "SFX_GAIN", false, false)).toEqual(refused("PP_NOT_OWNER"));
+  });
+
+  it.each([[null], [{ accountKind: "user", reason: "AWARD", isGM: true, isOwner: true }],
+    [{ accountKind: "actor", reason: "NOPE", isGM: true, isOwner: true }],
+    [{ accountKind: "actor", reason: "AWARD", isGM: "yes", isOwner: true }]])("%j → INVALID_PP_INPUT", input => {
+    expect(ppChangeAllowed(input)).toEqual(refused("INVALID_PP_INPUT"));
   });
 });

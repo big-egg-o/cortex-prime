@@ -48,5 +48,5 @@ export {
 } from "./traits.mjs";
 export {
   PP_REASONS, ROLL_REASONS, STAY_IN_ROUTES, SUGGESTED_GM_COMPLICATION_SIZE, changeBalance, contestPpOptions, poolPpFacts,
-  ppTotals, rollPpFacts, settleRoll, startSession, testStayInOption
+  ppChangeAllowed, ppTotals, rollPpFacts, settleRoll, startSession, testStayInOption
 } from "./plot-points.mjs";

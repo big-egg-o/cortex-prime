@@ -231,7 +231,7 @@ export function registerCharacterSheetBatch(quench) {
           sheet.element.querySelector('[data-action="toggleEdit"]').click();
           await rendered;
           assert.exists(sheet.element.querySelector("select.cp-die"));
-          assert.exists(sheet.element.querySelector('[name="system.plotPoints"]'));
+          assert.exists(sheet.element.querySelector('[data-action="ppGain"]'));
         });
 
         it("copies a compendium entry into the world and preserves the pack entry", async () => {

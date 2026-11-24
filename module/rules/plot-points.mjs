@@ -535,3 +535,27 @@ export function testStayInOption(input) {
   }
   return option([{ effectId: largest.id, size: largest.size }]);
 }
+
+/** Reasons only a GM may record on a character (rule 8; P9). */
+const GM_ONLY_REASONS = Object.freeze(["AWARD", "GM_ADJUST", "SESSION_START"]);
+
+/**
+ * Who may change which balance (P9): only a GM touches the bank, and a PC's balance is changed by
+ * its owner or a GM; awards, adjustments and the start of a session are a GM's.
+ *
+ * Check order: (1) the input's shape, else INVALID_PP_INPUT; (2) the bank, or a GM-only reason,
+ * for a user who isn't a GM, PP_GM_ONLY; (3) a character neither owned by the user nor changed by
+ * a GM, PP_NOT_OWNER.
+ * @param {{accountKind: "actor"|"bank", reason: string, isGM: boolean, isOwner: boolean}} input
+ * @returns {import("./types.mjs").EngineResult<true>}
+ */
+export function ppChangeAllowed(input) {
+  if ( !isPlainObject(input) ) return fail("INVALID_PP_INPUT");
+  const { accountKind, reason, isGM, isOwner } = input;
+  if ( !["actor", "bank"].includes(accountKind) || !(reason in PP_REASONS) ) return fail("INVALID_PP_INPUT");
+  if ( (typeof isGM !== "boolean") || (typeof isOwner !== "boolean") ) return fail("INVALID_PP_INPUT");
+  if ( isGM ) return ok(true);
+  if ( (accountKind === "bank") || GM_ONLY_REASONS.includes(reason) ) return fail("PP_GM_ONLY");
+  if ( !isOwner ) return fail("PP_NOT_OWNER");
+  return ok(true);
+}

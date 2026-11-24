@@ -8,6 +8,9 @@
 import CharacterData, { GmcData, PlayerCharacterData } from "./data/actor/character.mjs";
 import ContestData from "./data/chat/contest.mjs";
 import PoolRollData from "./data/chat/pool-roll.mjs";
+import PlotPointsData from "./data/chat/plot-points.mjs";
+import PlotPointsApp from "./apps/plot-points-app.mjs";
+import { registerPlotPointSettings } from "./plot-points/accounts.mjs";
 import { onRenderPoolRollMessage, preloadPoolRollCardTemplate } from "./dice/pool-roll-card.mjs";
 import { openPoolBuilder, refreshPoolDestination, togglePoolBuilder } from "./apps/pool-builder.mjs";
 import { registerSettings } from "./config/settings.mjs";
@@ -31,6 +34,7 @@ Hooks.once("init", () => {
   CONFIG.Actor.defaultType = "pc";
   CONFIG.ChatMessage.dataModels.poolRoll = PoolRollData;
   CONFIG.ChatMessage.dataModels.contest = ContestData;
+  CONFIG.ChatMessage.dataModels.plotPoints = PlotPointsData;
   // Core 14.369 registers no Actor sheet, so this one is the only and default sheet for characters.
   foundry.applications.apps.DocumentSheetConfig.registerSheet(Actor, SYSTEM_ID, CharacterSheet, {
     types: ["character", "pc", "gmc"], makeDefault: true, label: "CORTEX.Sheet.Character"
@@ -50,6 +54,9 @@ Hooks.once("init", () => {
   });
   registerSettings({ onGameConfigChange: () => CharacterSheet.renderOpenSheets() });
   registerContestQuery();
+  registerPlotPointSettings();
+  Hooks.on("cortexPrimePlotPointsChanged", () => PlotPointsApp.refresh());
+  Hooks.on("updateActor", actor => { if ( actor.type === "pc" ) PlotPointsApp.refresh(); });
   game.settings.registerMenu(SYSTEM_ID, "gameConfigMenu", {
     name: "CORTEX.Config.MenuName",
     label: "CORTEX.Config.MenuLabel",
@@ -76,6 +83,13 @@ Hooks.once("init", () => {
       order: Object.keys(controls.tokens.tools).length + 1, button: true, control: true,
       onChange: () => openPoolBuilder()
     };
+    if ( game.user.isGM ) {
+      controls.tokens.tools.cortexPlotPoints = {
+        name: "cortexPlotPoints", title: "CORTEX.PlotPoints.Title", icon: "fa-solid fa-coins",
+        order: Object.keys(controls.tokens.tools).length + 1, button: true,
+        onChange: () => PlotPointsApp.open()
+      };
+    }
   });
 
   // "P" isn't used by any core keybinding in 14.369 (checked the whole client bundle) and
