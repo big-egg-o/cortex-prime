@@ -53,6 +53,7 @@
  * @module apps/character-sheet
  */
 
+import { changePlotPoints } from "../plot-points/accounts.mjs";
 import CharacterData from "../data/actor/character.mjs";
 import { getGameConfig } from "../config/settings.mjs";
 import { actorLayout, addGmcBlock, blocksFromCharacter, DEFAULT_MOB_SET, GMC_BLOCKS } from "../rules/actor-layout.mjs";
@@ -110,9 +111,26 @@ export default class CharacterSheet extends HandlebarsApplicationMixin(ActorShee
       addSetSfx: CharacterSheet.#onAddSetSfx,
       removeSetSfx: CharacterSheet.#onRemoveSetSfx,
       addSubTrait: CharacterSheet.#onAddSubTrait,
-      removeSubTrait: CharacterSheet.#onRemoveSubTrait
+      removeSubTrait: CharacterSheet.#onRemoveSubTrait,
+      ppGain() { return this.#changePlotPoints(1); },
+      ppSpend() { return this.#changePlotPoints(-1); }
     }
   };
+
+  /**
+   * Records a gain or spend of this PC's plot points by hand (P3, P9, P15): a GM's gain is an award
+   * and a GM's spend an adjustment; a player records an SFX gain or spend, the case the spec leaves
+   * to the player (rule 7, rule 14). Refusals are shown, never thrown.
+   * @param {1|-1} delta
+   * @returns {Promise<void>}
+   */
+  async #changePlotPoints(delta) {
+    const reason = game.user.isGM ? ((delta > 0) ? "AWARD" : "GM_ADJUST") : ((delta > 0) ? "SFX_GAIN" : "SFX_SPEND");
+    const result = await changePlotPoints({ account: { kind: "actor", actorId: this.actor.id }, delta, reason });
+    if ( result.ok ) return;
+    const key = `CORTEX.PlotPoints.Errors.${result.code}`;
+    ui.notifications.warn(game.i18n.has(key) ? game.i18n.localize(key) : result.code);
+  }
 
   /** Whether the sheet shows its edit controls; it opens in play mode (CS-D1). */
   #editMode = false;
@@ -332,6 +350,8 @@ export default class CharacterSheet extends HandlebarsApplicationMixin(ActorShee
       actor: this.actor,
       native, play, gmc, canBuild, blockChoices,
       pc: this.actor.type === "pc", plotPoints: system.plotPoints,
+      ppGainLabel: i18n.localize(game.user.isGM ? "CORTEX.PlotPoints.Award" : "CORTEX.PlotPoints.RecordGain"),
+      ppSpendLabel: i18n.localize(game.user.isGM ? "CORTEX.PlotPoints.Adjust" : "CORTEX.PlotPoints.RecordSpend"),
       kindName: native ? i18n.localize("TYPES.Actor." + this.actor.type) : view.kind?.name ?? null,
       notice: gmc ? ((!sections.length && !editMode && this.isEditable && game.user.isGM) ? i18n.localize("CORTEX.Sheet.Design.EmptyGmc") : null)
         : (native && !layout) ? i18n.localize("CORTEX.Sheet.Design.NoPcLayout") : CharacterSheet.#notice(view),

@@ -29,9 +29,11 @@
     {{#if pc}}
     <div class="cp-balance">
       <span>{{ localize "CORTEX.Sheet.Design.PlotPoints" }}</span>
-      {{#if editMode}}<input name="system.plotPoints" type="number" data-dtype="Number" min="0" step="1"
-        value="{{ plotPoints }}" aria-label="{{ localize "CORTEX.Sheet.Design.PlotPoints" }}">
-      {{else}}<strong>{{ plotPoints }}</strong>{{/if}}
+      {{#if canEdit}}<button type="button" class="icon fa-solid fa-minus cp-pp-spend" data-action="ppSpend"
+        data-tooltip="{{ ppSpendLabel }}" aria-label="{{ ppSpendLabel }}"></button>{{/if}}
+      <strong class="cp-pp-balance">{{ plotPoints }}</strong>
+      {{#if canEdit}}<button type="button" class="icon fa-solid fa-plus cp-pp-gain" data-action="ppGain"
+        data-tooltip="{{ ppGainLabel }}" aria-label="{{ ppGainLabel }}"></button>{{/if}}
     </div>
     {{/if}}
     {{#if canEdit}}

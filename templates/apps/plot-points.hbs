@@ -1,0 +1,21 @@
+<section class="cp-plot-points">
+  <div class="cp-pp-row cp-pp-bank">
+    <span class="cp-pp-name">{{ localize "CORTEX.PlotPoints.Bank" }}</span>
+    <button type="button" class="icon fa-solid fa-minus" data-action="bankSpend" data-tooltip="{{ localize "CORTEX.PlotPoints.Adjust" }}" aria-label="{{ localize "CORTEX.PlotPoints.Adjust" }}"></button>
+    <strong class="cp-pp-balance">{{ bank }}</strong>
+    <button type="button" class="icon fa-solid fa-plus" data-action="bankGain" data-tooltip="{{ localize "CORTEX.PlotPoints.Adjust" }}" aria-label="{{ localize "CORTEX.PlotPoints.Adjust" }}"></button>
+  </div>
+  <hr>
+  {{#each pcs}}
+  <div class="cp-pp-row{{#unless this.assigned}} cp-pp-unassigned{{/unless}}">
+    <span class="cp-pp-name">{{ this.name }}</span>
+    <button type="button" class="icon fa-solid fa-minus" data-action="adjustDown" data-actor-id="{{ this.id }}" data-tooltip="{{ localize "CORTEX.PlotPoints.Adjust" }}" aria-label="{{ localize "CORTEX.PlotPoints.Adjust" }}"></button>
+    <strong class="cp-pp-balance">{{ this.balance }}</strong>
+    <button type="button" class="icon fa-solid fa-plus" data-action="award" data-actor-id="{{ this.id }}" data-tooltip="{{ localize "CORTEX.PlotPoints.Award" }}" aria-label="{{ localize "CORTEX.PlotPoints.Award" }}"></button>
+  </div>
+  {{else}}
+  <p class="hint">{{ localize "CORTEX.PlotPoints.NoPcs" }}</p>
+  {{/each}}
+  <button type="button" class="cp-pp-start" data-action="startSession"><i class="fa-solid fa-sun" inert></i> {{ localize "CORTEX.PlotPoints.StartSession" }}</button>
+  <p class="hint">{{ localize "CORTEX.PlotPoints.StartSessionHint" playerCount=playerCount }}</p>
+</section>

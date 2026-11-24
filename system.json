@@ -20,7 +20,8 @@
     },
     "ChatMessage": {
       "poolRoll": {},
-      "contest": {}
+      "contest": {},
+      "plotPoints": {}
     }
   },
   "esmodules": ["module/cortex-prime.mjs"],

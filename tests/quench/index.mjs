@@ -23,6 +23,7 @@ import { registerEffectBatch } from "./effect.mjs";
 import { registerGameConfigBatch } from "./game-config.mjs";
 import { registerMigrationBatch } from "./migration.mjs";
 import { registerPoolRollWarningsBatch } from "./poolroll-warnings.mjs";
+import { registerPlotPointsBatch } from "./plot-points.mjs";
 import { registerProposedTraitDataBatch } from "./proposed-trait-data.mjs";
 import { registerRatingFieldBatch } from "./rating-field.mjs";
 import { registerRerollBatch } from "./reroll.mjs";
@@ -55,6 +56,7 @@ export function registerQuenchBatches(quench) {
   registerContestCardBatch(quench);
   registerContestEndingBatch(quench);
   registerGameConfigBatch(quench);
+  registerPlotPointsBatch(quench);
 
   quench.registerBatch(
     "cortex-prime.smoke",
