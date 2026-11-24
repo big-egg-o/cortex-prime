@@ -40,7 +40,7 @@ function ownedPcs() {
  *   done: boolean}|null}
  */
 export function rollTraitContext(message) {
-  const done = message.getFlag(SYSTEM_ID, HITCHES_DONE_FLAG) === true;
+  const done = message.getFlag?.(SYSTEM_ID, HITCHES_DONE_FLAG) === true;
   const open = openHitches(message);
   const bank = bankRoll(message);
   let hitches = null;

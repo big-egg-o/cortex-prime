@@ -162,7 +162,7 @@ function requestActorKeys(request, store, roll) {
  * @returns {string|null}
  */
 export function rollerKeyOf(message) {
-  return ChatMessage.implementation.getSpeakerActor(message.speaker)?.uuid ?? null;
+  return message.speaker ? (ChatMessage.implementation.getSpeakerActor(message.speaker)?.uuid ?? null) : null;
 }
 
 /**
