@@ -10,7 +10,7 @@
 import {
   BANK_SETTING, changePlotPoints, getBank, payerFor, sessionCharacters, startPlotPointSession
 } from "../../module/plot-points/accounts.mjs";
-import { rollPpData, settleRollPp } from "../../module/plot-points/roll-pp.mjs";
+import { rollPpData, settleRollPp, storedLines } from "../../module/plot-points/roll-pp.mjs";
 import PlotPointsApp from "../../module/apps/plot-points-app.mjs";
 import { applyCardChange } from "../../module/dice/card-actions.mjs";
 import { preparePoolRollCardContext } from "../../module/dice/pool-roll-card.mjs";
@@ -219,7 +219,8 @@ export function registerPlotPointsBatch(quench) {
           assert.equal(entries[0].system.reason, "ROLL");
           assert.equal(entries[0].system.delta, -1);
           assert.equal(entries[0].system.messageRef, message.id);
-          assert.deepEqual(entries[0].system.toObject().lines, [{ reason: "EXTRA_RESULT", direction: "spend", amount: 1 }]);
+          // Optional fields a line doesn't have may be kept as empty values; storedLines reads them as the rules do.
+          assert.deepEqual(storedLines(entries[0].system.toObject().lines), [{ reason: "EXTRA_RESULT", direction: "spend", amount: 1 }]);
           assert.equal(message.system.pp.ledgerId, entries[0].id);
           assert.isFalse(preparePoolRollCardContext(message).pp.canSettle, "not twice");
 
@@ -317,16 +318,16 @@ export function registerPlotPointsBatch(quench) {
         /** High stakes, the initiator 15 with a d10, the opposition fails with 12 and a d6: the opposition is taken out. */
         async function takenOut(message) {
           await ok(message, "set-high-stakes", { highStakes: true });
-          await ok(message, "add-roll", { total: 15, effectSizes: [10] });
-          await ok(message, "add-roll", { total: 12, effectSizes: [6] });
+          await ok(message, "add-roll", { side: "initiator", total: 15, effectSizes: [10] });
+          await ok(message, "add-roll", { side: "opposition", total: 12, effectSizes: [6] });
         }
 
         it("PP-04 a PC who gives in after rolling gains 1 PP in the same action; the bank doesn't change", async () => {
           const pc = await createPc(0, "gives in");
           await game.settings.set(SYSTEM_ID, BANK_SETTING, 3);
           const message = await contest(pc);
-          await ok(message, "add-roll", { total: 11, effectSizes: [6] });
-          await ok(message, "add-roll", { total: 14, effectSizes: [8] });
+          await ok(message, "add-roll", { side: "initiator", total: 11, effectSizes: [6] });
+          await ok(message, "add-roll", { side: "opposition", total: 14, effectSizes: [8] });
           await ok(message, "give-in", { side: "initiator" });
           assert.equal(pc.system.plotPoints, 1);
           assert.equal(getBank(), 3);
@@ -339,15 +340,15 @@ export function registerPlotPointsBatch(quench) {
           const pc = await createPc(0, "opponent");
           await game.settings.set(SYSTEM_ID, BANK_SETTING, 0);
           const message = await contest(pc);
-          await ok(message, "add-roll", { total: 11, effectSizes: [6] });
-          await ok(message, "add-roll", { total: 14, effectSizes: [8] });
-          await ok(message, "add-roll", { total: 16, effectSizes: [6] });
+          await ok(message, "add-roll", { side: "initiator", total: 11, effectSizes: [6] });
+          await ok(message, "add-roll", { side: "opposition", total: 14, effectSizes: [8] });
+          await ok(message, "add-roll", { side: "initiator", total: 16, effectSizes: [6] });
           await ok(message, "give-in", { side: "opposition" });
           assert.equal(getBank(), 1);
           assert.equal(pc.system.plotPoints, 0);
 
           const declined = await contest(pc);
-          await ok(declined, "add-roll", { total: 11, effectSizes: [6] });
+          await ok(declined, "add-roll", { side: "initiator", total: 11, effectSizes: [6] });
           await ok(declined, "decline", {});
           assert.isNull(contestPpRecord(declined).giveIn);
           assert.equal(getBank(), 1);
@@ -405,7 +406,7 @@ export function registerPlotPointsBatch(quench) {
           assert.isTrue(started.ok, started.code);
           const message = game.messages.get(started.value.messageId);
           await ok(message, "set-high-stakes", { highStakes: true });
-          await ok(message, "add-roll", { total: 10, effectSizes: [6] });
+          await ok(message, "add-roll", { side: "roller", total: 10, effectSizes: [6] });
           assert.deepEqual(prepareContestCardContext(message).pp.offer.test.effects, []);
 
           assert.deepEqual(await act(message, "stay-in", {}), { ok: false, code: "PP_GM_SIZE_NEEDED" });

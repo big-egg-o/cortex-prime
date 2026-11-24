@@ -103,6 +103,7 @@ export function rollPpData({ pool, traitCost, actor }) {
  */
 export function rollLines(system) {
   const pp = system.pp;
+  if ( !pp ) return null;
   const sfx = storedLines(pp.sfxLines);
   const counted = (system.state === "resolved") || validateSelection(system.rolled, system.selection).valid;
   const { extraResultsPaid = 0, extraEffectDicePaid = 0 } = counted ? system.selection : {};
