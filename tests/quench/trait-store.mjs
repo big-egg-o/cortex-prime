@@ -10,6 +10,10 @@ import {
 } from "../../module/assets/trait-store.mjs";
 import { BANK_SETTING, getBank } from "../../module/plot-points/accounts.mjs";
 import TraitTrackerApp, { knownHolders } from "../../module/apps/trait-tracker-app.mjs";
+import { openPoolBuilder } from "../../module/apps/pool-builder.mjs";
+import { postPoolRoll } from "../../module/dice/post-pool-roll.mjs";
+import { applyCardChange } from "../../module/dice/card-actions.mjs";
+import { rollPpData, settleRollPp } from "../../module/plot-points/roll-pp.mjs";
 
 const SYSTEM_ID = "cortex-prime";
 const TEST_FLAG = "quenchTraitStore";
@@ -38,6 +42,22 @@ function ledgerSince(keep) {
   return game.messages.filter(m => (m.type === "plotPoints") && !keep.has(m.id));
 }
 
+/** A pool die of a temporary trait, as the builder adds it. */
+function traitDie(dieId, size, kind, traitId, label, actorId) {
+  return { id: dieId, size, origin: "rating", source: { kind, traitId, label, actorId } };
+}
+
+/** A custom pool die. */
+function customDie(dieId, size, label = "Edge") {
+  return { id: dieId, size, origin: "rating", source: { kind: "custom", label } };
+}
+
+/** @returns {Promise<ChatMessage>} a roll card of `pool` with fixed results, paid for by `actor` (or the bank) */
+function rollCard(pool, results, actor = null) {
+  const speaker = actor ? ChatMessage.getSpeaker({ actor }) : { alias: "GM" };
+  return postPoolRoll({ pool, results, speaker, pp: rollPpData({ pool, traitCost: null, actor }) });
+}
+
 /** A request made by hand, for retries and races. */
 function request(action, payload, revision = getTraitStore().revision, actionId = newActionId()) {
   return { action, actionId, revision, payload };
@@ -51,7 +71,9 @@ export function registerTraitStoreBatch(quench) {
       let stored;
       let bank;
       let messages;
+      let userPool;
       before(() => {
+        userPool = foundry.utils.deepClone(game.user.getFlag(SYSTEM_ID, "pool") ?? null);
         stored = foundry.utils.deepClone(game.settings.get(SYSTEM_ID, TRAIT_STORE_SETTING).toObject());
         bank = getBank();
         messages = new Set(game.messages.map(m => m.id));
@@ -65,6 +87,8 @@ export function registerTraitStoreBatch(quench) {
         if ( scenes.length ) await getDocumentClass("Scene").deleteDocuments(scenes);
         const made = game.messages.filter(m => !messages.has(m.id)).map(m => m.id);
         if ( made.length ) await ChatMessage.implementation.deleteDocuments(made);
+        if ( userPool ) await game.user.setFlag(SYSTEM_ID, "pool", userPool);
+        else await game.user.unsetFlag(SYSTEM_ID, "pool");
       });
       after(() => foundry.applications.instances.get("cortex-prime-trait-tracker")?.close());
 
@@ -174,15 +198,17 @@ export function registerTraitStoreBatch(quench) {
           assert.isOk(game.settings.get(SYSTEM_ID, TRAIT_STORE_SETTING, { document: true })?._id);
         });
 
-        it("a GMC's bought asset is paid from the bank", async () => {
+        it("a GMC's bought asset has no bank price (RQ-043): it is made, the bank is unchanged and no entry is posted", async () => {
           await game.settings.set(SYSTEM_ID, BANK_SETTING, 2);
           const gmc = await createActor("gmc", "Boss");
           const result = await sendTraitStoreRequest("buyAsset", {
             id: foundry.utils.randomID(16), name: "Net", holder: { kind: "actor", actorId: gmc.uuid }
           });
           assert.isTrue(result.ok, result.code);
-          assert.equal(getBank(), 1);
-          assert.equal(ledgerSince(messages)[0].system.account.kind, "bank");
+          assert.deepEqual(result.value.warnings, ["BANK_SPEND_NOT_LISTED"]);
+          assert.equal(getBank(), 2);
+          assert.lengthOf(ledgerSince(messages), 0);
+          assert.isTrue(getTraitStore().traits.some(t => t.holder.actorId === gmc.uuid));
         });
       });
 
@@ -198,6 +224,100 @@ export function registerTraitStoreBatch(quench) {
           const ids = getTraitStore().traits.map(t => t.id);
           assert.include(ids, alarm);
           assert.notInclude(ids, smoke);
+        });
+      });
+
+      describe("hitches on a player's roll (step 4.8b)", () => {
+        it("a hitch steps the roller's d4 complication up: it stays, and both plot points wait for one Settle", async () => {
+          const pc = await createActor("pc", "Ana", { plotPoints: 1 });
+          const winded = foundry.utils.randomID(16);
+          await sendTraitStoreRequest("addComplication", { id: winded, name: "Winded", size: 4, holder: { kind: "actor", actorId: pc.uuid } });
+          const pool = [traitDie("d1", 4, "complication", winded, "Winded", pc.uuid), customDie("d2", 8), customDie("d3", 6)];
+          const message = await rollCard(pool, [1, 5, 4], pc);
+          assert.deepEqual(message.system.pp.poolLines.map(l => l.reason), ["D4_COMPLICATION"]);
+          const result = await sendTraitStoreRequest("activateHitches", {
+            messageId: message.id, allocations: [{ hitchIds: ["d1"], target: { kind: "existing", traitId: winded } }], finish: true
+          });
+          assert.isTrue(result.ok, result.code);
+          assert.deepEqual(getTraitStore().traits.find(t => t.id === winded)?.dice, [6]);
+          assert.equal(message.system.rolled[0].state, "hitch-activated");
+          assert.deepEqual(message.system.pp.otherLines.map(l => l.reason), ["HITCH_COMPLICATION"]);
+          assert.isTrue(message.getFlag(SYSTEM_ID, "hitchesDone"));
+          assert.equal(pc.system.plotPoints, 1);
+          await applyCardChange(message, { action: "confirm" });
+          const settled = await settleRollPp(message);
+          assert.isTrue(settled.ok, settled.code);
+          assert.equal(pc.system.plotPoints, 3);
+          assert.lengthOf(ledgerSince(messages), 1);
+          const again = await sendTraitStoreRequest("activateHitches", { messageId: message.id, allocations: [], finish: true });
+          assert.deepEqual(again, { ok: false, code: "HITCHES_DONE" });
+        });
+
+        it("declining removes the roller's used d4 complication; a new complication from a hitch on a settled card pays at once", async () => {
+          const pc = await createActor("pc", "Ana", { plotPoints: 0 });
+          const winded = foundry.utils.randomID(16);
+          await sendTraitStoreRequest("addComplication", { id: winded, name: "Winded", size: 4, holder: { kind: "actor", actorId: pc.uuid } });
+          const pool = [traitDie("d1", 4, "complication", winded, "Winded", pc.uuid), customDie("d2", 8), customDie("d3", 6)];
+          const declined = await rollCard(pool, [3, 1, 4], pc);
+          const result = await sendTraitStoreRequest("activateHitches", { messageId: declined.id, allocations: [], finish: true });
+          assert.isTrue(result.ok, result.code);
+          assert.deepEqual(result.value.removedIds, [winded]);
+          assert.isFalse(getTraitStore().traits.some(t => t.id === winded));
+
+          const card = await rollCard([customDie("d1", 8), customDie("d2", 6), customDie("d3", 10)], [1, 4, 7], pc);
+          await card.update({ "system.pp.settled": true });
+          const made = await sendTraitStoreRequest("activateHitches", {
+            messageId: card.id, finish: true,
+            allocations: [{ hitchIds: ["d1"], target: { kind: "new", id: foundry.utils.randomID(16), name: "Ankle", holder: { kind: "actor", actorId: pc.uuid } } }]
+          });
+          assert.isTrue(made.ok, made.code);
+          assert.equal(pc.system.plotPoints, 1);
+          assert.lengthOf(card.system.pp.otherLines, 0);
+          const entries = ledgerSince(messages);
+          assert.lengthOf(entries, 1);
+          assert.equal(entries[0].system.reason, "HITCH_COMPLICATION");
+        });
+      });
+
+      describe("opportunities on the GM's roll (step 4.8b)", () => {
+        it("steps a complication down for 1 PP, writing the store, the balance, the entry and the card together", async () => {
+          const pc = await createActor("pc", "Ana", { plotPoints: 2 });
+          const alarm = foundry.utils.randomID(16);
+          await sendTraitStoreRequest("addComplication", { id: alarm, name: "Alarm Raised", size: 8, holder: { kind: "unassigned" } });
+          const card = await rollCard([customDie("d1", 8, "Guards"), customDie("d2", 6, "Guards"), customDie("d3", 10, "Guards")], [1, 1, 6]);
+          assert.equal(card.system.pp.payer.kind, "bank");
+          const result = await sendTraitStoreRequest("useOpportunities", {
+            messageId: card.id, actorKey: pc.uuid,
+            uses: [{ opportunityIds: ["d1", "d2"], direction: "down", target: { kind: "temporary", traitId: alarm } }]
+          });
+          assert.isTrue(result.ok, result.code);
+          assert.deepEqual(getTraitStore().traits.find(t => t.id === alarm)?.dice, [4]);
+          assert.equal(pc.system.plotPoints, 1);
+          assert.deepEqual(card.system.rolled.map(d => d.state), ["hitch-activated", "hitch-activated", "available"]);
+          const entries = ledgerSince(messages);
+          assert.lengthOf(entries, 1);
+          assert.equal(entries[0].system.reason, "OPPORTUNITY");
+          assert.equal(entries[0].system.messageRef, card.id);
+        });
+      });
+
+      describe("the pool builder's temporary traits (step 4.8b)", () => {
+        it("lists a complication, adds it once as one die, and the card stores the die as rolled", async () => {
+          const pc = await createActor("pc", "Ana", { plotPoints: 1 });
+          const id = foundry.utils.randomID(16);
+          await sendTraitStoreRequest("addComplication", { id, name: "Dust-Blinded", size: 6, holder: { kind: "actor", actorId: pc.uuid } });
+          await game.user.unsetFlag(SYSTEM_ID, "pool");
+          const builder = await openPoolBuilder();
+          assert.isOk(builder.element.querySelector(`[data-action="addTemporaryTrait"][data-trait-id="${id}"]`));
+          assert.isTrue(await builder.addTemporaryTrait(id));
+          assert.isFalse(await builder.addTemporaryTrait(id));
+          assert.lengthOf(builder.pool, 1);
+          assert.deepInclude(builder.pool[0].source, { kind: "complication", traitId: id, actorId: pc.uuid });
+          const message = await builder.rollPool([5]);
+          await sendTraitStoreRequest("step", { traitId: id, steps: 1 });
+          assert.equal(message.system.pool[0].size, 6);
+          assert.equal(message.system.rolled[0].source.traitId, id);
+          await builder.close();
         });
       });
 

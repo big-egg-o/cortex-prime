@@ -180,6 +180,28 @@
   </div>
   {{/if}}
 
+  {{!-- Hitches and opportunities (step 4.8b): the GM's choice on a player's roll, a player's on the bank's roll. --}}
+  {{#if traits}}
+  <div class="cp-controls cp-roll-traits">
+    {{#if traits.hitches}}
+    {{#if traits.hitches.count}}
+    <button type="button" data-action="hitches-activate">
+      <i class="fa-solid fa-bolt" inert></i><span>{{ localize "CORTEX.Assets.Hitches.Activate" }}</span>
+    </button>
+    {{/if}}
+    <button type="button" data-action="hitches-finish">
+      <i class="fa-solid fa-check" inert></i><span>{{ localize "CORTEX.Assets.Hitches.Done" }}</span>
+    </button>
+    {{/if}}
+    {{#if traits.opportunities}}
+    <button type="button" data-action="opportunities-use">
+      <i class="fa-solid fa-hand-sparkles" inert></i><span>{{ localize "CORTEX.Assets.Opportunities.Use" }}</span>
+    </button>
+    {{/if}}
+    {{#if traits.done}}<p class="hint cp-hitches-done">{{ localize "CORTEX.Assets.Hitches.Finished" }}</p>{{/if}}
+  </div>
+  {{/if}}
+
   {{#if reroll}}
   <div class="cp-controls cp-reroll-controls">
     <button type="button" data-action="toggle-reroll-mode" aria-pressed="{{#if reroll.active}}true{{else}}false{{/if}}">

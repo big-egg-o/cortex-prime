@@ -76,13 +76,13 @@ export function storedLines(lines) {
  * @param {import("../rules/types.mjs").PoolDie[]} input.pool - the builder's pool, with its trait marks
  * @param {{extraTraits: {setId: string, count: number}[]}|null} input.traitCost - poolTraitReport's
  *   extra traits, or null for a pool without set traits
- * @param {Actor|null} input.actor - the rolling actor
+ * @param {Actor|null} input.actor - the rolling actor, named by its UUID, as a complication's holder is (ADR-057)
  * @returns {ReturnType<typeof emptyPp>}
  */
 export function rollPpData({ pool, traitCost, actor }) {
   const payer = payerFor(actor);
   const facts = poolPpFacts({
-    entries: poolPpEntries(pool), traitCost: traitCost ?? null, rollerActorId: actor?.id ?? null, payer: payer ?? NO_PAYER
+    entries: poolPpEntries(pool), traitCost: traitCost ?? null, rollerActorId: actor?.uuid ?? null, payer: payer ?? NO_PAYER
   });
   if ( !facts.ok ) {
     console.warn(`cortex-prime | The pool's plot points couldn't be worked out: ${facts.code}`);

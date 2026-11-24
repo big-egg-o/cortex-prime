@@ -12,6 +12,7 @@ import { getGameConfig } from "../config/settings.mjs";
 import { holdOf, sendRollCard } from "../contest/roll-card.mjs";
 import { prepareRollPp, settleRollPp } from "../plot-points/roll-pp.mjs";
 import { applyCardChange, canEditPoolRollCard } from "./card-actions.mjs";
+import { finishHitches, openHitchDialog, openOpportunityDialog, rollTraitContext } from "../assets/roll-traits.mjs";
 
 const TEMPLATE = "systems/cortex-prime/templates/chat/pool-roll.hbs";
 
@@ -184,10 +185,12 @@ export function prepareNonstandard(system) {
  *     takeOutAvailable: boolean, takeOutLabel: string}|null,
  *   reroll: {active: boolean, canReroll: boolean}|null,
  *   nonstandard: {title: string, reasons: string[], unpriced: string|null}|null,
- *   contestHold: {state: "held"|"sent", note: string}|null, send: boolean, pp: object|null}} `nonstandard`
+ *   contestHold: {state: "held"|"sent", note: string}|null, send: boolean, pp: object|null,
+ *   traits: ReturnType<typeof rollTraitContext>}} `nonstandard`
  *   is shown to everyone who can see the card, in every state (prepareNonstandard); `contestHold`
  *   is set for a card held for or sent to a test or contest (holdOf), and `send` offers Send on a
- *   held, resolved card to those who may change it; `pp` is the plot point section (prepareRollPp)
+ *   held, resolved card to those who may change it; `pp` is the plot point section (prepareRollPp);
+ *   `traits` the hitch and opportunity controls (rollTraitContext, step 4.8b)
  */
 export function preparePoolRollCardContext(message) {
   const system = message.system;
@@ -299,7 +302,8 @@ export function preparePoolRollCardContext(message) {
 
   return {
     botch, dice, formula, headline, preview, interactive, selection, effectControls, overflowChoice, reroll,
-    nonstandard: prepareNonstandard(system), contestHold, send, pp: prepareRollPp(message, canEdit)
+    nonstandard: prepareNonstandard(system), contestHold, send, pp: prepareRollPp(message, canEdit),
+    traits: rollTraitContext(message)
   };
 }
 
@@ -370,6 +374,11 @@ function activatePoolRollCardListeners(message, content) {
       return applyCardChange(message, { action, dieIds }).catch(notifyCardError);
     }
 
+    // Hitches and opportunities are requests to the GM's store handler (ADR-057).
+    if ( action === "hitches-activate" ) return openHitchDialog(message).catch(notifyCardError);
+    if ( action === "hitches-finish" ) return finishHitches(message).catch(notifyCardError);
+    if ( action === "opportunities-use" ) return openOpportunityDialog(message).catch(notifyCardError);
+
     // Send goes through the GM relay, which checks it like any other request (ADR-027).
     if ( action === "send-roll" ) return sendRollCard(message).catch(notifyCardError);
 
@@ -437,7 +446,7 @@ export function onRenderPoolRollMessage(message, html) {
   // gated the same way (canEditPoolRollCard) but live in effectControls/overflowChoice instead,
   // since interactive itself is specifically "not yet resolved" (used for die clickability too).
   const hasControls = context.interactive || context.effectControls || context.overflowChoice || context.send
-    || context.pp?.editable;
+    || context.pp?.editable || context.traits?.hitches || context.traits?.opportunities;
 
   const compiled = Handlebars.partials[TEMPLATE];
   if ( typeof compiled === "function" ) {

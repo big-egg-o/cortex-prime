@@ -26,6 +26,8 @@ import { openStartDialog } from "../contest/start-dialog.mjs";
 import { postPoolRoll } from "../dice/post-pool-roll.mjs";
 import { prepareNonstandard } from "../dice/pool-roll-card.mjs";
 import { poolPpPreview, rollPpData } from "../plot-points/roll-pp.mjs";
+import { TEMP_TRAIT_CARD_WARNINGS, poolTraitChoices, usedD4ComplicationIds } from "../rules/trait-store.mjs";
+import { getTraitStore, notifyTraitStoreResult, rollerKeyOf, sendTraitStoreRequest } from "../assets/trait-store.mjs";
 
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
 
@@ -261,6 +263,69 @@ function poolPp(pool, report, speaker) {
   return rollPpData({ pool, traitCost, actor });
 }
 
+/** @returns {string|null} the actor key of the character a roll's speaker names */
+function speakerKey(speaker) {
+  return speaker ? (ChatMessage.implementation.getSpeakerActor(speaker)?.uuid ?? null) : null;
+}
+
+/**
+ * The store's temporary traits the roller may add (poolTraitChoices), or an empty list when the
+ * store can't be read; the console says why.
+ * @param {string|null} rollerKey
+ * @returns {ReturnType<typeof poolTraitChoices>["value"]}
+ */
+function traitChoices(rollerKey) {
+  const choices = poolTraitChoices(getTraitStore(), rollerKey);
+  if ( choices.ok ) return choices.value;
+  console.warn(`cortex-prime | The temporary traits couldn't be listed: ${choices.code}`);
+  return [];
+}
+
+/**
+ * The builder's temporary-traits section (step 4.8b): the choices by group, each with its die,
+ * warnings and whether it is in the pool already.
+ * @param {import("../rules/types.mjs").PoolDie[]} pool
+ * @param {string|null} rollerKey
+ * @returns {{label: string, traits: object[]}[]}
+ */
+function traitSection(pool, rollerKey) {
+  const inPool = new Set(pool.map(d => d.source?.traitId).filter(Boolean));
+  const groups = new Map();
+  for ( const choice of traitChoices(rollerKey) ) {
+    if ( !groups.has(choice.group) ) {
+      groups.set(choice.group, { label: game.i18n.localize(`CORTEX.Builder.TraitGroups.${choice.group}`), traits: [] });
+    }
+    groups.get(choice.group).traits.push({
+      traitId: choice.traitId, name: choice.name, size: choice.size, inPool: inPool.has(choice.traitId),
+      kind: game.i18n.localize(`CORTEX.Assets.Kinds.${choice.kind}`),
+      gain: choice.d4Gain ? "+1 PP" : null,
+      warnings: choice.warnings.map(code => game.i18n.localize(`CORTEX.Builder.TraitWarnings.${code}`))
+    });
+  }
+  return [...groups.values()];
+}
+
+/**
+ * The warnings a roll card stores for the temporary traits in a pool, worked out for the roller
+ * when the pool is rolled.
+ * @param {import("../rules/types.mjs").PoolDie[]} pool
+ * @param {string|null} rollerKey
+ * @returns {{code: string, traitId: string, actorId?: string}[]}
+ */
+function traitWarnings(pool, rollerKey) {
+  const ids = new Set(pool.filter(d => ["asset", "complication"].includes(d.source?.kind)).map(d => d.source.traitId));
+  const warnings = [];
+  for ( const choice of poolTraitChoices(getTraitStore(), rollerKey).value ?? [] ) {
+    if ( !ids.has(choice.traitId) ) continue;
+    for ( const code of choice.warnings.filter(c => TEMP_TRAIT_CARD_WARNINGS.includes(c)) ) {
+      const warning = { code, traitId: choice.traitId };
+      if ( choice.source.actorId ) warning.actorId = choice.source.actorId;
+      warnings.push(warning);
+    }
+  }
+  return warnings;
+}
+
 /** Identifies the request shown when a roll control was rendered. */
 function targetKey(target) {
   return target ? `${target.messageId}/${target.side}/${target.rollIndex}` : "";
@@ -327,7 +392,8 @@ export default class PoolBuilder extends HandlebarsApplicationMixin(ApplicationV
       setDifficulty: PoolBuilder.#onSetDifficulty,
       clearTarget: PoolBuilder.#onClearTarget,
       startContest: () => openStartDialog(),
-      rollPool: PoolBuilder.#onRollPool
+      rollPool: PoolBuilder.#onRollPool,
+      addTemporaryTrait: PoolBuilder.#onAddTemporaryTrait
     }
   };
 
@@ -372,6 +438,7 @@ export default class PoolBuilder extends HandlebarsApplicationMixin(ApplicationV
     return {
       groups: groupBySource(pool),
       summary: poolSummary(pool, destination.speaker),
+      temporaryTraits: traitSection(pool, speakerKey(destination.speaker)),
       sizes: DIE_SIZES,
       initialLevel: currentLevel ?? DIFFICULTY_LEVELS[0],
       levels: DIFFICULTY_LEVELS.map(level => ({
@@ -466,9 +533,10 @@ export default class PoolBuilder extends HandlebarsApplicationMixin(ApplicationV
     }
     const report = currentPoolReport(pool);
     const rollable = rollablePool(pool);
+    const rollerKey = speakerKey(destination.speaker);
     const message = await postPoolRoll({
       pool: rollable.ok ? rollable.value : pool, results,
-      warnings: report?.warnings ?? [], unpricedTraits: report?.unpricedTraits ?? [],
+      warnings: [...(report?.warnings ?? []), ...traitWarnings(pool, rollerKey)], unpricedTraits: report?.unpricedTraits ?? [],
       pp: poolPp(pool, report, destination.speaker),
       speaker: destination.speaker,
       contest: target ?? undefined
@@ -478,7 +546,27 @@ export default class PoolBuilder extends HandlebarsApplicationMixin(ApplicationV
       Hooks.callAll("cortexPrimePoolDestinationChanged");
     }
     await stepDownChallenges(pool);
+    await finishWithoutHitches(message);
     return message;
+  }
+
+  /**
+   * Adds one temporary trait from the store as one die whose source names it (step 4.8b), at the
+   * die the store has now; the card keeps that die whatever happens to the trait later. A trait
+   * already in the pool, or one no longer offered, isn't added.
+   * @param {string} traitId
+   * @returns {Promise<boolean>} whether it was added
+   */
+  async addTemporaryTrait(traitId) {
+    const rollerKey = speakerKey(rollDestination(this.pool, this.#target).speaker);
+    const choice = traitChoices(rollerKey).find(c => c.traitId === traitId);
+    if ( !choice ) return refusePoolTrait("TRAIT_NOT_OFFERED");
+    if ( this.pool.some(d => d.source?.traitId === traitId) ) return refusePoolTrait("TRAIT_IN_POOL");
+    await this.#savePool(pool => {
+      if ( pool.some(d => d.source?.traitId === traitId) ) return null;
+      return appendToPool(pool, [{ size: choice.size, source: { ...choice.source } }]).value;
+    });
+    return true;
   }
 
   /**
@@ -617,6 +705,15 @@ export default class PoolBuilder extends HandlebarsApplicationMixin(ApplicationV
 
   /**
    * @this {PoolBuilder}
+   * @param {PointerEvent} _event
+   * @param {HTMLElement} target
+   */
+  static async #onAddTemporaryTrait(_event, target) {
+    await this.addTemporaryTrait(target.dataset.traitId);
+  }
+
+  /**
+   * @this {PoolBuilder}
    */
   static async #onRollPool() {
     const shownTarget = this.element.querySelector(".cp-builder-target").dataset.targetKey;
@@ -626,6 +723,21 @@ export default class PoolBuilder extends HandlebarsApplicationMixin(ApplicationV
 
 /** @type {PoolBuilder|null} */
 let instance = null;
+
+/**
+ * After a roll with none of its dice a hitch, or a roll the bank pays for, whose hitches are
+ * opportunities, the roller's own d4 complications in it are removed at once (rule 18, RQ-050):
+ * there is no hitch choice for the GM to wait for. Otherwise the GM's choice on the card removes them.
+ * @param {ChatMessage|undefined} message
+ * @returns {Promise<void>}
+ */
+async function finishWithoutHitches(message) {
+  if ( !message ) return;
+  const bank = message.system.pp?.payer?.kind === "bank";
+  if ( !bank && message.system.rolled.some(d => d.hitch) ) return;
+  if ( !usedD4ComplicationIds(message.system.pool, rollerKeyOf(message)).length ) return;
+  notifyTraitStoreResult(await sendTraitStoreRequest("activateHitches", { messageId: message.id, allocations: [], finish: true }));
+}
 
 /** Use the same roll path and addressed request even while the builder window is closed. */
 export function rollSheetPool(shownTarget) {

@@ -4,7 +4,8 @@
  * user query (ADR-027), the GM's client checks it with the pure dispatchTraitStoreRequest and writes
  * what it returns. Requests run one at a time, each against the revision it was made for. An action
  * that costs plot points writes the store, the balance and the ledger entry in one
- * foundry.documents.modifyBatch call, so a refused write changes none of them; a retried action
+ * foundry.documents.modifyBatch call, so a refused write changes none of them; an action on a roll
+ * card (hitches, opportunities; step 4.8b) writes the card in the same batch. A retried action
  * (same action id) gets its first answer back and writes nothing. Nothing here decides an outcome.
  *
  * Foundry 14.369 facts this relies on (read from the install, 2026-11-24):
@@ -18,8 +19,8 @@
  */
 
 import TraitStoreData, { TRAIT_STORE_SCHEMA_VERSION } from "../data/settings/temporary-traits.mjs";
-import { dispatchTraitStoreRequest, emptyTraitStore } from "../rules/trait-store.mjs";
-import { getBank, holdsPlotPoints, ledgerEntryData, BANK_SETTING } from "../plot-points/accounts.mjs";
+import { dispatchTraitStoreRequest, emptyTraitStore, usedD4ComplicationIds } from "../rules/trait-store.mjs";
+import { holdsPlotPoints, ledgerEntryData } from "../plot-points/accounts.mjs";
 
 const SYSTEM_ID = "cortex-prime";
 
@@ -94,17 +95,27 @@ export async function sendTraitStoreRequest(action, payload, { actionId = newAct
 
 /**
  * Shows a refused store action to the user who sent it (CORTEX.Assets.Errors.<CODE>, or a plot
- * point string); a code without a string is shown as it is.
+ * point string); a code without a string is shown as it is. A done action's warnings, such as
+ * BANK_SPEND_NOT_LISTED (RQ-043), are shown as information.
  * @param {{ok: boolean, code?: string}} result
  * @returns {boolean} whether the action went through
  */
 export function notifyTraitStoreResult(result) {
-  if ( result?.ok ) return true;
+  if ( result?.ok ) {
+    for ( const code of result.value?.warnings ?? [] ) {
+      const key = `CORTEX.PlotPoints.Warnings.${code}`;
+      ui.notifications.info(game.i18n.has(key) ? game.i18n.localize(key) : code);
+    }
+    return true;
+  }
   const key = [`CORTEX.Assets.Errors.${result?.code}`, `CORTEX.PlotPoints.Errors.${result?.code}`]
     .find(k => game.i18n.has(k));
   ui.notifications.warn(key ? game.i18n.localize(key) : String(result?.code));
   return false;
 }
+
+/** The flag that marks a roll card whose hitch choice is finished (rule 18). */
+export const HITCHES_DONE_FLAG = "hitchesDone";
 
 /** The tail of the GM's queue: store requests run one after another. */
 let queue = Promise.resolve();
@@ -126,18 +137,61 @@ export function handleTraitStoreQuery(request, { user }) {
 }
 
 /**
- * The actor keys a request names: the holder of a new trait, and the holder of the trait it acts on.
+ * The actor keys a request names: the holder of a new trait, the holder of the trait it acts on, the
+ * character that pays for opportunities, and the character a roll card pays.
  * @param {unknown} request
  * @param {import("../rules/trait-store.mjs").TraitStore} store
+ * @param {import("../rules/trait-store.mjs").RollFacts|null} roll
  * @returns {string[]}
  */
-function requestActorKeys(request, store) {
+function requestActorKeys(request, store, roll) {
   const keys = [];
   const payload = request?.payload;
   if ( typeof payload?.holder?.actorId === "string" ) keys.push(payload.holder.actorId);
+  if ( typeof payload?.actorKey === "string" ) keys.push(payload.actorKey);
   const trait = store.traits.find(t => t.id === payload?.traitId);
   if ( trait?.holder.kind === "actor" ) keys.push(trait.holder.actorId);
+  if ( roll?.payerKey ) keys.push(roll.payerKey);
   return [...new Set(keys)];
+}
+
+/**
+ * The actor key of the character who rolled a card: its speaker's actor, a token's synthetic actor
+ * included.
+ * @param {ChatMessage} message
+ * @returns {string|null}
+ */
+export function rollerKeyOf(message) {
+  return message.speaker ? (ChatMessage.implementation.getSpeakerActor(message.speaker)?.uuid ?? null) : null;
+}
+
+/**
+ * What a roll card holds, read on the GM's client (RollFacts), or null when the request names no
+ * poolRoll card.
+ * @param {unknown} request
+ * @param {User} user - the sender
+ * @returns {{facts: import("../rules/trait-store.mjs").RollFacts, message: ChatMessage, source: object}|null}
+ */
+function readRoll(request, user) {
+  const messageId = request?.payload?.messageId;
+  const message = (typeof messageId === "string") ? game.messages.get(messageId) : null;
+  if ( message?.type !== "poolRoll" ) return null;
+  const source = message.system.toObject();
+  const payer = source.pp?.payer ?? null;
+  const payerActor = (payer?.kind === "actor") ? game.actors.get(payer.actorId) : null;
+  return {
+    message,
+    source,
+    facts: {
+      rolled: source.rolled,
+      side: (payer?.kind === "bank") ? "gm" : "player",
+      hitchesDone: message.getFlag(SYSTEM_ID, HITCHES_DONE_FLAG) === true,
+      settled: source.pp?.settled === true,
+      usedD4Ids: usedD4ComplicationIds(source.pool, rollerKeyOf(message)),
+      payerKey: payerActor?.uuid ?? null,
+      senderOwnsCard: message.canUserModify(user, "update")
+    }
+  };
 }
 
 /**
@@ -163,9 +217,10 @@ export function actorFromKey(key) {
 async function processRequest(request, user) {
   if ( !game.user.isGM ) return fail("GM_REQUIRED");
   const store = getTraitStore();
+  const roll = readRoll(request, user);
   const actorDocs = {};
   const actors = {};
-  for ( const key of requestActorKeys(request, store) ) {
+  for ( const key of requestActorKeys(request, store, roll?.facts) ) {
     const actor = actorFromKey(key);
     if ( !actor ) continue;
     actorDocs[key] = actor;
@@ -176,20 +231,37 @@ async function processRequest(request, user) {
     };
   }
   const result = dispatchTraitStoreRequest({
-    sender: { userId: user.id, isGM: user.isGM }, request, store, actors, bank: getBank()
+    sender: { userId: user.id, isGM: user.isGM }, request, store, actors, roll: roll?.facts ?? null
   });
   if ( !result.ok ) return result;
-  const { store: next, payment, removedIds, replayed } = result.value;
-  if ( replayed ) return { ok: true, value: { revision: next.revision, removedIds, replayed } };
+  const { store: next, payment, removedIds, replayed, warnings, changes, takenOut } = result.value;
+  if ( replayed ) return { ok: true, value: { revision: next.revision, removedIds, replayed, warnings } };
   try {
-    const written = payment ? await writeWithPayment(next, payment, actorDocs) : await writeStore(next);
+    const cardUpdate = result.value.roll ? rollCardUpdate(roll, result.value.roll) : null;
+    const written = (payment || cardUpdate)
+      ? await writeBatch(next, payment, actorDocs, cardUpdate, roll?.message.id ?? null)
+      : await writeStore(next);
     if ( !written ) return fail("WRITE_FAILED");
   }
   catch( err ) {
     console.error(err);
     return fail("WRITE_FAILED");
   }
-  return { ok: true, value: { revision: next.revision, removedIds, replayed: false, payment } };
+  return { ok: true, value: { revision: next.revision, removedIds, replayed: false, payment, warnings, changes, takenOut } };
+}
+
+/**
+ * The update of a roll card after hitches or opportunities: its dice, the hitch lines that wait for
+ * its settlement, and the mark that the hitch choice is finished.
+ * @param {{message: ChatMessage, source: object}} roll
+ * @param {{rolled: object[], pendingLines: object[], hitchesDone?: boolean}} change
+ * @returns {object}
+ */
+function rollCardUpdate(roll, change) {
+  const update = { _id: roll.message.id, "system.rolled": change.rolled };
+  if ( change.pendingLines.length ) update["system.pp.otherLines"] = [...(roll.source.pp?.otherLines ?? []), ...change.pendingLines];
+  if ( change.hitchesDone ) update[`flags.${SYSTEM_ID}.${HITCHES_DONE_FLAG}`] = true;
+  return update;
 }
 
 /**
@@ -226,30 +298,33 @@ function settingOperation(key, value) {
 }
 
 /**
- * Writes the store, the payer's balance and the ledger entry in one modifyBatch call (ADR-057).
+ * Writes the store with the payer's balance and its ledger entry, and the roll card, in one
+ * modifyBatch call (ADR-057).
  * @param {import("../rules/trait-store.mjs").TraitStore} store
- * @param {import("../rules/trait-store.mjs").StorePayment} payment
+ * @param {import("../rules/trait-store.mjs").StorePayment|null} payment
  * @param {Object<string, Actor>} actorDocs
+ * @param {object|null} cardUpdate - a ChatMessage update
+ * @param {string|null} messageRef - the roll card the change belongs to
  * @returns {Promise<boolean>} whether every operation came back written
  */
-async function writeWithPayment(store, payment, actorDocs) {
+async function writeBatch(store, payment, actorDocs, cardUpdate, messageRef) {
   const operations = [settingOperation(TRAIT_STORE_SETTING, storeSource(store))];
-  let actor = null;
-  if ( payment.account.kind === "bank" ) operations.push(settingOperation(BANK_SETTING, payment.balance));
-  else {
-    actor = actorDocs[payment.account.actorKey];
+  if ( payment ) {
+    const actor = actorDocs[payment.account.actorKey];
     const update = { action: "update", documentName: "Actor", updates: [{ _id: actor.id, "system.plotPoints": payment.balance }] };
     if ( actor.isToken ) update.parent = actor.token;
     operations.push(update);
+    const several = payment.lines.length > 1;
+    operations.push({
+      action: "create", documentName: "ChatMessage",
+      data: [ledgerEntryData({
+        account: { kind: "actor", actorId: actor.id }, actor, delta: payment.delta, balance: payment.balance,
+        reason: payment.line.reason, label: several ? "" : (payment.line.label ?? ""), messageRef,
+        lines: several ? payment.lines : []
+      })]
+    });
   }
-  const account = payment.account.kind === "bank" ? { kind: "bank" } : { kind: "actor", actorId: actor.id };
-  operations.push({
-    action: "create", documentName: "ChatMessage",
-    data: [ledgerEntryData({
-      account, actor, delta: payment.delta, balance: payment.balance, reason: payment.line.reason,
-      label: payment.line.label ?? ""
-    })]
-  });
+  if ( cardUpdate ) operations.push({ action: "update", documentName: "ChatMessage", updates: [cardUpdate] });
   const results = await foundry.documents.modifyBatch(operations);
   return Array.isArray(results) && (results.length === operations.length) && results.every(r => r?.length === 1);
 }
