@@ -13,7 +13,8 @@
  * - the store as stored;
  * - for each actor the request names, by actor key (its UUID): whether the sender owns it, whether
  *   it holds its own plot points (a PC, P1) and its balance;
- * - the bank's balance.
+ * - for an action on a roll card, what the card holds (RollFacts), read from the card, never from
+ *   the request.
  *
  * The checks, in order, stopping at the first that fails (ADR-025):
  * 1. STORE_INVALID: the stored data doesn't pass the engine's checks.
@@ -22,20 +23,30 @@
  *    nothing to write; ACTION_ID_REUSED when another user sent it.
  * 4. UNSUPPORTED_ACTION.
  * 5. The sender: GM_ONLY for the tracker's actions; for a player's action TRAIT_NOT_FOUND,
- *    NOT_A_CHARACTER_ASSET, ACTOR_NOT_FOUND, then NOT_YOUR_CHARACTER.
+ *    NOT_A_CHARACTER_ASSET, ACTOR_NOT_FOUND, then NOT_YOUR_CHARACTER. For an action on a roll card,
+ *    ROLL_NOT_FOUND first; activating hitches is the GM's, except that the card's owner may finish
+ *    a roll with no hitch left to activate, or the bank's roll, whose hitches are opportunities (it
+ *    removes the roller's used d4 complications, rule 18).
  * 6. STALE_REVISION: the request was made against another revision.
  * 7. The action's own checks and the engine's codes.
- * 8. The payment: PP_GM_ONLY when the bank would pay for a user who isn't a GM, PP_INSUFFICIENT.
+ * 8. The payment: a character who holds plot points pays (PP_INSUFFICIENT). No spend on a trait has
+ *    a bank price (RQ-043), so for any other character a GM's action costs nothing and warns
+ *    BANK_SPEND_NOT_LISTED, and anyone else's is PP_GM_ONLY. A hitch's plot point waits on the roll
+ *    card until it is settled; on a card already settled it is paid at once.
  * @module rules/trait-store
  */
 
 import {
-  applyComplications, checkTemporaryTrait, createAsset, endScene, endSession, stepTemporaryTrait, upgradeAsset
+  applyComplications, applyHitches, applyOpportunities, checkTemporaryTrait, createAsset, endScene, endSession,
+  removeUsedD4Complications, stepTemporaryTrait, temporaryTraitPoolEntry, upgradeAsset
 } from "./assets.mjs";
 import { changeBalance } from "./plot-points.mjs";
 import { fail, ok } from "./result.mjs";
 
-/** The store's actions and who may send each: "gm" for the tracker, "owner" for a character's owner or a GM. */
+/**
+ * The store's actions and who may send each: "gm" for the tracker, "owner" for a character's owner
+ * or a GM, "roll" for activating hitches on a roll card (see the checks above).
+ */
 export const TRAIT_STORE_ACTIONS = Object.freeze({
   addComplication: "gm",
   addAsset: "gm",
@@ -47,8 +58,16 @@ export const TRAIT_STORE_ACTIONS = Object.freeze({
   endSession: "gm",
   buyAsset: "owner",
   keepAsset: "owner",
-  openAsset: "owner"
+  openAsset: "owner",
+  activateHitches: "roll",
+  useOpportunities: "owner"
 });
+
+/**
+ * The warnings of a temporary trait in a pool that a roll card stores and shows as a nonstandard
+ * selection (ADR-029). A d4 complication that goes to its holder is the card's plot point section's.
+ */
+export const TEMP_TRAIT_CARD_WARNINGS = Object.freeze(["ASSET_NOT_AVAILABLE", "OWN_COMPLICATION", "COMPLICATION_BEYOND_D12"]);
 
 /** The longest table-visible note, in characters. */
 export const MAX_NOTE_LENGTH = 500;
@@ -70,6 +89,18 @@ const ID_PATTERN = /^[a-zA-Z0-9]{16}$/;
  */
 
 /**
+ * What the handler reads from the roll card an action names.
+ * @typedef {Object} RollFacts
+ * @property {import("./types.mjs").RolledDie[]} rolled
+ * @property {"player"|"gm"} side - "gm" for a roll the bank pays for, whose hitches are opportunities
+ * @property {boolean} hitchesDone - the GM's hitch choice for this roll is made
+ * @property {boolean} settled - the roll's plot points are settled
+ * @property {string[]} usedD4Ids - the d4 complications the roller put in the pool from their own
+ * @property {string|null} payerKey - the actor key of the character the roll pays, or null
+ * @property {boolean} senderOwnsCard - the sender may change the card
+ */
+
+/**
  * What the handler knows of one actor a request names.
  * @typedef {{ownedBySender: boolean, holdsPlotPoints: boolean, balance: number|null}} StoreActorFacts
  */
@@ -77,10 +108,11 @@ const ID_PATTERN = /^[a-zA-Z0-9]{16}$/;
 /**
  * One balance change a request makes. The account names the actor by its key.
  * @typedef {Object} StorePayment
- * @property {{kind: "actor", actorKey: string}|{kind: "bank"}} account
+ * @property {{kind: "actor", actorKey: string}} account
  * @property {number} delta
  * @property {number} balance - the balance after the change
- * @property {import("./types.mjs").PpLine} line
+ * @property {import("./types.mjs").PpLine} line - the first line
+ * @property {import("./types.mjs").PpLine[]} lines - every line, all of one reason
  */
 
 /** @returns {TraitStore} the store of a world that has none yet */
@@ -148,6 +180,9 @@ function holderKey(holder) {
  * @returns {import("./types.mjs").EngineResult<string>} the actor key
  */
 function ownerActionActor(action, payload, store) {
+  if ( action === "useOpportunities" ) {
+    return (typeof payload.actorKey === "string") ? ok(payload.actorKey) : fail("ACTOR_NOT_FOUND");
+  }
   if ( action === "buyAsset" ) {
     const key = holderKey(payload.holder);
     return key ? ok(key) : fail("NOT_A_CHARACTER_ASSET");
@@ -174,7 +209,7 @@ function changed(traits, ppLines = [], removedIds = []) {
  * @returns {import("./types.mjs").EngineResult<{traits: object[], ppLines: object[], removedIds: string[],
  *   sceneBoosts?: object[], note?: {traitId: string, text: string}}>}
  */
-function applyAction(action, payload, store, actors) {
+function applyAction(action, payload, store, actors, roll) {
   const { traits } = store;
   const find = () => traits.find(t => t.id === payload.traitId);
   const replace = trait => traits.map(t => (t.id === trait.id ? trait : t));
@@ -238,39 +273,99 @@ function applyAction(action, payload, store, actors) {
       if ( !ended.ok ) return ended;
       return ok({ traits: ended.value.traits, ppLines: [], removedIds: ended.value.removedIds, sceneBoosts: [] });
     }
+    case "activateHitches":
+      return activateHitches(payload, traits, roll);
+    case "useOpportunities":
+      return useOpportunities(payload, store, roll);
     default:
       return fail("UNSUPPORTED_ACTION");
   }
 }
 
 /**
- * Who pays an action's line (P1, P9): the character's own balance when it holds plot points, else
- * the bank, which only a GM may spend.
- * @returns {import("./types.mjs").EngineResult<StorePayment|null>}
+ * The GM's hitch choice for a player's roll (rules 16 to 18; RQ-045, RQ-050): applyHitches, then,
+ * when the choice is finished, removeUsedD4Complications for the roller's d4 complications that are
+ * still stored. HITCHES_DONE once the choice is finished.
  */
-function payment(line, actorKey, actors, bank, sender) {
-  if ( !line ) return ok(null);
-  const facts = actors[actorKey];
-  const own = facts.holdsPlotPoints === true;
-  if ( !own && !sender.isGM ) return fail("PP_GM_ONLY");
-  const balance = own ? facts.balance : bank;
-  const delta = (line.direction === "spend") ? -line.amount : line.amount;
-  const result = changeBalance(balance, delta);
-  if ( !result.ok ) return result;
+function activateHitches(payload, traits, roll) {
+  if ( roll.hitchesDone ) return fail("HITCHES_DONE");
+  if ( !Array.isArray(payload.allocations) || (typeof payload.finish !== "boolean") ) return fail("INVALID_INPUT");
+  // Finishing with no allocations activates nothing, so it suits the GM's own roll too (its d4s).
+  const hitched = payload.allocations.length
+    ? applyHitches({ rolled: roll.rolled, side: roll.side, allocations: payload.allocations, complications: traits })
+    : ok({ rolled: roll.rolled.map(d => ({ ...d, source: { ...d.source } })), complications: traits, ppLines: [], changes: [], takenOut: [] });
+  if ( !hitched.ok ) return hitched;
+  let next = hitched.value.complications;
+  let removedIds = [];
+  if ( payload.finish ) {
+    const used = [...new Set(roll.usedD4Ids)].filter(id => next.some(t => (t.id === id) && (t.kind === "complication")));
+    const removed = removeUsedD4Complications(next, used);
+    if ( !removed.ok ) return removed;
+    next = removed.value.complications;
+    removedIds = removed.value.removedIds;
+  }
   return ok({
-    account: own ? { kind: "actor", actorKey } : { kind: "bank" }, delta, balance: result.value.balance, line: { ...line }
+    traits: next, ppLines: hitched.value.ppLines, removedIds, changes: hitched.value.changes, takenOut: hitched.value.takenOut,
+    roll: { rolled: hitched.value.rolled, hitchesDone: payload.finish, pending: !roll.settled }
+  });
+}
+
+/**
+ * A player uses opportunities from the GM's roll on temporary traits (rules 19 and 20; RQ-046,
+ * RQ-047). Signature assets wait for step 4.9: OPPORTUNITY_TARGET_NOT_SUPPORTED.
+ */
+function useOpportunities(payload, store, roll) {
+  if ( !Array.isArray(payload.uses) ) return fail("INVALID_INPUT");
+  if ( payload.uses.some(use => isPlainObject(use) && (use.target?.kind === "signature")) ) {
+    return fail("OPPORTUNITY_TARGET_NOT_SUPPORTED");
+  }
+  const used = applyOpportunities({
+    rolled: roll.rolled, side: roll.side, uses: payload.uses, traits: store.traits, sceneBoosts: store.sceneBoosts
+  });
+  if ( !used.ok ) return used;
+  return ok({
+    traits: used.value.traits, ppLines: used.value.ppLines, removedIds: used.value.removedIds,
+    sceneBoosts: used.value.sceneBoosts, changes: used.value.changes, takenOut: [],
+    roll: { rolled: used.value.rolled }
+  });
+}
+
+/**
+ * Who pays an action's lines (P1, P9; RQ-043): the character's own balance when it holds plot
+ * points. No trait spend has a bank price, so for any other character a GM pays nothing and gets
+ * the warning BANK_SPEND_NOT_LISTED; anyone else is refused.
+ * @returns {import("./types.mjs").EngineResult<{payment: StorePayment|null, warnings: string[]}>}
+ */
+function payment(lines, actorKey, actors, sender) {
+  if ( !lines.length ) return ok({ payment: null, warnings: [] });
+  const facts = actorKey ? actors[actorKey] : null;
+  if ( facts?.holdsPlotPoints !== true ) {
+    if ( !sender.isGM ) return fail("PP_GM_ONLY");
+    return ok({ payment: null, warnings: lines.some(l => l.direction === "spend") ? ["BANK_SPEND_NOT_LISTED"] : [] });
+  }
+  const delta = lines.reduce((sum, l) => sum + ((l.direction === "spend") ? -l.amount : l.amount), 0);
+  const result = changeBalance(facts.balance, delta);
+  if ( !result.ok ) return result;
+  const copies = lines.map(l => ({ ...l }));
+  return ok({
+    payment: { account: { kind: "actor", actorKey }, delta, balance: result.value.balance, line: copies[0], lines: copies },
+    warnings: []
   });
 }
 
 /**
  * Checks and applies one store request (ADR-057). On success the value holds the store to write
  * (revision raised, the action remembered) and the balance change to make with it, if any.
+ * For an action on a roll card the value also holds `roll`: the card's dice after the action, the
+ * plot point lines to add to it while they wait for its settlement (`pendingLines`), and whether
+ * the hitch choice is finished. `changes` and `takenOut` are the engine's.
  * @param {{sender: {userId: string, isGM: boolean}, request: unknown, store: unknown,
- *   actors?: Object<string, StoreActorFacts>, bank?: number}} input
+ *   actors?: Object<string, StoreActorFacts>, roll?: RollFacts|null}} input
  * @returns {import("./types.mjs").EngineResult<{store: TraitStore, payment: StorePayment|null, removedIds: string[],
- *   replayed: boolean}>}
+ *   replayed: boolean, warnings: string[], changes: object[], takenOut: string[],
+ *   roll: {rolled: object[], pendingLines: object[], hitchesDone?: boolean}|null}>}
  */
-export function dispatchTraitStoreRequest({ sender, request, store, actors = {}, bank = 0 } = {}) {
+export function dispatchTraitStoreRequest({ sender, request, store, actors = {}, roll = null } = {}) {
   const checkedStore = checkTraitStore(store);
   if ( !checkedStore.ok ) return checkedStore;
   const current = checkedStore.value;
@@ -280,15 +375,20 @@ export function dispatchTraitStoreRequest({ sender, request, store, actors = {},
   const done = current.completedActions.find(a => a.actionId === request.actionId);
   if ( done ) {
     if ( done.userId !== sender.userId ) return fail("ACTION_ID_REUSED");
-    return ok({ store: current, payment: null, removedIds: [], replayed: true });
+    return ok({ store: current, payment: null, removedIds: [], replayed: true, warnings: [], changes: [], takenOut: [], roll: null });
   }
 
   const who = TRAIT_STORE_ACTIONS[request.action];
   if ( !Object.hasOwn(TRAIT_STORE_ACTIONS, request.action) ) return fail("UNSUPPORTED_ACTION");
   const isGM = sender.isGM === true;
   let actorKey = null;
+  const onRoll = ["activateHitches", "useOpportunities"].includes(request.action);
+  if ( onRoll && !isPlainObject(roll) ) return fail("ROLL_NOT_FOUND");
   if ( who === "gm" ) {
     if ( !isGM ) return fail("GM_ONLY");
+  }
+  else if ( who === "roll" ) {
+    if ( !isGM && !ownerMayFinish(request.payload, roll) ) return fail("GM_ONLY");
   }
   else {
     const actor = ownerActionActor(request.action, request.payload, current);
@@ -300,9 +400,11 @@ export function dispatchTraitStoreRequest({ sender, request, store, actors = {},
   }
   if ( request.revision !== current.revision ) return fail("STALE_REVISION");
 
-  const applied = applyAction(request.action, request.payload, current, actors);
+  const applied = applyAction(request.action, request.payload, current, actors, roll);
   if ( !applied.ok ) return applied;
-  const paid = payment(applied.value.ppLines[0], actorKey, actors, bank, { isGM });
+  const pending = applied.value.roll?.pending === true;
+  const payer = (request.action === "activateHitches") ? roll.payerKey : actorKey;
+  const paid = pending ? ok({ payment: null, warnings: [] }) : payment(applied.value.ppLines, payer, actors, { isGM });
   if ( !paid.ok ) return paid;
 
   const { removedIds } = applied.value;
@@ -322,10 +424,25 @@ export function dispatchTraitStoreRequest({ sender, request, store, actors = {},
       notes,
       completedActions
     },
-    payment: paid.value,
+    payment: paid.value.payment,
     removedIds,
-    replayed: false
+    replayed: false,
+    warnings: paid.value.warnings,
+    changes: applied.value.changes ?? [],
+    takenOut: applied.value.takenOut ?? [],
+    roll: applied.value.roll ? {
+      rolled: applied.value.roll.rolled,
+      pendingLines: pending ? applied.value.ppLines.map(l => ({ ...l })) : [],
+      ...(applied.value.roll.hitchesDone === undefined ? {} : { hitchesDone: applied.value.roll.hitchesDone })
+    } : null
   });
+}
+
+/** @returns {boolean} whether a card's owner may finish its hitch choice: no allocations, none left to activate */
+function ownerMayFinish(payload, roll) {
+  return (roll.senderOwnsCard === true) && (payload.finish === true) && Array.isArray(payload.allocations)
+    && (payload.allocations.length === 0) && Array.isArray(roll.rolled)
+    && ((roll.side === "gm") || !roll.rolled.some(die => die.hitch && (die.state !== "hitch-activated")));
 }
 
 /**
@@ -377,4 +494,56 @@ export function trackerGroups(store, known) {
 /** @returns {boolean} whether value is a trait id in the 16-character format */
 export function isTraitId(value) {
   return (typeof value === "string") && ID_PATTERN.test(value);
+}
+
+/**
+ * The temporary traits the pool builder offers a roller (step 4.8b): the roller's own traits, the
+ * scene's, other characters' open assets, other characters' complications and the unassigned
+ * complications, each with temporaryTraitPoolEntry's die and warnings. Another character's asset
+ * that isn't open, and an unassigned asset, aren't offered. Groups and traits keep store order.
+ * @param {unknown} store
+ * @param {string|null} rollerKey - the rolling character's actor key, or null
+ * @returns {import("./types.mjs").EngineResult<{group: "own"|"scene"|"open"|"complications",
+ *   traitId: string, name: string, kind: string, size: number, source: object, warnings: string[],
+ *   d4Gain: boolean, inPool?: boolean}[]>}
+ */
+export function poolTraitChoices(store, rollerKey) {
+  const checked = checkTraitStore(store);
+  if ( !checked.ok ) return checked;
+  if ( (rollerKey !== null) && (typeof rollerKey !== "string") ) return fail("INVALID_INPUT");
+  const groupOf = t => {
+    const holderKey = t.holder.kind === "actor" ? t.holder.actorId : null;
+    if ( (holderKey !== null) && (holderKey === rollerKey) ) return "own";
+    if ( t.holder.kind === "scene" ) return "scene";
+    if ( t.kind === "complication" ) return "complications";
+    if ( (holderKey !== null) && (t.access === "open") ) return "open";
+    return null;
+  };
+  const order = ["own", "scene", "open", "complications"];
+  const choices = [];
+  for ( const group of order ) {
+    for ( const trait of checked.value.traits.filter(t => groupOf(t) === group) ) {
+      const entry = temporaryTraitPoolEntry(trait, { rollerActorId: rollerKey });
+      if ( !entry.ok ) return entry;
+      choices.push({
+        group, traitId: trait.id, name: trait.name, kind: trait.kind, size: entry.value.size,
+        source: entry.value.source, warnings: entry.value.warnings, d4Gain: entry.value.ppGained === 1
+      });
+    }
+  }
+  return ok(choices);
+}
+
+/**
+ * The d4 complications a roller put in a pool from their own (rule 18): the trait ids of the
+ * pool's complication dice of size 4 whose holder is the roller, each once, in pool order.
+ * @param {{size: number, source: {kind?: string, actorId?: string, traitId?: string}}[]} pool
+ * @param {string|null} rollerKey
+ * @returns {string[]}
+ */
+export function usedD4ComplicationIds(pool, rollerKey) {
+  if ( !Array.isArray(pool) || (typeof rollerKey !== "string") ) return [];
+  const ids = pool.filter(d => isPlainObject(d?.source) && (d.source.kind === "complication") && (d.size === 4)
+    && (d.source.actorId === rollerKey) && (typeof d.source.traitId === "string")).map(d => d.source.traitId);
+  return [...new Set(ids)];
 }

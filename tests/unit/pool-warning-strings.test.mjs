@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
+import { TEMP_TRAIT_CARD_WARNINGS } from "../../module/rules/trait-store.mjs";
 
 const ROOT = resolve(import.meta.dirname, "../..");
 const lang = JSON.parse(readFileSync(resolve(ROOT, "lang/en.json"), "utf8"));
@@ -38,8 +39,9 @@ describe("poolRoll card strings for a nonstandard selection (ADR-029, RQ-030)", 
   });
 
   it("ADR-029 has a reason for every warning code a pool can carry, and no others", () => {
-    expect(Object.keys(nonstandard.Reasons ?? {}).sort()).toEqual(poolWarningCodes());
-    for ( const code of poolWarningCodes() ) expect(nonstandard.Reasons[code], code).toBeTypeOf("string");
+    const codes = [...poolWarningCodes(), ...TEMP_TRAIT_CARD_WARNINGS].sort();
+    expect(Object.keys(nonstandard.Reasons ?? {}).sort()).toEqual(codes);
+    for ( const code of codes ) expect(nonstandard.Reasons[code], code).toBeTypeOf("string");
   });
 
   it("ADR-041 keeps the configuration's warnings off the card", () => {

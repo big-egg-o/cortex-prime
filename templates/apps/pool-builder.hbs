@@ -60,6 +60,27 @@
   </div>
   {{/if}}
 
+  {{!-- Temporary traits from the store (step 4.8b): the roller's, the scene's, open assets and complications. --}}
+  {{#if temporaryTraits.length}}
+  <fieldset class="cp-builder-traits">
+    <legend>{{ localize "CORTEX.Builder.TemporaryTraits" }}</legend>
+    {{#each temporaryTraits}}
+    <p class="hint cp-trait-group">{{ this.label }}</p>
+    {{#each this.traits}}
+    <div class="form-group cp-trait-choice" data-trait-id="{{ this.traitId }}">
+      <span class="label">{{ this.name }} <span class="hint">{{ this.kind }} d{{ this.size }}</span>
+        {{#if this.gain}}<span class="cp-source-pp">{{ this.gain }}</span>{{/if}}</span>
+      <div class="form-fields">
+        <button type="button" class="ui-control icon" data-action="addTemporaryTrait" data-trait-id="{{ this.traitId }}"
+          {{#if this.inPool}}disabled{{/if}} data-tooltip aria-label="{{ localize "CORTEX.Builder.AddTrait" }}"><i class="fa-solid fa-plus" inert></i></button>
+      </div>
+      {{#if this.warnings.length}}<p class="hint cp-trait-warnings">{{#each this.warnings}}<span>{{ this }}</span> {{/each}}</p>{{/if}}
+    </div>
+    {{/each}}
+    {{/each}}
+  </fieldset>
+  {{/if}}
+
   <div class="form-group cp-add-die">
     <select name="size" aria-label="{{ localize "CORTEX.Builder.DieSize" }}">
       {{#each sizes}}

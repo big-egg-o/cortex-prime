@@ -982,3 +982,37 @@
 .cortex-prime.trait-tracker .cp-tracker-line button.icon { flex: 0 0 auto; width: 24px; height: 24px; }
 .cortex-prime.trait-tracker .cp-tracker-note { margin: 0 0 0.25rem 3.75ch; font-style: italic; }
 .cortex-prime.trait-tracker .cp-complication .cp-tracker-die { color: var(--color-level-error, #c33); }
+
+/* Temporary traits in the pool builder (step 4.8b): one row per trait, warnings under it. */
+.cortex-prime.pool-builder .window-content fieldset.cp-builder-traits {
+  gap: 0.25rem;
+  padding: 0.5rem 0.75rem;
+}
+
+.cortex-prime.pool-builder .window-content .cp-trait-group {
+  margin: 0.25rem 0 0;
+}
+
+.cortex-prime.pool-builder .window-content .cp-trait-choice {
+  flex-wrap: wrap;
+}
+
+.cortex-prime.pool-builder .window-content .cp-trait-choice > .form-fields {
+  flex: none;
+  width: auto;
+}
+
+.cortex-prime.pool-builder .window-content .cp-trait-warnings {
+  flex-basis: 100%;
+  margin: 0;
+}
+
+/* Hitches and opportunities on a roll card (step 4.8b). */
+.cortex-prime.poolroll-card .cp-roll-traits {
+  flex-wrap: wrap;
+}
+
+.cortex-prime.poolroll-card .cp-roll-traits > .cp-hitches-done {
+  flex-basis: 100%;
+  margin: 0;
+}

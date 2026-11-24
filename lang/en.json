@@ -52,7 +52,10 @@
           "EXTRA_TRAIT_NOT_ALLOWED": "Further trait from a set that allows only one",
           "PRIME_SET_MISSING": "No trait from a prime set",
           "TRAIT_ORPHANED": "Trait no longer in the game configuration",
-          "RATING_CONFLICTS_WITH_SET": "Rating that no longer fits its trait set"
+          "RATING_CONFLICTS_WITH_SET": "Rating that no longer fits its trait set",
+          "ASSET_NOT_AVAILABLE": "Another character's asset that isn't open",
+          "OWN_COMPLICATION": "The roller's own complication",
+          "COMPLICATION_BEYOND_D12": "A complication past d12, rolled as a d12"
         },
         "UnpricedOne": "No standard cost · 1 trait unpriced",
         "UnpricedMany": "No standard cost · {count} traits unpriced"
@@ -101,7 +104,9 @@
         "STATEMENT_RATING_NOT_ONE_DIE": "This trait set doesn't handle a challenge of several dice automatically. Add the dice and change the rating by hand, as your table decides; a GM can turn this on for the set in the game configuration.",
         "STATEMENT_RATING_MIXED_SIZES": "A challenge of a rating with mixed die sizes isn't handled automatically. Add the dice and change the rating by hand, as your table decides.",
         "CHALLENGE_NEEDS_OWNER": "Only someone who can edit this character can challenge its statement.",
-        "ACTOR_NOT_FOUND": "The character of a challenged trait can't be found, so it wasn't stepped down."
+        "ACTOR_NOT_FOUND": "The character of a challenged trait can't be found, so it wasn't stepped down.",
+        "TRAIT_IN_POOL": "That asset or complication is in the pool already.",
+        "TRAIT_NOT_OFFERED": "That asset or complication isn't offered to this roller."
       },
       "DifficultyLevel": "Difficulty level",
       "SetDifficulty": "Set difficulty dice",
@@ -112,7 +117,21 @@
       "TargetToBeat": "Rolling for {side}, to beat {total}",
       "TargetChanged": "The roll destination changed. Check the destination and roll again.",
       "TargetGone": "That test or contest no longer waits for this roll, so nothing was rolled.",
-      "ClearTarget": "Roll for nothing in particular"
+      "ClearTarget": "Roll for nothing in particular",
+      "TemporaryTraits": "Assets and complications",
+      "AddTrait": "Add to the pool",
+      "TraitGroups": {
+        "own": "The roller's",
+        "scene": "This scene",
+        "open": "Open assets",
+        "complications": "Others' complications"
+      },
+      "TraitWarnings": {
+        "ASSET_NOT_AVAILABLE": "Another character's asset that isn't open.",
+        "OWN_COMPLICATION": "The roller's own complication.",
+        "D4_COMPLICATION_GOES_TO_HOLDER": "A d4 complication: its holder gains the plot point.",
+        "COMPLICATION_BEYOND_D12": "Past d12: it is rolled as a d12."
+      }
     },
     "Keybindings": {
       "OpenPoolBuilder": "Open the Pool Builder"
@@ -679,7 +698,43 @@
         "ALREADY_KEPT": "That asset is already kept for the session.",
         "ALREADY_OPEN": "That asset is already open.",
         "ASSET_STEP_PAST_D12": "An asset can't go past d12.",
-        "WRITE_FAILED": "The change couldn't be saved; see the console."
+        "WRITE_FAILED": "The change couldn't be saved; see the console.",
+        "HITCHES_DONE": "The hitch choice for this roll is already made.",
+        "ROLL_NOT_FOUND": "That roll card is gone.",
+        "OPPORTUNITY_TARGET_NOT_SUPPORTED": "Opportunities on signature assets come later.",
+        "NAME_REQUIRED": "Give the new complication a name.",
+        "NO_TARGETS": "There is no asset or complication to use it on.",
+        "OPPORTUNITIES_NOT_HITCHES": "The GM's hitches are the players' opportunities.",
+        "HITCHES_NOT_OPPORTUNITIES": "A player's hitches are the GM's to activate.",
+        "OPPORTUNITY_USE_NOT_LISTED": "Opportunities step a complication down or an asset up.",
+        "BOTCH_ONE_COMPLICATION": "On a botch every die goes into one complication.",
+        "EMPTY_ALLOCATION": "Choose at least one die.",
+        "HITCH_NOT_FOUND": "That die isn't on this roll.",
+        "NOT_A_HITCH": "That die isn't a hitch.",
+        "HITCH_ALREADY_ACTIVATED": "That hitch is already used.",
+        "HITCH_REUSED": "Each hitch can be used once.",
+        "NOT_A_COMPLICATION": "That isn't a complication.",
+        "DUPLICATE_TARGET": "Each trait can be chosen once."
+      },
+      "TakenOut": "{name} is past d12: its holder is taken out.",
+      "Hitches": {
+        "Title": "Activate hitches",
+        "Dice": "Hitches",
+        "Target": "Complication",
+        "New": "A new complication",
+        "Finish": "That's all for this roll",
+        "Activate": "Activate hitches",
+        "Done": "No more hitches",
+        "Finished": "The GM's hitch choice for this roll is made.",
+        "BotchHint": "A botch: every die goes into one complication."
+      },
+      "Opportunities": {
+        "Title": "Use opportunities",
+        "Dice": "Opportunities",
+        "Target": "On",
+        "Payer": "Paid by",
+        "Cost": "1 PP for the trait, however many opportunities it takes.",
+        "Use": "Use opportunities"
       }
     }
   },
