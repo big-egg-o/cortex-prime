@@ -24,7 +24,9 @@ describe("PP_REASONS (Plot Points spec, implementation notes)", () => {
       HINDER: "gain", D4_COMPLICATION: "gain", SFX_GAIN: "gain", HITCH_COMPLICATION: "gain", GIVE_IN: "gain",
       AWARD: "gain", SESSION_START: "gain",
       EXTRA_TRAIT: "spend", EXTRA_RESULT: "spend", EXTRA_EFFECT_DIE: "spend", SFX_SPEND: "spend", STAY_IN: "spend",
-      GM_ADJUST: "adjust"
+      GM_ADJUST: "adjust",
+      ASSET_CREATE: "spend", ASSET_KEEP_SESSION: "spend", ASSET_OPEN: "spend", ASSET_GIVE: "spend", OPPORTUNITY: "spend",
+      ACT_THROUGH_COMPLICATION: "spend", SIGNATURE_ASSET_RECOVER: "spend", RELATIONSHIP_CREATE: "spend"
     });
   });
 

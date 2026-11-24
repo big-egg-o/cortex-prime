@@ -968,3 +968,17 @@
 .cortex-prime .cp-contest-pp p { margin: 0.1rem 0; }
 .cortex-prime .cp-pp-stay-in { display: flex; flex-wrap: wrap; gap: 0.25rem 0.5rem; align-items: center; }
 .cortex-prime .cp-pp-stay-in > p, .cortex-prime .cp-pp-stay-in > button { flex: 1 1 100%; }
+
+/* Assets & Complications tracker (ADR-057) */
+.cortex-prime.trait-tracker .cp-trait-tracker { display: flex; flex-direction: column; gap: 0.5rem; height: 100%; }
+.cortex-prime.trait-tracker .cp-tracker-actions,
+.cortex-prime.trait-tracker .cp-tracker-end { display: flex; gap: 0.5rem; }
+.cortex-prime.trait-tracker .cp-tracker-groups { flex: 1; overflow-y: auto; }
+.cortex-prime.trait-tracker .cp-tracker-list { list-style: none; margin: 0 0 0.5rem; padding: 0; }
+.cortex-prime.trait-tracker .cp-tracker-line { display: flex; align-items: center; gap: 0.25rem; }
+.cortex-prime.trait-tracker .cp-tracker-die { min-width: 3.5ch; }
+.cortex-prime.trait-tracker .cp-tracker-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cortex-prime.trait-tracker .cp-tracker-meta { font-size: var(--font-size-11, 11px); opacity: 0.75; }
+.cortex-prime.trait-tracker .cp-tracker-line button.icon { flex: 0 0 auto; width: 24px; height: 24px; }
+.cortex-prime.trait-tracker .cp-tracker-note { margin: 0 0 0.25rem 3.75ch; font-style: italic; }
+.cortex-prime.trait-tracker .cp-complication .cp-tracker-die { color: var(--color-level-error, #c33); }

@@ -128,7 +128,17 @@ export function lineText(line) {
  * @param {import("../rules/types.mjs").PpLine[]} [entry.lines] - a settled roll's lines
  * @returns {Promise<ChatMessage>}
  */
-export function postLedgerEntry({ account, actor, delta, balance, reason, label = "", messageRef = null, lines = [] }) {
+export function postLedgerEntry(entry) {
+  return ChatMessage.implementation.create(ledgerEntryData(entry));
+}
+
+/**
+ * The ChatMessage data of one ledger entry (P3), for postLedgerEntry or a batch write that commits
+ * the entry with the change it records (ADR-057).
+ * @param {object} entry - as postLedgerEntry
+ * @returns {object}
+ */
+export function ledgerEntryData({ account, actor, delta, balance, reason, label = "", messageRef = null, lines = [] }) {
   const i18n = game.i18n;
   const name = actor?.name ?? i18n.localize("CORTEX.PlotPoints.Bank");
   const reasonText = i18n.localize(`CORTEX.PlotPoints.Reasons.${reason}`);
@@ -138,7 +148,7 @@ export function postLedgerEntry({ account, actor, delta, balance, reason, label 
   const adjustment = reason === "GM_ADJUST";
   let content = `<p class="cp-pp-entry${adjustment ? " cp-pp-adjustment" : ""}">${foundry.utils.escapeHTML(text)}</p>`;
   if ( lines.length ) content += `<ul class="cp-pp-lines">${lines.map(line => `<li>${foundry.utils.escapeHTML(lineText(line))}</li>`).join("")}</ul>`;
-  return ChatMessage.implementation.create({
+  return {
     type: "plotPoints",
     content,
     speaker: actor ? ChatMessage.implementation.getSpeaker({ actor }) : { alias: name },
@@ -146,7 +156,7 @@ export function postLedgerEntry({ account, actor, delta, balance, reason, label 
       account: { kind: account.kind, actorId: actor?.id ?? null, name },
       delta, balance, reason, label, messageRef, adjustment, lines
     }
-  });
+  };
 }
 
 /**

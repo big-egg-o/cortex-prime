@@ -56,3 +56,7 @@ export {
   createAsset, createSessionRelationship, endScene, endSession, loseSignatureAsset, recoverSignatureAsset,
   removeUsedD4Complications, signatureAssetPoolDice, stepTemporaryTrait, temporaryTraitPoolEntry, upgradeAsset
 } from "./assets.mjs";
+export {
+  COMPLETED_ACTIONS_KEPT, MAX_NOTE_LENGTH, TRAIT_STORE_ACTIONS, checkTraitStore, dispatchTraitStoreRequest,
+  emptyTraitStore, isTraitId, previewEnd, trackerGroups
+} from "./trait-store.mjs";
