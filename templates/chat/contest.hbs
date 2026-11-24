@@ -259,6 +259,23 @@
   </div>
   {{/if}}
 
+  {{!-- Complications and assets (step 4.8c): the consequence's complications, and assets from effect dice. --}}
+  {{#if traits}}
+  <div class="cp-controls cp-contest-traits">
+    {{#if traits.apply}}
+    <button type="button" data-action="consequence-apply">
+      <i class="fa-solid fa-triangle-exclamation" inert></i><span>{{ localize "CORTEX.Assets.Consequence.Apply" }}</span>
+    </button>
+    {{/if}}
+    {{#if traits.asset}}
+    <button type="button" data-action="effect-asset">
+      <i class="fa-solid fa-plus" inert></i><span>{{ localize "CORTEX.Assets.EffectAsset.Create" }}</span>
+    </button>
+    {{/if}}
+    {{#if traits.applied}}<p class="hint cp-consequence-applied">{{ localize "CORTEX.Assets.Consequence.Applied" }}</p>{{/if}}
+  </div>
+  {{/if}}
+
   <div class="cp-controls">
     {{#if button}}
     <button type="button" data-action="roll-for-contest" data-side="{{ button.side }}" data-roll-index="{{ button.rollIndex }}">

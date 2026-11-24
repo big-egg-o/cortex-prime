@@ -57,6 +57,6 @@ export {
   removeUsedD4Complications, signatureAssetPoolDice, stepTemporaryTrait, temporaryTraitPoolEntry, upgradeAsset
 } from "./assets.mjs";
 export {
-  COMPLETED_ACTIONS_KEPT, MAX_NOTE_LENGTH, TEMP_TRAIT_CARD_WARNINGS, TRAIT_STORE_ACTIONS, checkTraitStore, dispatchTraitStoreRequest,
-  emptyTraitStore, isTraitId, poolTraitChoices, previewEnd, trackerGroups, usedD4ComplicationIds
+  COMPLETED_ACTIONS_KEPT, MAX_NOTE_LENGTH, TEMP_TRAIT_CARD_WARNINGS, TRAIT_STORE_ACTIONS, checkTraitStore,
+  consequenceComplications, dispatchTraitStoreRequest, effectAssetDice, emptyTraitStore, isTraitId, poolTraitChoices, previewEnd, trackerGroups, usedD4ComplicationIds
 } from "./trait-store.mjs";

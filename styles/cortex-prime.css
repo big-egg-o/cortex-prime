@@ -974,14 +974,14 @@
 .cortex-prime.trait-tracker .cp-tracker-actions,
 .cortex-prime.trait-tracker .cp-tracker-end { display: flex; gap: 0.5rem; }
 .cortex-prime.trait-tracker .cp-tracker-groups { flex: 1; overflow-y: auto; }
-.cortex-prime.trait-tracker .cp-tracker-list { list-style: none; margin: 0 0 0.5rem; padding: 0; }
-.cortex-prime.trait-tracker .cp-tracker-line { display: flex; align-items: center; gap: 0.25rem; }
-.cortex-prime.trait-tracker .cp-tracker-die { min-width: 3.5ch; }
-.cortex-prime.trait-tracker .cp-tracker-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.cortex-prime.trait-tracker .cp-tracker-meta { font-size: var(--font-size-11, 11px); opacity: 0.75; }
+.cortex-prime.trait-tracker .cp-tracker-list, .cortex-prime.actor-traits .cp-tracker-list { list-style: none; margin: 0 0 0.5rem; padding: 0; }
+.cortex-prime.trait-tracker .cp-tracker-line, .cortex-prime.actor-traits .cp-tracker-line { display: flex; align-items: center; gap: 0.25rem; }
+.cortex-prime.trait-tracker .cp-tracker-die, .cortex-prime.actor-traits .cp-tracker-die { min-width: 3.5ch; }
+.cortex-prime.trait-tracker .cp-tracker-name, .cortex-prime.actor-traits .cp-tracker-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cortex-prime.trait-tracker .cp-tracker-meta, .cortex-prime.actor-traits .cp-tracker-meta { font-size: var(--font-size-11, 11px); opacity: 0.75; }
 .cortex-prime.trait-tracker .cp-tracker-line button.icon { flex: 0 0 auto; width: 24px; height: 24px; }
-.cortex-prime.trait-tracker .cp-tracker-note { margin: 0 0 0.25rem 3.75ch; font-style: italic; }
-.cortex-prime.trait-tracker .cp-complication .cp-tracker-die { color: var(--color-level-error, #c33); }
+.cortex-prime.trait-tracker .cp-tracker-note, .cortex-prime.actor-traits .cp-tracker-note { margin: 0 0 0.25rem 3.75ch; font-style: italic; }
+.cortex-prime.trait-tracker .cp-complication .cp-tracker-die, .cortex-prime.actor-traits .cp-complication .cp-tracker-die { color: var(--color-level-error, #c33); }
 
 /* Temporary traits in the pool builder (step 4.8b): one row per trait, warnings under it. */
 .cortex-prime.pool-builder .window-content fieldset.cp-builder-traits {
@@ -1015,4 +1015,24 @@
 .cortex-prime.poolroll-card .cp-roll-traits > .cp-hitches-done {
   flex-basis: 100%;
   margin: 0;
+}
+
+/* Complications and assets on the test and contest card, and a character's own list (step 4.8c). */
+.cortex-prime .cp-contest-traits {
+  flex-wrap: wrap;
+}
+
+.cortex-prime .cp-contest-traits > .cp-consequence-applied {
+  flex-basis: 100%;
+  margin: 0;
+}
+
+.cortex-prime.actor-traits .cp-tracker-line > button {
+  flex: 0 0 auto;
+  width: auto;
+}
+
+.cortex-prime.actor-traits .cp-taken-out {
+  color: var(--color-level-error);
+  font-weight: bold;
 }

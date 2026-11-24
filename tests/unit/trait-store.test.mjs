@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
-  COMPLETED_ACTIONS_KEPT, MAX_NOTE_LENGTH, TRAIT_STORE_ACTIONS, checkTraitStore, dispatchTraitStoreRequest,
-  emptyTraitStore, poolTraitChoices, previewEnd, trackerGroups, usedD4ComplicationIds
+  COMPLETED_ACTIONS_KEPT, MAX_NOTE_LENGTH, TRAIT_STORE_ACTIONS, checkTraitStore, consequenceComplications,
+  dispatchTraitStoreRequest, effectAssetDice, emptyTraitStore, poolTraitChoices, previewEnd, trackerGroups, usedD4ComplicationIds
 } from "../../module/rules/trait-store.mjs";
 import * as rules from "../../module/rules/index.mjs";
 
@@ -23,8 +23,8 @@ const ACTORS = {
 
 let counter = 0;
 const request = (action, payload, revision = 0) => ({ action, actionId: `action-${++counter}`, revision, payload });
-const run = (sender, req, store = emptyTraitStore(), actors = ACTORS, roll = null) => dispatchTraitStoreRequest({
-  sender, request: req, store, actors, roll
+const run = (sender, req, store = emptyTraitStore(), actors = ACTORS, roll = null, card = null) => dispatchTraitStoreRequest({
+  sender, request: req, store, actors, roll, card
 });
 const addComplication = (name, actorId, size = 6, revision = 0) => request("addComplication", {
   id: id(name), name, size, holder: actorId ? holder(actorId) : { kind: "unassigned" }
@@ -100,7 +100,7 @@ describe("the trait store (ADR-057, step 4.8a)", () => {
     const first = run(PLAYER, req).value;
     const again = run(PLAYER, req, first.store).value;
     expect(again).toEqual({
-      store: first.store, payment: null, removedIds: [], replayed: true, warnings: [], changes: [], takenOut: [], roll: null
+      store: first.store, payment: null, removedIds: [], replayed: true, warnings: [], changes: [], takenOut: [], roll: null, card: null
     });
     expect(run(GM, req, first.store)).toEqual(refused("ACTION_ID_REUSED"));
   });
@@ -407,5 +407,171 @@ describe("the pool builder's temporary traits (step 4.8b)", () => {
     ];
     expect(usedD4ComplicationIds(pool, ANA)).toEqual([id("Winded")]);
     expect(usedD4ComplicationIds(pool, null)).toEqual([]);
+  });
+});
+
+/** A won contest's Consequence, as contestConsequence reports it. */
+const wonContest = ({ comparisons = [], winnerEffects = [], takenOut = false, avoidWithPP = null } = {}) => ({
+  winner: "initiator", loser: "opposition", ending: "won", margin: 3, heroicSteps: 0, winnerEffects, comparisons,
+  takenOut, takeOutCause: takenOut ? "comparison" : null, avoidWithPP, ppEligible: false, rematchBlocked: false
+});
+const compared = (effectId, complication, takesOut = false) => ({ effectId, complication, takesOut });
+
+/** What the handler reads from a test or contest card. */
+const cardFacts = (overrides = {}) => ({
+  type: "contest", offered: [], holderKey: GUARD_1, appliedKeys: [], winnerOwnedBySender: false, loserIsBank: true,
+  assetEffects: [], assetHolderKey: ANA, assetsMade: [], ...overrides
+});
+
+describe("consequences and assets from effect dice on the test and contest card (step 4.8c)", () => {
+  it("a lost contest gives a complication per compared die; a stay-in turns the take-out into one (rules 22, 23)", () => {
+    const consequence = wonContest({
+      winnerEffects: [{ id: "e1", size: 10 }, { id: "e2", size: 8 }],
+      comparisons: [compared("e1", null, true), compared("e2", 8)],
+      takenOut: true, avoidWithPP: [{ effectId: "e1", size: 10 }]
+    });
+    expect(consequenceComplications({ type: "contest", consequence, stayedIn: false }).value).toEqual([
+      { key: "contest:e2", size: 8, cause: "contest", required: true }
+    ]);
+    expect(consequenceComplications({ type: "contest", consequence, stayedIn: true }).value).toEqual([
+      { key: "stayIn:e1", size: 10, cause: "stayIn", required: true },
+      { key: "contest:e2", size: 8, cause: "contest", required: true }
+    ]);
+    expect(consequenceComplications({ type: "contest", consequence: { ...consequence, ending: "gaveIn" }, stayedIn: false }).value)
+      .toEqual([]);
+  });
+
+  it("a failed test offers the GM's d6; a stay-in after it gives what it bought (rules 21, 23)", () => {
+    expect(consequenceComplications({ type: "test", success: false, stayIn: null }).value).toEqual([
+      { key: "failedTest", size: 6, cause: "failedTest", required: false }
+    ]);
+    expect(consequenceComplications({ type: "test", success: false, stayIn: [{ effectId: null, size: 12 }] }).value).toEqual([
+      { key: "stayIn:0", size: 12, cause: "stayIn", required: true }
+    ]);
+    expect(consequenceComplications({ type: "test", success: true, stayIn: null }).value).toEqual([]);
+    expect(consequenceComplications({ type: "duel" })).toEqual(refused("INVALID_INPUT"));
+  });
+
+  it("the effect dice that can make an asset: a successful test's, a winner's dice not used against the loser (AC-06, AC-09)", () => {
+    expect(effectAssetDice({ type: "test", success: true, effects: [{ id: "e1", size: 12 }] })).toEqual([{ id: "e1", size: 12 }]);
+    expect(effectAssetDice({ type: "test", success: false, effects: [{ id: "e1", size: 12 }] })).toEqual([]);
+    const consequence = wonContest({
+      winnerEffects: [{ id: "e1", size: 10 }, { id: "e2", size: 8 }, { id: "e3", size: 6 }],
+      comparisons: [compared("e1", 10)], takenOut: true, avoidWithPP: [{ effectId: "e3", size: 12 }]
+    });
+    expect(effectAssetDice({ type: "contest", consequence, usedAgainstLoser: ["e1"] })).toEqual([{ id: "e2", size: 8 }]);
+    expect(effectAssetDice({ type: "contest", consequence, usedAgainstLoser: null })).toEqual([]);
+    expect(effectAssetDice({ type: "contest", consequence: { ...consequence, ending: "gaveIn" }, usedAgainstLoser: [] })).toEqual([]);
+  });
+
+  it("the GM gives the loser a new complication, or steps one up that is at least as large (PA5, AC-31)", () => {
+    let store = run(GM, addComplication("Exhausted", GUARD_1, 6)).value.store;
+    store = run(GM, addComplication("Scratched", GUARD_1, 4, 1), store).value.store;
+    const card = cardFacts({ offered: [{ key: "c0", size: 6, cause: "contest", required: true }] });
+    const stepped = run(GM, request("applyConsequence", {
+      messageId: "msg", items: [{ key: "c0", target: { kind: "existing", traitId: id("Exhausted") } }]
+    }, 2), store, ACTORS, null, card).value;
+    expect(stepped.store.traits.find(t => t.id === id("Exhausted")).dice).toEqual([8]);
+    expect(stepped.card).toEqual({ consequenceKeys: ["c0"] });
+    expect(stepped.payment).toBeNull();
+    expect(run(GM, request("applyConsequence", {
+      messageId: "msg", items: [{ key: "c0", target: { kind: "existing", traitId: id("Scratched") } }]
+    }, 2), store, ACTORS, null, card)).toEqual(refused("COMPLICATION_TOO_SMALL"));
+    const made = run(GM, request("applyConsequence", {
+      messageId: "msg", items: [{ key: "c0", target: { kind: "new", id: id("Lost the Trail"), name: "Lost the Trail" } }]
+    }, 2), store, ACTORS, null, card).value;
+    expect(made.store.traits.at(-1)).toMatchObject({ name: "Lost the Trail", dice: [6], origin: "contest", holder: holder(GUARD_1) });
+  });
+
+  it("a stay-in recorded after the contest's complications were given adds only its own (rule 23)", () => {
+    const card = cardFacts({
+      offered: [{ key: "stayIn:e1", size: 10, cause: "stayIn", required: true }, { key: "contest:e2", size: 8, cause: "contest", required: true }],
+      appliedKeys: ["contest:e2"]
+    });
+    const result = run(GM, request("applyConsequence", {
+      messageId: "msg", items: [{ key: "stayIn:e1", target: { kind: "new", id: id("Battered"), name: "Battered" } }]
+    }), emptyTraitStore(), ACTORS, null, card).value;
+    expect(result.store.traits).toEqual([expect.objectContaining({ dice: [10], origin: "stayIn" })]);
+    expect(result.card).toEqual({ consequenceKeys: ["contest:e2", "stayIn:e1"] });
+  });
+
+  it("a step-up past d12 takes the loser out, even after staying in (rule 24)", () => {
+    const store = run(GM, addComplication("Bleeding", GUARD_1, 12)).value.store;
+    const card = cardFacts({ offered: [{ key: "c0", size: 10, cause: "stayIn", required: true }] });
+    const result = run(GM, request("applyConsequence", {
+      messageId: "msg", items: [{ key: "c0", target: { kind: "existing", traitId: id("Bleeding") } }]
+    }, 1), store, ACTORS, null, card).value;
+    expect(result.takenOut).toEqual([id("Bleeding")]);
+  });
+
+  it("refusals: applied twice, nothing left, a required one left out, an unknown key, another character's complication", () => {
+    const store = run(GM, addComplication("Exhausted", ANA, 8)).value.store;
+    const offered = [{ key: "c0", size: 6, cause: "contest", required: true }, { key: "c1", size: 6, cause: "contest", required: true }];
+    const newItem = (key, name) => ({ key, target: { kind: "new", id: id(name), name } });
+    const send = (items, card) => run(GM, request("applyConsequence", { messageId: "msg", items }, 1), store, ACTORS, null, card);
+    expect(send([newItem("c0", "A")], cardFacts({ offered, appliedKeys: ["c0"] }))).toEqual(refused("CONSEQUENCE_APPLIED"));
+    expect(send([], cardFacts({ offered, appliedKeys: ["c0", "c1"] }))).toEqual(refused("NOTHING_TO_APPLY"));
+    expect(send([], cardFacts())).toEqual(refused("NOTHING_TO_APPLY"));
+    expect(send([newItem("c0", "A")], cardFacts({ offered }))).toEqual(refused("CONSEQUENCE_INCOMPLETE"));
+    expect(send([newItem("c0", "A"), newItem("c0", "B")], cardFacts({ offered }))).toEqual(refused("INVALID_INPUT"));
+    expect(send([newItem("c9", "A")], cardFacts({ offered }))).toEqual(refused("INVALID_INPUT"));
+    expect(send([newItem("c0", "A"), { key: "c1", target: { kind: "existing", traitId: id("Exhausted") } }], cardFacts({ offered })))
+      .toEqual(refused("NOT_HOLDERS_COMPLICATION"));
+    expect(run(GM, request("applyConsequence", { messageId: "msg", items: [] }, 1), store)).toEqual(refused("CARD_NOT_FOUND"));
+  });
+
+  it("the GM may leave a failed test without a complication; a side with no actor gets an unassigned one", () => {
+    const card = cardFacts({ type: "test", holderKey: null, offered: [{ key: "c0", size: 6, cause: "failedTest", required: false }] });
+    const result = run(GM, request("applyConsequence", {
+      messageId: "msg", items: [{ key: "c0", target: { kind: "new", id: id("Lost the Trail"), name: "Lost the Trail" } }]
+    }), emptyTraitStore(), ACTORS, null, card).value;
+    expect(result.store.traits[0]).toMatchObject({ origin: "failedTest", dice: [6], holder: { kind: "unassigned" } });
+    expect(run(GM, request("applyConsequence", {
+      messageId: "msg", items: [{ key: "c0", target: { kind: "existing", traitId: id("Lost the Trail") } }]
+    }, 1), result.store, ACTORS, null, card)).toEqual(refused("NOT_HOLDERS_COMPLICATION"));
+  });
+
+  it("the GM applies; so does the winner's owner when the loser is a GMC, and nobody else (PA5)", () => {
+    const offered = [{ key: "c0", size: 6, cause: "contest", required: true }];
+    const items = [{ key: "c0", target: { kind: "new", id: id("Pinned"), name: "Pinned" } }];
+    const send = card => run(PLAYER, request("applyConsequence", { messageId: "msg", items }), emptyTraitStore(), ACTORS, null, card);
+    expect(send(cardFacts({ offered, winnerOwnedBySender: true })).ok).toBe(true);
+    expect(send(cardFacts({ offered, winnerOwnedBySender: false }))).toEqual(refused("GM_ONLY"));
+    expect(send(cardFacts({ offered, winnerOwnedBySender: true, loserIsBank: false, holderKey: ANA }))).toEqual(refused("GM_ONLY"));
+  });
+
+  it("the GM makes an asset from an effect die, capped, for the roller; each die once (AC-06, AC-07)", () => {
+    const card = cardFacts({ type: "test", assetEffects: [{ id: "e1", size: 12 }, { id: "e2", size: 8 }] });
+    const capped = run(GM, request("createEffectAsset", {
+      messageId: "msg", effectId: "e1", id: id("Wiretap"), name: "Wiretap", origin: "effect", cap: 10
+    }), emptyTraitStore(), ACTORS, null, card).value;
+    expect(capped.store.traits[0]).toMatchObject({
+      name: "Wiretap", kind: "asset", dice: [10], origin: "effect", holder: holder(ANA), duration: "scene"
+    });
+    expect(capped.card).toEqual({ assetEffect: "e1" });
+    expect(capped.payment).toBeNull();
+    const clue = run(GM, request("createEffectAsset", {
+      messageId: "msg", effectId: "e2", id: id("Guard Rotation"), name: "Guard Rotation", origin: "clue"
+    }), emptyTraitStore(), ACTORS, null, card).value;
+    expect(clue.store.traits[0]).toMatchObject({ dice: [8], origin: "clue" });
+    const used = cardFacts({ type: "test", assetEffects: [{ id: "e1", size: 12 }], assetsMade: ["e1"] });
+    const again = request("createEffectAsset", { messageId: "msg", effectId: "e1", id: id("Bug"), name: "Bug", origin: "effect" });
+    expect(run(GM, again, emptyTraitStore(), ACTORS, null, used)).toEqual(refused("EFFECT_DIE_USED"));
+    expect(run(GM, { ...again, actionId: "action-x-0001" }, emptyTraitStore(), ACTORS, null, cardFacts({ type: "test" })))
+      .toEqual(refused("EFFECT_DIE_NOT_FOUND"));
+    expect(run(PLAYER, { ...again, actionId: "action-x-0002" }, emptyTraitStore(), ACTORS, null, card)).toEqual(refused("GM_ONLY"));
+  });
+
+  it("a contest's spare effect die makes an asset, never a clue; a card with no roller character refuses", () => {
+    const card = cardFacts({ assetEffects: [{ id: "e2", size: 8 }] });
+    const asset = request("createEffectAsset", { messageId: "msg", effectId: "e2", id: id("Higher Ground"), name: "Higher Ground", origin: "effect" });
+    expect(run(GM, asset, emptyTraitStore(), ACTORS, null, card).value.store.traits[0]).toMatchObject({ dice: [8], origin: "effect" });
+    expect(run(GM, request("createEffectAsset", {
+      messageId: "msg", effectId: "e2", id: id("Clue"), name: "Clue", origin: "clue"
+    }), emptyTraitStore(), ACTORS, null, card)).toEqual(refused("INVALID_INPUT"));
+    expect(run(GM, request("createEffectAsset", {
+      messageId: "msg", effectId: "e2", id: id("Ledge"), name: "Ledge", origin: "effect"
+    }), emptyTraitStore(), ACTORS, null, cardFacts({ assetEffects: [{ id: "e2", size: 8 }], assetHolderKey: null })))
+      .toEqual(refused("ACTOR_NOT_FOUND"));
   });
 });

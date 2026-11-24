@@ -5,7 +5,8 @@
  * what it returns. Requests run one at a time, each against the revision it was made for. An action
  * that costs plot points writes the store, the balance and the ledger entry in one
  * foundry.documents.modifyBatch call, so a refused write changes none of them; an action on a roll
- * card (hitches, opportunities; step 4.8b) writes the card in the same batch. A retried action
+ * card (hitches, opportunities; step 4.8b) or on a test or contest card (consequence complications
+ * and assets from effect dice; step 4.8c) writes that card's mark in the same batch. A retried action
  * (same action id) gets its first answer back and writes nothing. Nothing here decides an outcome.
  *
  * Foundry 14.369 facts this relies on (read from the install, 2026-11-24):
@@ -21,6 +22,7 @@
 import TraitStoreData, { TRAIT_STORE_SCHEMA_VERSION } from "../data/settings/temporary-traits.mjs";
 import { dispatchTraitStoreRequest, emptyTraitStore, usedD4ComplicationIds } from "../rules/trait-store.mjs";
 import { holdsPlotPoints, ledgerEntryData } from "../plot-points/accounts.mjs";
+import { ASSET_EFFECTS_FLAG, CONSEQUENCE_FLAG, cardTraitFacts } from "./card-traits.mjs";
 
 const SYSTEM_ID = "cortex-prime";
 
@@ -138,13 +140,15 @@ export function handleTraitStoreQuery(request, { user }) {
 
 /**
  * The actor keys a request names: the holder of a new trait, the holder of the trait it acts on, the
- * character that pays for opportunities, and the character a roll card pays.
+ * character that pays for opportunities, the character a roll card pays, and the sides a test or
+ * contest card gives complications or assets to.
  * @param {unknown} request
  * @param {import("../rules/trait-store.mjs").TraitStore} store
  * @param {import("../rules/trait-store.mjs").RollFacts|null} roll
+ * @param {import("../rules/trait-store.mjs").CardFacts|null} card
  * @returns {string[]}
  */
-function requestActorKeys(request, store, roll) {
+function requestActorKeys(request, store, roll, card) {
   const keys = [];
   const payload = request?.payload;
   if ( typeof payload?.holder?.actorId === "string" ) keys.push(payload.holder.actorId);
@@ -152,6 +156,8 @@ function requestActorKeys(request, store, roll) {
   const trait = store.traits.find(t => t.id === payload?.traitId);
   if ( trait?.holder.kind === "actor" ) keys.push(trait.holder.actorId);
   if ( roll?.payerKey ) keys.push(roll.payerKey);
+  if ( card?.holderKey ) keys.push(card.holderKey);
+  if ( card?.assetHolderKey ) keys.push(card.assetHolderKey);
   return [...new Set(keys)];
 }
 
@@ -195,6 +201,35 @@ function readRoll(request, user) {
 }
 
 /**
+ * What a test or contest card holds (CardFacts), read on the GM's client, or null when the request
+ * names no contest message a GM wrote.
+ * @param {unknown} request
+ * @param {User} user - the sender
+ * @returns {{facts: import("../rules/trait-store.mjs").CardFacts, message: ChatMessage}|null}
+ */
+function readCard(request, user) {
+  if ( !["applyConsequence", "createEffectAsset"].includes(request?.action) ) return null;
+  const messageId = request?.payload?.messageId;
+  const message = (typeof messageId === "string") ? game.messages.get(messageId) : null;
+  const facts = message ? cardTraitFacts(message, user) : null;
+  return facts ? { facts, message } : null;
+}
+
+/**
+ * The update of a test or contest card after an action on it: the consequence keys given, or one
+ * more effect die that made an asset.
+ * @param {{facts: object, message: ChatMessage}} card
+ * @param {{consequenceKeys?: string[], assetEffect?: string}} change
+ * @returns {object}
+ */
+function contestCardUpdate(card, change) {
+  const update = { _id: card.message.id };
+  if ( change.consequenceKeys ) update[`flags.${SYSTEM_ID}.${CONSEQUENCE_FLAG}`] = change.consequenceKeys;
+  if ( change.assetEffect ) update[`flags.${SYSTEM_ID}.${ASSET_EFFECTS_FLAG}`] = [...card.facts.assetsMade, change.assetEffect];
+  return update;
+}
+
+/**
  * @param {string} key - an actor UUID
  * @returns {Actor|null} the actor, a token's synthetic actor included, or null
  */
@@ -218,9 +253,10 @@ async function processRequest(request, user) {
   if ( !game.user.isGM ) return fail("GM_REQUIRED");
   const store = getTraitStore();
   const roll = readRoll(request, user);
+  const card = readCard(request, user);
   const actorDocs = {};
   const actors = {};
-  for ( const key of requestActorKeys(request, store, roll?.facts) ) {
+  for ( const key of requestActorKeys(request, store, roll?.facts, card?.facts) ) {
     const actor = actorFromKey(key);
     if ( !actor ) continue;
     actorDocs[key] = actor;
@@ -231,15 +267,18 @@ async function processRequest(request, user) {
     };
   }
   const result = dispatchTraitStoreRequest({
-    sender: { userId: user.id, isGM: user.isGM }, request, store, actors, roll: roll?.facts ?? null
+    sender: { userId: user.id, isGM: user.isGM }, request, store, actors, roll: roll?.facts ?? null, card: card?.facts ?? null
   });
   if ( !result.ok ) return result;
   const { store: next, payment, removedIds, replayed, warnings, changes, takenOut } = result.value;
   if ( replayed ) return { ok: true, value: { revision: next.revision, removedIds, replayed, warnings } };
   try {
-    const cardUpdate = result.value.roll ? rollCardUpdate(roll, result.value.roll) : null;
+    let cardUpdate = null;
+    if ( result.value.roll ) cardUpdate = rollCardUpdate(roll, result.value.roll);
+    else if ( result.value.card ) cardUpdate = contestCardUpdate(card, result.value.card);
+    const messageRef = roll?.message.id ?? card?.message.id ?? null;
     const written = (payment || cardUpdate)
-      ? await writeBatch(next, payment, actorDocs, cardUpdate, roll?.message.id ?? null)
+      ? await writeBatch(next, payment, actorDocs, cardUpdate, messageRef)
       : await writeStore(next);
     if ( !written ) return fail("WRITE_FAILED");
   }
@@ -304,7 +343,7 @@ function settingOperation(key, value) {
  * @param {import("../rules/trait-store.mjs").StorePayment|null} payment
  * @param {Object<string, Actor>} actorDocs
  * @param {object|null} cardUpdate - a ChatMessage update
- * @param {string|null} messageRef - the roll card the change belongs to
+ * @param {string|null} messageRef - the roll, test or contest card the change belongs to
  * @returns {Promise<boolean>} whether every operation came back written
  */
 async function writeBatch(store, payment, actorDocs, cardUpdate, messageRef) {
