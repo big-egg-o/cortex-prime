@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  AC_PP_REASONS, RULING_PENDING, actThroughOption, applyComplications, applyHitches, applyOpportunities,
+  AC_PP_REASONS, actThroughOption, applyComplications, applyHitches, applyOpportunities,
   checkTemporaryTrait, contestComplications, createAsset, createSessionRelationship, endScene, endSession,
   loseSignatureAsset, recoverSignatureAsset, removeUsedD4Complications, signatureAssetPoolDice, stepTemporaryTrait,
   temporaryTraitPoolEntry, upgradeAsset
@@ -31,7 +31,7 @@ const scene = { kind: "scene" };
 function asset(name, size, fields = {}) {
   return {
     id: id(name), kind: "asset", name, dice: [size], holder: ana, origin: "pp", duration: "scene", access: "holder",
-    sceneSteps: 0, beyondD12: false, startedAtD4: false, borrowedFrom: null, ...fields
+    sceneSteps: 0, beyondD12: false, borrowedFrom: null, ...fields
   };
 }
 
@@ -39,7 +39,7 @@ function asset(name, size, fields = {}) {
 function comp(name, size, fields = {}) {
   return {
     id: id(name), kind: "complication", name, dice: [size], holder: ana, origin: "hitch", duration: null,
-    access: "holder", sceneSteps: 0, beyondD12: false, startedAtD4: false, borrowedFrom: null, ...fields
+    access: "holder", sceneSteps: 0, beyondD12: false, borrowedFrom: null, ...fields
   };
 }
 
@@ -126,13 +126,16 @@ describe("assets (rules 3 to 9)", () => {
     expect(capped.value.trait.dice).toEqual([10]);
   });
 
-  it("AC-07 a clue asset from the effect die; keeping it costs a PP; giving it waits on AC-Q5", () => {
+  it("AC-07 a clue asset from the effect die; keeping it costs a PP; giving it costs another (RQ-049)", () => {
     const clue = createAsset({ id: id("Guard Rotation"), name: "Guard Rotation", holder: ana, origin: "clue", size: 8 });
     expect(clue.value.trait).toMatchObject({ dice: [8], origin: "clue", duration: "scene" });
     expect(clue.value.ppLines).toEqual([]);
     const kept = upgradeAsset(clue.value.trait, { kind: "keep" }).value;
     expect(kept.ppLines).toEqual([spend("ASSET_KEEP_SESSION", "Guard Rotation")]);
-    expect(upgradeAsset(kept.trait, { kind: "give", holder: ben })).toEqual(refused(RULING_PENDING));
+    const given = upgradeAsset(kept.trait, { kind: "give", holder: ben }).value;
+    expect(given.trait).toMatchObject({ holder: ben, duration: "session", dice: [8] });
+    expect(given.ppLines).toEqual([spend("ASSET_GIVE", "Guard Rotation")]);
+    expect([...kept.ppLines, ...given.ppLines]).toHaveLength(2);
     expect(upgradeAsset(asset("Length of Chain", 6), { kind: "give", holder: ben })).toEqual(refused("NOT_A_CLUE_ASSET"));
   });
 
@@ -223,15 +226,25 @@ describe("hitches and botches (rules 16 and 17)", () => {
     expect(result.ppLines).toEqual([]);
   });
 
-  it("AC-16, AC-17, AC-18 hitches onto a complication the character has wait on AC-Q1", () => {
+  it("AC-16, AC-17, AC-18 hitches onto a complication the character has: a step each, one line (RQ-045)", () => {
     const wanted = comp("Wanted", 6, { holder: ben });
-    expect(hitches(roll("d8:1", "d6:1", "d10:7"), [{ hitchIds: ["r0", "r1"], target: { kind: "existing", traitId: wanted.id } }],
-      [wanted])).toEqual(refused(RULING_PENDING));
+    const a = hitches(roll("d8:1", "d6:1", "d10:7"), [{ hitchIds: ["r0", "r1"], target: { kind: "existing", traitId: wanted.id } }],
+      [wanted]).value;
+    expect(a.complications[0]).toMatchObject({ dice: [10], beyondD12: false });
+    expect(a.ppLines).toEqual([hitchLine("Wanted")]);
     const concussed = comp("Concussed", 8, { holder: ben });
-    expect(hitches(roll("d10:1", "d8:1", "d6:1", "d12:9", "d8:4"), [
+    const b = hitches(roll("d10:1", "d8:1", "d6:1", "d12:9", "d8:4"), [
       { hitchIds: ["r0"], target: newTarget("Jammed Rifle", ben) },
       { hitchIds: ["r1", "r2"], target: { kind: "existing", traitId: concussed.id } }
-    ], [concussed])).toEqual(refused(RULING_PENDING));
+    ], [concussed]).value;
+    expect(b.complications.map(c => [c.name, c.dice[0]])).toEqual([["Concussed", 12], ["Jammed Rifle", 6]]);
+    expect(b.ppLines).toEqual([hitchLine("Jammed Rifle"), hitchLine("Concussed")]);
+    const bleeding = comp("Bleeding", 12, { holder: ben });
+    const c = hitches(roll("d8:1", "d10:6"), [{ hitchIds: ["r0"], target: { kind: "existing", traitId: bleeding.id } }],
+      [bleeding]).value;
+    expect(c.complications[0]).toMatchObject({ dice: [12], beyondD12: true });
+    expect(c.takenOut).toEqual([bleeding.id]);
+    expect(c.ppLines).toEqual([hitchLine("Bleeding")]);
   });
 
   it("AC-19 hitches on the GM's roll are opportunities", () => {
@@ -288,10 +301,12 @@ describe("opportunities (rules 19 and 20)", () => {
     expect(c.ppLines).toEqual([spend("OPPORTUNITY", "Big Gun")]);
   });
 
-  it("AC-22 (b) two opportunities on a signature asset wait on AC-Q2", () => {
+  it("AC-22 (b) two opportunities on a d10 signature asset: one step fits, one is lost, one line (RQ-046)", () => {
     const sabre = { kind: "signature", actorId: ANA, traitId: id("Old Sabre"), label: "Old Sabre", dice: [10] };
-    expect(opportunities(roll("d8:1", "d6:1"), [{ opportunityIds: ["r0", "r1"], direction: "up", target: sabre }]))
-      .toEqual(refused(RULING_PENDING));
+    const result = opportunities(roll("d8:1", "d6:1"), [{ opportunityIds: ["r0", "r1"], direction: "up", target: sabre }]).value;
+    expect(result.sceneBoosts).toEqual([{ actorId: ANA, traitId: id("Old Sabre"), steps: 1 }]);
+    expect(result.changes[0]).toMatchObject({ from: 10, to: 12, lostSteps: 1 });
+    expect(result.ppLines).toHaveLength(1);
   });
 
   it("AC-23 a use on a complication and a single opportunity on an asset: one line each", () => {
@@ -306,10 +321,12 @@ describe("opportunities (rules 19 and 20)", () => {
     expect(result.ppLines.map(l => l.reason)).toEqual(["OPPORTUNITY", "OPPORTUNITY"]);
   });
 
-  it("AC-23 several opportunities on one asset wait on AC-Q2", () => {
+  it("AC-23 several opportunities on one asset: a step each, one line (RQ-046)", () => {
     const battery = asset("Spare Battery", 6);
-    expect(opportunities(roll("d10:1", "d8:1"), [{ opportunityIds: ["r0", "r1"], direction: "up", target: on(battery.id) }],
-      [battery])).toEqual(refused(RULING_PENDING));
+    const result = opportunities(roll("d10:1", "d8:1"), [{ opportunityIds: ["r0", "r1"], direction: "up", target: on(battery.id) }],
+      [battery]).value;
+    expect(result.traits[0]).toMatchObject({ dice: [6], sceneSteps: 2 });
+    expect(result.ppLines).toEqual([spend("OPPORTUNITY", "Spare Battery")]);
   });
 
   it("AC-25 an opportunity used again, and opportunities on a player's roll", () => {
@@ -322,19 +339,23 @@ describe("opportunities (rules 19 and 20)", () => {
       .toEqual(refused("HITCHES_NOT_OPPORTUNITIES"));
   });
 
-  it("AC-26 up on a complication waits on AC-Q3; down on an asset is not a listed use", () => {
+  it("AC-26 up on a complication and down on an asset are not listed uses (RQ-047)", () => {
     const cornered = comp("Cornered", 10, { holder: gmc });
     expect(opportunities(roll("d8:1", "d10:6", "d6:5"), [{ opportunityIds: ["r0"], direction: "up", target: on(cornered.id) }],
-      [cornered])).toEqual(refused(RULING_PENDING));
+      [cornered])).toEqual(refused("OPPORTUNITY_USE_NOT_LISTED"));
     const crate = asset("Crate", 8);
     expect(opportunities(roll("d8:1"), [{ opportunityIds: ["r0"], direction: "down", target: on(crate.id) }], [crate]))
       .toEqual(refused("OPPORTUNITY_USE_NOT_LISTED"));
   });
 
-  it("AC-40 opportunities on a complication past d12 wait on AC-Q4", () => {
+  it("AC-40 opportunities on a complication past d12: the first step clears the mark (RQ-048)", () => {
     const debris = comp("Buried in Debris", 12, { beyondD12: true });
-    expect(opportunities(roll("d8:1"), [{ opportunityIds: ["r0"], direction: "down", target: on(debris.id) }], [debris]))
-      .toEqual(refused(RULING_PENDING));
+    const one = opportunities(roll("d8:1"), [{ opportunityIds: ["r0"], direction: "down", target: on(debris.id) }], [debris]).value;
+    expect(one.traits[0]).toMatchObject({ dice: [12], beyondD12: false });
+    const two = opportunities(roll("d8:1", "d6:1"), [{ opportunityIds: ["r0", "r1"], direction: "down", target: on(debris.id) }],
+      [debris]).value;
+    expect(two.traits[0]).toMatchObject({ dice: [10], beyondD12: false });
+    expect(two.ppLines).toHaveLength(1);
   });
 });
 
@@ -475,14 +496,20 @@ describe("d4 complications (rule 18)", () => {
     expect(removeUsedD4Complications([wrist], [wrist.id]).value).toEqual({ complications: [], removedIds: [wrist.id] });
   });
 
-  it("AC-35 hitches onto the used d4 complication wait on AC-Q1; one stepped up is kept", () => {
+  it("AC-35 a hitch onto the used d4 complication steps it to d6, one line, and it is kept", () => {
     const wrist = comp("Sprained Wrist", 4);
-    expect(applyHitches({
+    const result = applyHitches({
       rolled: roll("d8:6", "d8:5", "d4:1"), side: "player", allocations: [{ hitchIds: ["r2"], target: { kind: "existing", traitId: wrist.id } }],
       complications: [wrist]
-    })).toEqual(refused(RULING_PENDING));
-    const stepped = comp("Sprained Wrist", 6);
-    expect(removeUsedD4Complications([stepped], [stepped.id]).value.removedIds).toEqual([]);
+    }).value;
+    expect(result.complications[0].dice).toEqual([6]);
+    expect(result.ppLines).toEqual([hitchLine("Sprained Wrist")]);
+    expect(removeUsedD4Complications(result.complications, [wrist.id]).value.removedIds).toEqual([]);
+    const twice = applyHitches({
+      rolled: roll("d8:1", "d8:5", "d4:1"), side: "player",
+      allocations: [{ hitchIds: ["r0", "r2"], target: { kind: "existing", traitId: wrist.id } }], complications: [wrist]
+    }).value;
+    expect(twice.complications[0].dice).toEqual([8]);
   });
 
   it("AC-36 another holder's d4 complication in a GMC's pool: a warning and no PP", () => {
@@ -491,33 +518,35 @@ describe("d4 complications (rule 18)", () => {
     expect(entry.ppGained).toBeUndefined();
   });
 
-  it("AC-37 a complication made at d4 is marked; where it goes waits on AC-Q6", () => {
+  it("AC-37 a complication made at d4 works like any d4 complication (RQ-050)", () => {
     const made = applyComplications([], [{ size: 4, cause: "contest", target: newTarget("Off Balance") }]).value;
-    expect(made.complications[0]).toMatchObject({ dice: [4], startedAtD4: true });
-    expect(temporaryTraitPoolEntry(made.complications[0], { rollerActorId: ANA })).toEqual(refused(RULING_PENDING));
-    expect(removeUsedD4Complications(made.complications, [id("Off Balance")])).toEqual(refused(RULING_PENDING));
-    const stepped = stepTemporaryTrait(made.complications[0], 1).value.trait;
-    expect(stepped).toMatchObject({ dice: [6], startedAtD4: false });
+    expect(made.complications[0]).toEqual(comp("Off Balance", 4, { origin: "contest" }));
+    expect(temporaryTraitPoolEntry(made.complications[0], { rollerActorId: ANA }).value.ppGained).toBe(1);
+    expect(removeUsedD4Complications(made.complications, [id("Off Balance")]).value.removedIds).toEqual([id("Off Balance")]);
   });
 
-  it("AC-38 a botch onto the used d4 complication waits on AC-Q1", () => {
+  it("AC-38 a botch onto the used d4 complication: two steps to d8, no line (RQ-045)", () => {
     const wrist = comp("Sprained Wrist", 4);
-    expect(applyHitches({
+    const result = applyHitches({
       rolled: roll("d4:1", "d6:1"), side: "player", allocations: [{ hitchIds: ["r0", "r1"], target: { kind: "existing", traitId: wrist.id } }],
       complications: [wrist]
-    })).toEqual(refused(RULING_PENDING));
+    }).value;
+    expect(result.complications[0]).toMatchObject({ dice: [8], origin: "hitch" });
+    expect(result.ppLines).toEqual([]);
   });
 });
 
 describe("complications past d12 (rules 25 and 26)", () => {
-  it("AC-39 acting through it: one PP and keep 1; its die in a pool waits on AC-Q4", () => {
+  it("AC-39 acting through it: one PP and keep 1; its die in a pool is a d12 with a warning (RQ-048)", () => {
     const debris = comp("Buried in Debris", 12, { beyondD12: true });
     expect(actThroughOption([debris], ANA).value).toEqual({
       ppLine: spend("ACT_THROUGH_COMPLICATION", "Buried in Debris"), keepLimit: 1, traitIds: [debris.id]
     });
     const kept = resolve(roll("d10:7", "d8:6", "d6:3"), { totalIds: ["r0"], effectDieIds: ["r1"], extraResultsPaid: 0, extraEffectDicePaid: 0, keepLimit: 1 });
     expect(kept.total).toBe(7);
-    expect(temporaryTraitPoolEntry(debris, { rollerActorId: GMC })).toEqual(refused(RULING_PENDING));
+    expect(temporaryTraitPoolEntry(debris, { rollerActorId: GMC }).value).toMatchObject({
+      size: 12, warnings: ["COMPLICATION_BEYOND_D12"]
+    });
   });
 
   it("AC-41 no complication past d12", () => {
@@ -542,8 +571,17 @@ describe("signature assets and relationships (rules 12, 13 and 15)", () => {
     expect(recoverSignatureAsset(free.entry, "pp")).toEqual(refused("SIGNATURE_ASSET_NOT_LOST"));
   });
 
-  it("AC-43 damage by a step down waits on AC-Q7", () => {
-    expect(loseSignatureAsset(revolver, { steps: -1 })).toEqual(refused(RULING_PENDING));
+  it("AC-43 damaged a step, then out of action: recovery restores the dice from before the first loss (RQ-051)", () => {
+    const damaged = loseSignatureAsset(revolver, { steps: -1 }).value;
+    expect(damaged).toEqual({ ...revolver, dice: [6], lost: { outOfAction: false, preLossDice: [8] } });
+    expect(signatureAssetPoolDice(damaged, null).value).toEqual({ dice: [6], warnings: [] });
+    const out = loseSignatureAsset(damaged, { outOfAction: true }).value;
+    expect(out).toEqual({ ...revolver, dice: [6], lost: { outOfAction: true, preLossDice: [8] } });
+    expect(loseSignatureAsset(out, { steps: -1 }).value.lost).toEqual({ outOfAction: true, preLossDice: [8] });
+    expect(recoverSignatureAsset(out, "betweenSessions").value.entry).toEqual(revolver);
+    expect(loseSignatureAsset({ ...revolver, dice: [4] }, { steps: -1 })).toEqual(refused("SIGNATURE_ASSET_STEP_BELOW_D4"));
+    expect(loseSignatureAsset(revolver, { steps: -1, outOfAction: true }).value)
+      .toEqual({ ...revolver, dice: [6], lost: { outOfAction: true, preLossDice: [8] } });
   });
 
   it("AC-44 borrowing another's signature asset makes an ordinary d6 asset for a PP", () => {
@@ -581,7 +619,7 @@ describe("edge cases", () => {
       comp(" ", 6, { id: id("X") }), { ...comp("X", 6), kind: "stress" }, asset("X", 12, { beyondD12: true }),
       comp("X", 10, { beyondD12: true }), comp("X", 6, { sceneSteps: 1 }), asset("X", 6, { sceneSteps: -1 }),
       asset("X", 6, { sceneSteps: 1.5 }), asset("X", 6, { duration: null }), comp("X", 6, { access: "open" }),
-      asset("X", 6, { borrowedFrom: { actorId: ANA, traitId: id("Y") } }), comp("X", 6, { startedAtD4: true }),
+      asset("X", 6, { borrowedFrom: { actorId: ANA, traitId: id("Y") } }),
       asset("X", 6, { holder: scene }), comp("X", 6, { holder: { kind: "actor", actorId: "short" } }), null
     ] ) expect(checkTemporaryTrait(bad)).toEqual(refused("INVALID_TEMP_TRAIT"));
   });
@@ -636,18 +674,23 @@ describe("edge cases", () => {
     expect(revolver.lost).toBe(null);
   });
 
-  it("AC-E05 a consequence step onto a complication past d12 waits on AC-Q4", () => {
+  it("AC-E05 a consequence step onto a complication past d12: it stays past d12 (RQ-048)", () => {
     const debris = comp("Buried", 12, { beyondD12: true });
-    expect(applyComplications([debris], [{ size: 8, cause: "contest", target: { kind: "existing", traitId: debris.id } }]))
-      .toEqual(refused(RULING_PENDING));
+    const result = applyComplications([debris], [{ size: 8, cause: "contest", target: { kind: "existing", traitId: debris.id } }])
+      .value;
+    expect(result.complications[0]).toMatchObject({ dice: [12], beyondD12: true });
+    expect(result.takenOut).toEqual([debris.id]);
   });
 
   it("AC-E07 stepTemporaryTrait", () => {
     expect(stepTemporaryTrait(asset("A", 10), 2)).toEqual(refused("ASSET_STEP_PAST_D12"));
     expect(stepTemporaryTrait(asset("A", 4), -1).value).toEqual({ trait: null, removed: true, takenOut: false });
     expect(stepTemporaryTrait(comp("C", 12), 1).value).toMatchObject({ trait: { dice: [12], beyondD12: true }, takenOut: true });
-    expect(stepTemporaryTrait(comp("C", 12, { beyondD12: true }), 1)).toEqual(refused(RULING_PENDING));
-    expect(stepTemporaryTrait(comp("C", 12, { beyondD12: true }), -1)).toEqual(refused(RULING_PENDING));
+    expect(stepTemporaryTrait(comp("C", 12, { beyondD12: true }), 1).value)
+      .toMatchObject({ trait: { dice: [12], beyondD12: true }, takenOut: true });
+    expect(stepTemporaryTrait(comp("C", 12, { beyondD12: true }), -1).value)
+      .toMatchObject({ trait: { dice: [12], beyondD12: false }, takenOut: false });
+    expect(stepTemporaryTrait(comp("C", 12, { beyondD12: true }), -2).value.trait.dice).toEqual([10]);
     expect(stepTemporaryTrait(asset("A", 6), 0)).toEqual(refused("INVALID_INPUT"));
     expect(stepTemporaryTrait(asset("A", 6), 1.5)).toEqual(refused("INVALID_INPUT"));
     expect(stepTemporaryTrait(asset("A", 6, { sceneSteps: 1 }), 1).value.trait).toMatchObject({ dice: [8], sceneSteps: 1 });

@@ -3,9 +3,9 @@
  * of 2026-11-04, as reviewed on 2026-11-24). The engine works out new and changed traits and their
  * plot point lines; writing them and paying the lines is the caller's (Plot Points P4).
  *
- * Seven rules questions of the spec are open (AC-Q1 to AC-Q7, Rules Questions RQ-045 to RQ-051).
- * Where a case depends on one of them, the engine refuses it with RULING_PENDING and the table
- * applies it by hand; every other case is built. The JSDoc of each function names the question.
+ * The spec's seven questions are decided as Rules Questions RQ-045 to RQ-051 (2026-11-24); the JSDoc
+ * of each function names the ones it follows. A character holder is named by an actor key: a 16-
+ * character id or a Foundry UUID, so two unlinked copies of one opponent stay apart (ADR-057).
  *
  * Every function returns an EngineResult (ADR-025), stops at the first failing check in the order
  * its JSDoc gives, never changes its inputs and returns no object shared with them.
@@ -37,7 +37,6 @@ import { DIE_SIZES } from "./types.mjs";
  * @property {"holder"|"open"} access - "holder" for every complication
  * @property {number} sceneSteps - an asset's opportunity steps for this scene; 0 for a complication
  * @property {boolean} beyondD12 - a complication stepped past d12; false for every asset
- * @property {boolean} startedAtD4 - a complication made at d4 and not stepped since (AC-Q6)
  * @property {{actorId: string, traitId: string}|null} borrowedFrom - origin "borrowed" only
  */
 
@@ -77,10 +76,8 @@ export const AC_PP_REASONS = Object.freeze({
   RELATIONSHIP_CREATE: "spend"
 });
 
-/** Refusal for a case an open rules question decides (AC-Q1 to AC-Q7). */
-export const RULING_PENDING = "RULING_PENDING";
-
 const ID_PATTERN = /^[a-zA-Z0-9]{16}$/;
+const ACTOR_KEY_PATTERN = /^(?:[a-zA-Z0-9]{16}|[A-Za-z]+\.[a-zA-Z0-9]{16}(?:\.[A-Za-z]+\.[a-zA-Z0-9]{16})*)$/;
 const MAX = DIE_SIZES[DIE_SIZES.length - 1];
 
 /** @returns {boolean} whether value is a plain object, not an array, class instance or null */
@@ -93,6 +90,11 @@ function isPlainObject(value) {
 /** @returns {boolean} whether value is an id in the 16-character format */
 function isId(value) {
   return (typeof value === "string") && ID_PATTERN.test(value);
+}
+
+/** @returns {boolean} whether value names an actor: a 16-character id or a Foundry UUID */
+function isActorKey(value) {
+  return (typeof value === "string") && ACTOR_KEY_PATTERN.test(value);
 }
 
 /** @returns {boolean} whether value is a string that isn't blank after trimming */
@@ -109,7 +111,7 @@ function isWholeFrom(value, min) {
 function copyHolder(holder) {
   if ( !isPlainObject(holder) || !HOLDER_KINDS.includes(holder.kind) ) return null;
   if ( holder.kind !== "actor" ) return { kind: holder.kind };
-  return isId(holder.actorId) ? { kind: "actor", actorId: holder.actorId } : null;
+  return isActorKey(holder.actorId) ? { kind: "actor", actorId: holder.actorId } : null;
 }
 
 /** @returns {boolean} whether two holders are the same */
@@ -143,8 +145,7 @@ function roomBelowMax(size) {
  *
  * Check order: (1) a plain object with an id, a kind, a name that isn't blank and a valid holder,
  * else INVALID_TEMP_TRAIT; (2) the dice are die sizes, else INVALID_DIE_SIZE; (3) exactly one die,
- * else TEMP_TRAIT_ONE_DIE; (4) origin, duration, access, scene steps, beyondD12, startedAtD4 and
- * borrowedFrom fit the kind, and an asset a player made is held by a character (rule 9), else
+ * else TEMP_TRAIT_ONE_DIE; (4) origin, duration, access, scene steps, beyondD12 and borrowedFrom fit the kind, and an asset a player made is held by a character (rule 9), else
  * INVALID_TEMP_TRAIT.
  * @param {unknown} trait
  * @returns {import("./types.mjs").EngineResult<TemporaryTrait>}
@@ -164,17 +165,16 @@ export function checkTemporaryTrait(trait) {
   const valid = isAsset
     ? ASSET_ORIGINS.includes(trait.origin) && ASSET_DURATIONS.includes(trait.duration)
       && ["holder", "open"].includes(trait.access) && isWholeFrom(trait.sceneSteps, 0)
-      && (trait.beyondD12 === false) && (trait.startedAtD4 === false)
+      && (trait.beyondD12 === false)
       && ((trait.origin === "gm") || (holder.kind === "actor"))
     : COMPLICATION_ORIGINS.includes(trait.origin) && (trait.duration === null) && (trait.access === "holder")
-      && (trait.sceneSteps === 0) && (typeof trait.beyondD12 === "boolean") && (!trait.beyondD12 || (size === MAX))
-      && (typeof trait.startedAtD4 === "boolean") && (!trait.startedAtD4 || (size === 4));
+      && (trait.sceneSteps === 0) && (typeof trait.beyondD12 === "boolean") && (!trait.beyondD12 || (size === MAX));
   if ( !valid ) return fail("INVALID_TEMP_TRAIT");
 
   let borrowedFrom = null;
   if ( trait.origin === "borrowed" ) {
     const from = trait.borrowedFrom;
-    if ( !isPlainObject(from) || !isId(from.actorId) || !isId(from.traitId) ) return fail("INVALID_TEMP_TRAIT");
+    if ( !isPlainObject(from) || !isActorKey(from.actorId) || !isId(from.traitId) ) return fail("INVALID_TEMP_TRAIT");
     borrowedFrom = { actorId: from.actorId, traitId: from.traitId };
   }
   else if ( trait.borrowedFrom !== null ) return fail("INVALID_TEMP_TRAIT");
@@ -182,7 +182,7 @@ export function checkTemporaryTrait(trait) {
   return ok({
     id: trait.id, kind: trait.kind, name: trait.name, dice: dice.value, holder, origin: trait.origin,
     duration: trait.duration, access: trait.access, sceneSteps: trait.sceneSteps, beyondD12: trait.beyondD12,
-    startedAtD4: trait.startedAtD4, borrowedFrom
+    borrowedFrom
   });
 }
 
@@ -206,18 +206,32 @@ function checkTraitList(traits) {
 function complication({ id, name, holder }, size, origin, beyondD12 = false) {
   return {
     id, kind: "complication", name, dice: [size], holder, origin, duration: null, access: "holder", sceneSteps: 0,
-    beyondD12, startedAtD4: !beyondD12 && (size === 4), borrowedFrom: null
+    beyondD12, borrowedFrom: null
   };
 }
 
 /**
- * A complication stepped up: past d12 it stays [12] with beyondD12 (rule 25). Stepping one that is
- * already past d12 is AC-Q4, so callers refuse it first.
- * @returns {{size: import("./types.mjs").DieSize, beyondD12: boolean}}
+ * A complication's die stepped (rule 25, RQ-048): past d12 it stays [12] with beyondD12, and
+ * further steps up change nothing. A step down first clears the mark and leaves d12; the next one
+ * gives d10. A d4 stepped down is removed, and the steps left over are lost.
+ * @param {import("./types.mjs").DieSize} size
+ * @param {boolean} beyondD12
+ * @param {number} steps - a whole number; 0 changes nothing
+ * @returns {{size: import("./types.mjs").DieSize|null, beyondD12: boolean, removed: boolean, lostSteps: number}}
  */
-function steppedUp(size, steps) {
-  const result = stepDie(size, steps);
-  return { size: result.size, beyondD12: (result.beyond ?? 0) > 0 };
+function stepComplication(size, beyondD12, steps) {
+  if ( steps === 0 ) return { size, beyondD12, removed: false, lostSteps: 0 };
+  if ( steps > 0 ) {
+    if ( beyondD12 ) return { size: MAX, beyondD12: true, removed: false, lostSteps: 0 };
+    const result = stepDie(size, steps);
+    return { size: result.size, beyondD12: (result.beyond ?? 0) > 0, removed: false, lostSteps: 0 };
+  }
+  let down = -steps;
+  if ( beyondD12 ) down -= 1;
+  if ( down === 0 ) return { size: MAX, beyondD12: false, removed: false, lostSteps: 0 };
+  const result = stepDie(size, -down);
+  if ( !result.removed ) return { size: result.size, beyondD12: false, removed: false, lostSteps: 0 };
+  return { size: null, beyondD12: false, removed: true, lostSteps: down - (DIE_SIZES.indexOf(size) + 1) };
 }
 
 /**
@@ -250,7 +264,7 @@ export function createAsset(input) {
   const checked = checkTemporaryTrait({
     id: input.id, kind: "asset", name: input.name, dice: [die], holder: input.holder, origin,
     duration: keepForSession ? "session" : "scene", access: open ? "open" : "holder", sceneSteps: 0,
-    beyondD12: false, startedAtD4: false, borrowedFrom: input.borrowedFrom ?? null
+    beyondD12: false, borrowedFrom: input.borrowedFrom ?? null
   });
   if ( !checked.ok ) return checked;
   const trait = checked.value;
@@ -264,14 +278,14 @@ export function createAsset(input) {
 }
 
 /**
- * Keeps an asset for the session or opens it to everyone in the scene (rules 7 to 9), one line
- * each, none for the GM's. Handing a clue asset to another character is AC-Q5 and refused with
- * RULING_PENDING once its own checks pass.
+ * Keeps an asset for the session, opens it to everyone in the scene, or hands a clue asset to
+ * another character after it was made (rules 7 to 9; RQ-049): one line each, none for the GM's.
+ * Handing a clue over leaves its duration as it is.
  *
  * Check order: (1) checkTemporaryTrait; (2) not an asset, NOT_AN_ASSET; (3) upgrade is
  * `{kind: "keep"}`, `{kind: "open"}` or `{kind: "give", holder}`, else INVALID_INPUT; (4) keep:
  * ALREADY_KEPT; open: ALREADY_OPEN; give: NOT_A_CLUE_ASSET, a holder that isn't a character
- * (INVALID_INPUT), SAME_HOLDER, then RULING_PENDING.
+ * (INVALID_INPUT), SAME_HOLDER.
  * @param {TemporaryTrait} asset
  * @param {{kind: "keep"|"open"|"give", holder?: TraitHolder}} upgrade
  * @returns {import("./types.mjs").EngineResult<{trait: TemporaryTrait, ppLines: import("./types.mjs").PpLine[]}>}
@@ -299,7 +313,8 @@ export function upgradeAsset(asset, upgrade) {
     const holder = copyHolder(upgrade.holder);
     if ( holder?.kind !== "actor" ) return fail("INVALID_INPUT");
     if ( sameHolder(holder, trait.holder) ) return fail("SAME_HOLDER");
-    return fail(RULING_PENDING);
+    trait.holder = holder;
+    reason = "ASSET_GIVE";
   }
   return ok({ trait, ppLines: trait.origin === "gm" ? [] : [spend(reason, trait)] });
 }
@@ -329,19 +344,19 @@ function markUsed(rolled, used) {
 }
 
 /**
- * The GM activates a player's hitches (rules 16 and 17). Each allocation's hitches make one new
- * complication: d6, stepped up once for each further hitch, past d12 as in rule 25. Each pays the
- * roller one HITCH_COMPLICATION, which can't pay for the same roll; on a botch there is one
- * allocation using every die and no line. Allocations onto a complication the character already
- * has are AC-Q1 and refused with RULING_PENDING. No allocations means the GM declines.
+ * The GM activates a player's hitches (rules 16 and 17; RQ-045). Each allocation's hitches make one
+ * new complication (d6, stepped up once for each further hitch) or step a complication the character
+ * already has up once per hitch, past d12 as in rule 25 and RQ-048. Each allocation pays the roller
+ * one HITCH_COMPLICATION, which can't pay for the same roll. On a botch there is one allocation
+ * using every die, new or existing, and no line. No allocations means the GM declines.
  *
  * Check order: (1) the input's shape and a side of "player" or "gm", else INVALID_INPUT; (2) side
  * "gm", OPPORTUNITIES_NOT_HITCHES; (3) the complications through checkTemporaryTrait; (4) per
  * allocation in order: EMPTY_ALLOCATION, then per hitch id HITCH_NOT_FOUND, NOT_A_HITCH,
  * HITCH_ALREADY_ACTIVATED, HITCH_REUSED; a new target through checkTemporaryTrait, then
- * DUPLICATE_TRAIT_ID; an existing target TRAIT_NOT_FOUND, NOT_A_COMPLICATION, DUPLICATE_TARGET,
- * then RULING_PENDING; a target of another kind INVALID_INPUT; (5) on a botch, more than one
- * allocation or one that doesn't use every die, BOTCH_ONE_COMPLICATION.
+ * DUPLICATE_TRAIT_ID; an existing target TRAIT_NOT_FOUND, NOT_A_COMPLICATION, DUPLICATE_TARGET; a
+ * target of another kind INVALID_INPUT; (5) on a botch, more than one allocation or one that
+ * doesn't use every die, BOTCH_ONE_COMPLICATION.
  * @param {{rolled: import("./types.mjs").RolledDie[], side: "player"|"gm", allocations: {hitchIds: string[],
  *   target: {kind: "new", id: string, name: string, holder: TraitHolder} | {kind: "existing", traitId: string}}[],
  *   complications: TemporaryTrait[]}} input
@@ -359,29 +374,37 @@ export function applyHitches(input) {
   const byId = new Map(input.rolled.map(die => [die.id, die]));
   const used = new Set();
   const created = [];
-  const targeted = new Set();
+  const affected = [];
 
   for ( const allocation of input.allocations ) {
     if ( !isPlainObject(allocation) || !isPlainObject(allocation.target) ) return fail("INVALID_INPUT");
     const problem = idsProblem(allocation.hitchIds, byId, used);
     if ( problem ) return fail(problem);
     const { target } = allocation;
+    const n = allocation.hitchIds.length;
     if ( target.kind === "new" ) {
-      const steps = steppedUp(6, allocation.hitchIds.length - 1);
-      const checked = checkTemporaryTrait(complication({ ...target, holder: target.holder }, steps.size, "hitch",
-        steps.beyondD12));
+      const steps = stepComplication(6, false, n - 1);
+      const checked = checkTemporaryTrait(complication(target, steps.size, "hitch", steps.beyondD12));
       if ( !checked.ok ) return checked;
       const id = checked.value.id;
       if ( complications.some(c => c.id === id) || created.some(c => c.id === id) ) return fail("DUPLICATE_TRAIT_ID");
       created.push(checked.value);
+      affected.push({ trait: checked.value, change: {
+        traitId: id, created: true, from: null, to: steps.size, beyondD12: steps.beyondD12, lostSteps: 0
+      } });
     }
     else if ( target.kind === "existing" ) {
       const existing = complications.find(c => c.id === target.traitId);
       if ( !existing ) return fail("TRAIT_NOT_FOUND");
       if ( existing.kind !== "complication" ) return fail("NOT_A_COMPLICATION");
-      if ( targeted.has(existing.id) ) return fail("DUPLICATE_TARGET");
-      targeted.add(existing.id);
-      return fail(RULING_PENDING);
+      if ( affected.some(a => a.trait.id === existing.id) ) return fail("DUPLICATE_TARGET");
+      const from = existing.dice[0];
+      const steps = stepComplication(from, existing.beyondD12, n);
+      existing.dice = [steps.size];
+      existing.beyondD12 = steps.beyondD12;
+      affected.push({ trait: existing, change: {
+        traitId: existing.id, created: false, from, to: steps.size, beyondD12: steps.beyondD12, lostSteps: 0
+      } });
     }
     else return fail("INVALID_INPUT");
   }
@@ -390,44 +413,40 @@ export function applyHitches(input) {
   if ( botch && (input.allocations.length > 0) ) {
     const all = input.allocations.length === 1 && input.allocations[0].hitchIds.length === input.rolled.length;
     if ( !all ) return fail("BOTCH_ONE_COMPLICATION");
-    created[0].origin = "botch";
+    if ( created.length ) created[0].origin = "botch";
   }
 
   return ok({
     rolled: markUsed(input.rolled, used),
     complications: [...complications, ...created],
-    changes: created.map(c => ({
-      traitId: c.id, created: true, from: null, to: c.dice[0], beyondD12: c.beyondD12, lostSteps: 0
-    })),
-    takenOut: created.filter(c => c.beyondD12).map(c => c.id),
-    ppLines: botch ? [] : created.map(c => ({
-      reason: "HITCH_COMPLICATION", direction: "gain", amount: 1, label: c.name, sourceId: c.id, usableThisRoll: false
+    changes: affected.map(a => a.change),
+    takenOut: affected.filter(a => a.trait.beyondD12).map(a => a.trait.id),
+    ppLines: botch ? [] : affected.map(({ trait }) => ({
+      reason: "HITCH_COMPLICATION", direction: "gain", amount: 1, label: trait.name, sourceId: trait.id,
+      usableThisRoll: false
     }))
   });
 }
 
 /** @returns {boolean} whether value is a SceneBoost */
 function isBoost(value) {
-  return isPlainObject(value) && isId(value.actorId) && isId(value.traitId) && isWholeFrom(value.steps, 1);
+  return isPlainObject(value) && isActorKey(value.actorId) && isId(value.traitId) && isWholeFrom(value.steps, 1);
 }
 
 /**
  * A player uses opportunities from the GM's roll (rules 19 and 20). One OPPORTUNITY line per use.
  * Down on a complication: one step each, a d4 is removed and the steps left over are lost. Up on an
  * asset or a signature asset: one step each for the scene (scene steps, or a SceneBoost), never
- * above d12; steps that don't fit are lost and the line still counts (RQ-004).
- *
- * Refused with RULING_PENDING once every other check of the use passes: more than one opportunity
- * on an asset or signature asset (AC-Q2: one PP or one per opportunity), up on a complication
- * (AC-Q3), and any use on a complication past d12 (AC-Q4). Down on an asset is
- * OPPORTUNITY_USE_NOT_LISTED.
+ * above d12; steps that don't fit are lost and the line still counts (RQ-004). One PP per trait
+ * however many opportunities it takes (RQ-046). A complication past d12 loses the mark with its
+ * first step (RQ-048). Up on a complication and down on an asset are OPPORTUNITY_USE_NOT_LISTED
+ * (RQ-047).
  *
  * Check order: (1) the input's shape and side, INVALID_INPUT; (2) side "player",
  * HITCHES_NOT_OPPORTUNITIES; (3) the traits through checkTemporaryTrait, the boosts' shape
  * (INVALID_INPUT); (4) per use: its shape and direction (INVALID_INPUT), then the ids as in
  * applyHitches; the target: TRAIT_NOT_FOUND, or a signature target's shape (INVALID_INPUT) and
- * dice (INVALID_DIE_SIZE, TEMP_TRAIT_ONE_DIE); DUPLICATE_TARGET; OPPORTUNITY_USE_NOT_LISTED;
- * RULING_PENDING.
+ * dice (INVALID_DIE_SIZE, TEMP_TRAIT_ONE_DIE); DUPLICATE_TARGET; OPPORTUNITY_USE_NOT_LISTED.
  * @param {{rolled: import("./types.mjs").RolledDie[], side: "player"|"gm", uses: {opportunityIds: string[],
  *   direction: "down"|"up", target: {kind: "temporary", traitId: string} | {kind: "signature", actorId: string,
  *   traitId: string, label: string, dice: number[]}}[], traits: TemporaryTrait[], sceneBoosts: SceneBoost[]}} input
@@ -463,7 +482,9 @@ export function applyOpportunities(input) {
       key = trait.id;
     }
     else if ( target.kind === "signature" ) {
-      if ( !isId(target.actorId) || !isId(target.traitId) || !isName(target.label) ) return fail("INVALID_INPUT");
+      if ( !isActorKey(target.actorId) || !isId(target.traitId) || !isName(target.label) ) {
+        return fail("INVALID_INPUT");
+      }
       const dice = validateRating(target.dice);
       if ( !dice.ok ) return fail("INVALID_DIE_SIZE");
       if ( dice.value.length !== 1 ) return fail("TEMP_TRAIT_ONE_DIE");
@@ -474,12 +495,7 @@ export function applyOpportunities(input) {
     targeted.add(key);
 
     const onComplication = trait?.kind === "complication";
-    if ( (use.direction === "down") !== onComplication ) {
-      if ( !onComplication ) return fail("OPPORTUNITY_USE_NOT_LISTED");
-      return fail(RULING_PENDING);
-    }
-    if ( onComplication && trait.beyondD12 ) return fail(RULING_PENDING);
-    if ( !onComplication && (use.opportunityIds.length > 1) ) return fail(RULING_PENDING);
+    if ( (use.direction === "down") !== onComplication ) return fail("OPPORTUNITY_USE_NOT_LISTED");
     planned.push({ use, trait });
   }
 
@@ -491,14 +507,15 @@ export function applyOpportunities(input) {
     const { target } = use;
     if ( trait?.kind === "complication" ) {
       const from = trait.dice[0];
-      const stepped = stepDie(from, -n);
-      const lostSteps = stepped.removed ? n - (DIE_SIZES.indexOf(from) + 1) : 0;
+      const stepped = stepComplication(from, trait.beyondD12, -n);
       if ( stepped.removed ) removedIds.push(trait.id);
       else {
         trait.dice = [stepped.size];
-        trait.startedAtD4 = false;
+        trait.beyondD12 = false;
       }
-      changes.push({ traitId: trait.id, created: false, from, to: stepped.size ?? null, beyondD12: false, lostSteps });
+      changes.push({
+        traitId: trait.id, created: false, from, to: stepped.size, beyondD12: false, lostSteps: stepped.lostSteps
+      });
       ppLines.push(spend("OPPORTUNITY", trait));
     }
     else if ( trait ) {
@@ -575,15 +592,15 @@ const ITEM_CAUSES = ["contest", "stayIn", "failedTest", "effect", "gm"];
  * Gives complications as a consequence (rules 21 to 24): each item makes a new complication of its
  * size, or steps one the character has up by one when that one is at least as large (contest,
  * stay-in and failed test only). Items apply in order, each against the result of the ones before.
- * A step past d12 takes the character out, even after paying to stay in. A step onto a complication
- * already past d12 is AC-Q4 and refused with RULING_PENDING. No lines: the stay-in PP is Plot
+ * A step past d12 takes the character out, even after paying to stay in. A complication already
+ * past d12 counts as large enough and stays past d12 (RQ-048). No lines: the stay-in PP is Plot
  * Points' STAY_IN, and the rest cost nothing.
  *
  * Check order: (1) the complications through checkTemporaryTrait, items an array (INVALID_INPUT);
  * (2) per item: its shape and cause (INVALID_INPUT), its size (INVALID_DIE_SIZE), a failed test's
  * size other than d6 (INVALID_INPUT); a new target through checkTemporaryTrait, then
  * DUPLICATE_TRAIT_ID; an existing target: cause effect or gm STEP_UP_NOT_OFFERED, TRAIT_NOT_FOUND,
- * NOT_A_COMPLICATION, RULING_PENDING (past d12), COMPLICATION_TOO_SMALL.
+ * NOT_A_COMPLICATION, COMPLICATION_TOO_SMALL.
  * @param {TemporaryTrait[]} complications
  * @param {{size: number, cause: string, target: {kind: "new", id: string, name: string, holder: TraitHolder}
  *   | {kind: "existing", traitId: string}}[]} items
@@ -616,13 +633,11 @@ export function applyComplications(complications, items) {
       const existing = traits.find(t => t.id === target.traitId);
       if ( !existing ) return fail("TRAIT_NOT_FOUND");
       if ( existing.kind !== "complication" ) return fail("NOT_A_COMPLICATION");
-      if ( existing.beyondD12 ) return fail(RULING_PENDING);
       const from = existing.dice[0];
-      if ( from < item.size ) return fail("COMPLICATION_TOO_SMALL");
-      const stepped = steppedUp(from, 1);
+      if ( !existing.beyondD12 && (from < item.size) ) return fail("COMPLICATION_TOO_SMALL");
+      const stepped = stepComplication(from, existing.beyondD12, 1);
       existing.dice = [stepped.size];
       existing.beyondD12 = stepped.beyondD12;
-      existing.startedAtD4 = false;
       changes.push({
         traitId: existing.id, created: false, from, to: stepped.size, beyondD12: stepped.beyondD12, lostSteps: 0
       });
@@ -639,11 +654,11 @@ export function applyComplications(complications, items) {
 /**
  * Steps a temporary trait by hand or by an SFX. An asset stepped past d12 is refused (no rule says
  * what happens; RQ-004), a d4 stepped down is removed, and a complication stepped past d12 takes
- * its holder out. Stepping a complication that is already past d12 is AC-Q4 (RULING_PENDING).
- * Scene steps don't change. No lines.
+ * its holder out; one already past d12 stays there when stepped up and loses the mark with its first
+ * step down (RQ-048). Scene steps don't change. No lines.
  *
  * Check order: (1) checkTemporaryTrait; (2) steps a whole number other than 0, else INVALID_INPUT;
- * (3) a complication past d12, RULING_PENDING; (4) an asset past d12, ASSET_STEP_PAST_D12.
+ * (3) an asset past d12, ASSET_STEP_PAST_D12.
  * @param {TemporaryTrait} trait
  * @param {number} steps
  * @returns {import("./types.mjs").EngineResult<{trait: TemporaryTrait|null, removed: boolean, takenOut: boolean}>}
@@ -653,15 +668,18 @@ export function stepTemporaryTrait(trait, steps) {
   if ( !checked.ok ) return checked;
   if ( !Number.isInteger(steps) || (steps === 0) ) return fail("INVALID_INPUT");
   const copy = checked.value;
-  if ( copy.beyondD12 ) return fail(RULING_PENDING);
+  if ( copy.kind === "complication" ) {
+    const stepped = stepComplication(copy.dice[0], copy.beyondD12, steps);
+    if ( stepped.removed ) return ok({ trait: null, removed: true, takenOut: false });
+    copy.dice = [stepped.size];
+    copy.beyondD12 = stepped.beyondD12;
+    return ok({ trait: copy, removed: false, takenOut: stepped.beyondD12 });
+  }
   const stepped = stepDie(copy.dice[0], steps);
   if ( stepped.removed ) return ok({ trait: null, removed: true, takenOut: false });
-  const beyond = (stepped.beyond ?? 0) > 0;
-  if ( beyond && (copy.kind === "asset") ) return fail("ASSET_STEP_PAST_D12");
+  if ( (stepped.beyond ?? 0) > 0 ) return fail("ASSET_STEP_PAST_D12");
   copy.dice = [stepped.size];
-  copy.startedAtD4 = false;
-  if ( copy.kind === "complication" ) copy.beyondD12 = beyond;
-  return ok({ trait: copy, removed: false, takenOut: beyond });
+  return ok({ trait: copy, removed: false, takenOut: false });
 }
 
 /**
@@ -669,14 +687,11 @@ export function stepTemporaryTrait(trait, steps) {
  * scene steps, or a complication's die. Warnings, never refusals (ADR-029), in this order:
  * ASSET_NOT_AVAILABLE (another character's asset that isn't open), OWN_COMPLICATION (the roller's
  * own complication above d4), D4_COMPLICATION_GOES_TO_HOLDER (another character's d4
- * complication). The roller's own d4 complication reports ppGained 1, which Plot Points pays as
- * D4_COMPLICATION. A trait of the scene or with no holder gets no holder warnings.
+ * complication), COMPLICATION_BEYOND_D12 (a complication past d12 gives a d12, RQ-048). The
+ * roller's own d4 complication, however it got to d4 (RQ-050), reports ppGained 1, which Plot Points
+ * pays as D4_COMPLICATION. A trait of the scene or with no holder gets no holder warnings.
  *
- * Refused with RULING_PENDING: a complication past d12 (AC-Q4: which die it gives) and a
- * complication made at d4 and not stepped since (AC-Q6).
- *
- * Check order: (1) checkTemporaryTrait; (2) rollerActorId an id or null, else INVALID_INPUT; (3)
- * RULING_PENDING.
+ * Check order: (1) checkTemporaryTrait; (2) rollerActorId an actor key or null, else INVALID_INPUT.
  * @param {TemporaryTrait} trait
  * @param {{rollerActorId: string|null}} options
  * @returns {import("./types.mjs").EngineResult<{size: import("./types.mjs").DieSize,
@@ -686,9 +701,8 @@ export function temporaryTraitPoolEntry(trait, options) {
   const checked = checkTemporaryTrait(trait);
   if ( !checked.ok ) return checked;
   const rollerActorId = options?.rollerActorId;
-  if ( (rollerActorId !== null) && !isId(rollerActorId) ) return fail("INVALID_INPUT");
+  if ( (rollerActorId !== null) && !isActorKey(rollerActorId) ) return fail("INVALID_INPUT");
   const t = checked.value;
-  if ( t.beyondD12 || t.startedAtD4 ) return fail(RULING_PENDING);
 
   const source = { kind: t.kind, traitId: t.id, label: t.name };
   const holderId = t.holder.kind === "actor" ? t.holder.actorId : null;
@@ -700,6 +714,7 @@ export function temporaryTraitPoolEntry(trait, options) {
   if ( (t.kind === "asset") && (t.access === "holder") && other ) warnings.push("ASSET_NOT_AVAILABLE");
   if ( (t.kind === "complication") && (size !== 4) && own ) warnings.push("OWN_COMPLICATION");
   if ( (t.kind === "complication") && (size === 4) && other ) warnings.push("D4_COMPLICATION_GOES_TO_HOLDER");
+  if ( t.beyondD12 ) warnings.push("COMPLICATION_BEYOND_D12");
   const entry = { size, source, warnings };
   if ( (t.kind === "complication") && (size === 4) && own ) entry.ppGained = 1;
   return ok(entry);
@@ -730,11 +745,10 @@ export function signatureAssetPoolDice(entry, boost) {
 /**
  * After a roll that used d4 complications in their holders' pools (rule 18): each one still at d4
  * is removed. One the GM stepped up with the roll's hitches is kept. Call it once the GM's hitch
- * choice for the roll is made or declined. A complication made at d4 and not stepped since is
- * AC-Q6 (RULING_PENDING).
+ * choice for the roll is made or declined. One made at d4 is removed the same way (RQ-050).
  *
  * Check order: (1) checkTemporaryTrait on each; (2) usedIds an array of distinct strings, else
- * INVALID_INPUT; (3) per id: TRAIT_NOT_FOUND, NOT_A_COMPLICATION, RULING_PENDING.
+ * INVALID_INPUT; (3) per id: TRAIT_NOT_FOUND, NOT_A_COMPLICATION.
  * @param {TemporaryTrait[]} complications
  * @param {string[]} usedIds
  * @returns {import("./types.mjs").EngineResult<{complications: TemporaryTrait[], removedIds: string[]}>}
@@ -749,7 +763,6 @@ export function removeUsedD4Complications(complications, usedIds) {
     const trait = list.value.find(t => t.id === id);
     if ( !trait ) return fail("TRAIT_NOT_FOUND");
     if ( trait.kind !== "complication" ) return fail("NOT_A_COMPLICATION");
-    if ( trait.startedAtD4 ) return fail(RULING_PENDING);
     if ( (trait.dice[0] === 4) && !trait.beyondD12 ) removedIds.push(id);
   }
   return ok({ complications: list.value.filter(t => !removedIds.includes(t.id)), removedIds });
@@ -768,7 +781,7 @@ export function removeUsedD4Complications(complications, usedIds) {
 export function actThroughOption(complications, actorId) {
   const list = checkTraitList(complications);
   if ( !list.ok ) return list;
-  if ( !isId(actorId) ) return fail("INVALID_INPUT");
+  if ( !isActorKey(actorId) ) return fail("INVALID_INPUT");
   const out = list.value.filter(t => t.beyondD12 && (t.holder.actorId === actorId));
   if ( out.length === 0 ) return fail("NOT_TAKEN_OUT_BY_COMPLICATION");
   return ok({
@@ -795,12 +808,13 @@ function entryDice(entry) {
 }
 
 /**
- * A signature asset is put out of action (rule 12): `lost` keeps the dice from before the first
- * loss. A loss by stepping down (damage) is AC-Q7 and refused with RULING_PENDING.
+ * A signature asset is damaged (stepped down), put out of action, or both (rule 12, RQ-051).
+ * `lost.preLossDice` keeps the dice from before the first loss, so later losses don't change it;
+ * `lost.outOfAction` stays true once set. Scene boosts aren't part of the entry's dice.
  *
  * Check order: (1) the entry's dice (INVALID_INPUT for an entry that isn't an object or has none,
- * INVALID_DIE_SIZE); (2) loss `{outOfAction: true}` or with a negative whole `steps`, else
- * INVALID_INPUT; (3) steps, RULING_PENDING.
+ * INVALID_DIE_SIZE); (2) loss `{outOfAction: true}` and/or a negative whole `steps`, else
+ * INVALID_INPUT; (3) a die stepped below d4, SIGNATURE_ASSET_STEP_BELOW_D4.
  * @param {{dice: number[], lost?: {outOfAction: boolean, preLossDice: number[]}|null}} entry
  * @param {{outOfAction?: boolean, steps?: number}} loss
  * @returns {import("./types.mjs").EngineResult<object>} a copy of the entry with `lost` set
@@ -812,9 +826,15 @@ export function loseSignatureAsset(entry, loss) {
   const hasSteps = loss.steps !== undefined;
   if ( hasSteps && !(Number.isInteger(loss.steps) && (loss.steps < 0)) ) return fail("INVALID_INPUT");
   if ( ![true, undefined].includes(loss.outOfAction) || (!loss.outOfAction && !hasSteps) ) return fail("INVALID_INPUT");
-  if ( hasSteps ) return fail(RULING_PENDING);
-  const preLossDice = entry.lost ? [...entry.lost.preLossDice] : dice.value;
-  return ok({ ...copyData(entry), lost: { outOfAction: true, preLossDice } });
+  const stepped = hasSteps ? dice.value.map(size => stepDie(size, loss.steps)) : null;
+  if ( stepped?.some(result => result.removed) ) return fail("SIGNATURE_ASSET_STEP_BELOW_D4");
+  const preLossDice = entry.lost ? [...entry.lost.preLossDice] : [...dice.value];
+  const outOfAction = Boolean(entry.lost?.outOfAction || loss.outOfAction);
+  return ok({
+    ...copyData(entry),
+    dice: stepped ? stepped.map(result => result.size) : [...dice.value],
+    lost: { outOfAction, preLossDice }
+  });
 }
 
 /**
