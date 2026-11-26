@@ -7,6 +7,7 @@
  */
 
 import { DIE_SIZES } from "./types.mjs";
+import { checkMods } from "./mods.mjs";
 
 /** The current version of the game configuration's shape. */
 export const GAME_CONFIG_SCHEMA_VERSION = 1;
@@ -233,7 +234,8 @@ function checkActorKind(kind, path, setIds, report, claimId) {
  *   whole-number schemaVersion from 1 and lists of traitSets and actorKinds) and
  *   SCHEMA_VERSION_TOO_NEW (a schemaVersion above GAME_CONFIG_SCHEMA_VERSION), each reported
  *   alone and with no warnings; otherwise INVALID_TRAIT_SET, INVALID_TRAIT_DEFINITION,
- *   INVALID_ACTOR_KIND, INVALID_DIE_SIZE, DUPLICATE_CONFIG_ID and UNKNOWN_TRAIT_SET. Warnings, in
+ *   INVALID_ACTOR_KIND, INVALID_DIE_SIZE, DUPLICATE_CONFIG_ID, UNKNOWN_TRAIT_SET and UNKNOWN_MOD
+ *   (from checkMods, for the optional `mods` field). Warnings, in
  *   this order: DISTINCTIONS_SET_MISSING, PRIME_SETS_TOO_FEW
  */
 export function validateGameConfig(input) {
@@ -260,6 +262,7 @@ export function validateGameConfig(input) {
   const setIds = new Set(config.traitSets.filter(set => isPlainObject(set) && isId(set.id)).map(set => set.id));
   config.actorKinds.forEach((kind, i) => checkActorKind(kind, `actorKinds.${i}`, setIds, report, claimId));
   if ( config.pcKindId != null && !actorKindById(config, config.pcKindId) ) report("INVALID_ACTOR_KIND", "pcKindId");
+  checkMods(config.mods, report);
 
   const warnings = [];
   const roleCount = role => config.traitSets.filter(set => isPlainObject(set) && (set.role === role)).length;

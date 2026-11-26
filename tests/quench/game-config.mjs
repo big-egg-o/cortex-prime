@@ -10,7 +10,7 @@ import GameConfigData from "../../module/data/settings/game-config.mjs";
 import {
   GAME_CONFIG_SETTING, getGameConfig, isGameConfigInvalid, setGameConfig
 } from "../../module/config/settings.mjs";
-import { defaultGameConfig, validateGameConfig } from "../../module/rules/index.mjs";
+import { buildConfigExport, defaultGameConfig, validateGameConfig } from "../../module/rules/index.mjs";
 
 /**
  * Waits until a check passes, for what the app does after an event it doesn't await.
@@ -277,6 +277,68 @@ export function registerGameConfigBatch(quench) {
             assert.isNull(addTrait());
             changeField(app, "traitSets.0.list", "fixed");
             await waitFor(() => addTrait() !== null);
+          }
+          finally {
+            await app.close();
+          }
+        });
+      });
+
+      describe("export and import (M5 · MS-D5, MS-D6)", () => {
+        it("offers Export and Import buttons", async () => {
+          const app = new GameConfigApp();
+          await app.render({ force: true });
+          try {
+            assert.isNotNull(app.element.querySelector('[data-action="exportConfig"]'));
+            assert.isNotNull(app.element.querySelector('[data-action="importConfig"]'));
+          }
+          finally {
+            await app.close();
+          }
+        });
+
+        it("loads an exported configuration into the draft, and stores it only on Save", async () => {
+          await setGameConfig(defaultGameConfig());
+          const exported = defaultGameConfig();
+          exported.traitSets[0].name = "Imported name";
+          exported.traitSets = exported.traitSets.filter(set => set.id !== exported.traitSets.at(-1).id);
+          exported.actorKinds = exported.actorKinds.map(kind => ({
+            ...kind, traitSetIds: kind.traitSetIds.filter(id => exported.traitSets.some(set => set.id === id))
+          }));
+          const actor = await Actor.implementation.create({
+            name: "[Quench] import check", type: "character", system: { kindId: getGameConfig().actorKinds[0].id }
+          });
+          const before = foundry.utils.deepClone(actor.system.toObject().traits);
+          const app = new GameConfigApp();
+          await app.render({ force: true });
+          try {
+            const result = await app.importText(buildConfigExport(exported, "test"));
+            assert.isTrue(result.ok);
+            assert.equal(app.draft.traitSets[0].name, "Imported name");
+            assert.notEqual(getGameConfig().traitSets[0].name, "Imported name", "nothing is stored before Save");
+            await save(app);
+            assert.equal(getGameConfig().traitSets[0].name, "Imported name");
+            assert.lengthOf(getGameConfig().traitSets, exported.traitSets.length);
+            assert.deepEqual(actor.system.toObject().traits, before, "actors are never rewritten (ADR-037)");
+          }
+          finally {
+            await app.close();
+            await actor.delete();
+          }
+        });
+
+        it("leaves the draft unchanged for a file that isn't an export or comes from a newer schema", async () => {
+          await setGameConfig(defaultGameConfig());
+          const app = new GameConfigApp();
+          await app.render({ force: true });
+          try {
+            const draft = app.draft;
+            assert.deepEqual(await app.importText("not json"), { ok: false, code: "EXPORT_NOT_JSON" });
+            assert.deepEqual(await app.importText(JSON.stringify(defaultGameConfig())), { ok: false, code: "EXPORT_WRONG_FORMAT" });
+            const newer = JSON.parse(buildConfigExport(defaultGameConfig(), "test"));
+            newer.config.schemaVersion += 1;
+            assert.deepEqual(await app.importText(JSON.stringify(newer)), { ok: false, code: "SCHEMA_VERSION_TOO_NEW" });
+            assert.deepEqual(app.draft, draft);
           }
           finally {
             await app.close();

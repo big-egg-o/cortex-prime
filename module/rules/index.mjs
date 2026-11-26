@@ -33,6 +33,8 @@ export {
   actorKindById, defaultGameConfig, kindUsesPrimeSets, markedTraitSets, ratingOptionsOf, removeTraitSet, traitDefById,
   traitSetById, validateGameConfig
 } from "./game-config.mjs";
+export { MOD_IDS, checkMods, modEnabled } from "./mods.mjs";
+export { CONFIG_EXPORT_FORMAT, buildConfigExport, parseConfigExport } from "./config-export.mjs";
 export { ratingGuidance } from "./sheet-hints.mjs";
 export {
   SHUT_DOWN_REASONS, STATEMENT_SHUT_DOWN_REASON, challengeStatement, editStatement, resolveChallengedStatement
